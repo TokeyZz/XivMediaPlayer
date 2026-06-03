@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+ <PropertyGroup>
+  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+  <TargetFramework>net7.0-windows</TargetFramework>
+  <ImplicitUsings>enable</ImplicitUsings>
+  <Nullable>enable</Nullable>
+  <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+  <Platforms>AnyCPU;x64</Platforms>
+  <OutputType>Library</OutputType>
+ </PropertyGroup>
+
+ <ItemGroup>
+  <PackageReference Include="LibVLCSharp" Version="3.9.0" />
+  <PackageReference Include="NAudio" Version="2.2.1" />
+  <PackageReference Include="NAudio.Core" Version="2.2.1" />
+  <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+  <PackageReference Include="NAudio.WinMM" Version="2.2.1" />
+  <!-- Microsoft.Win32.Registry is built into .NET 10; suppress the transitive NuGet from NAudio -->
+  <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" ExcludeAssets="all" PrivateAssets="all" />
+  <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  <PackageReference Include="SixLabors.ImageSharp" Version="3.1.7" />
+  <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.18" />
+ </ItemGroup>
+
+</Project>

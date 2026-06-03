@@ -1,0 +1,763 @@
+using Dalamud.Game.Config;
+using Dalamud.Game.Text;
+using Dalamud.Interface.Windowing;
+using Dalamud.IoC;
+using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.Control;
+using XivMediaPlayer.GameObjects;
+using XivMediaPlayer.Windows;
+using MediaPlayerCore;
+using MediaPlayerCore.Catalog;
+using MediaPlayerCore.Compositing;
+using MediaPlayerCore.Twitch;
+using MediaPlayerCore.YtDlp;
+using XivMediaPlayer.Compositing;
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace XivMediaPlayer {
+  public sealed class Plugin : IDalamudPlugin {
+    public string Name => "XIV Media Player";
+
+    // Static PluginService properties (following Dalamud SamplePlugin template)
+    [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
+    [PluginService] internal static IPluginLog Log { get; private set; } = null!;
+
+    private readonly IDalamudPluginInterface _pluginInterface;
+    private readonly ICommandManager _commandManager;
+    private readonly IChatGui _chat;
+    private readonly IClientState _clientState;
+    private readonly IFramework _framework;
+    private readonly IGameConfig _gameConfig;
+    private readonly IPluginLog _pluginLog;
+    private readonly ITextureProvider _textureProvider;
+    private readonly IGameGui _gameGui;
+
+    private readonly Configuration _config;
+    private readonly WindowSystem _windowSystem;
+    private readonly VideoWindow _videoWindow;
+    private readonly SettingsWindow _settingsWindow;
+    private readonly MediaBrowserWindow _browserWindow;
+    private readonly ScreenSettingsWindow _screenSettingsWindow;
+    private WorldVideoRenderer _worldRenderer;
+
+    private MediaManager _mediaManager;
+    private YtDlpManager _ytDlpManager;
+    private MediaGameObject _playerObject;
+    private MediaCameraObject _playerCamera;
+    private unsafe Camera* _camera;
+
+    private string[] _streamURLs;
+    private MediaGameObject _lastStreamObject;
+    private string _lastStreamURL;
+    private string _currentStreamer;
+    private string _potentialStream;
+    private bool _streamWasPlaying;
+    private bool _disposed;
+    private bool _hasBeenInitialized;
+
+    private Stopwatch _streamSetCooldown = new Stopwatch();
+
+    public Plugin(
+      IDalamudPluginInterface pluginInterface,
+      ICommandManager commandManager,
+      IChatGui chat,
+      IClientState clientState,
+      IFramework framework,
+      IGameConfig gameConfig,
+      IPluginLog pluginLog,
+      ITextureProvider textureProvider,
+      IGameGui gameGui) {
+      _pluginInterface = pluginInterface;
+      _commandManager = commandManager;
+      _chat = chat;
+      _clientState = clientState;
+      _framework = framework;
+      _gameConfig = gameConfig;
+      _pluginLog = pluginLog;
+      _textureProvider = textureProvider;
+      _gameGui = gameGui;
+
+      // Load configuration
+      _config = (Configuration)_pluginInterface.GetPluginConfig()
+           ?? _pluginInterface.Create<Configuration>();
+
+      // Initialize yt-dlp manager
+      string ytDlpPath = !string.IsNullOrEmpty(_config.YtDlpPath) ? _config.YtDlpPath : null;
+      _ytDlpManager = new YtDlpManager(ytDlpPath, _config.PreferredQuality);
+      _ytDlpManager.OnStatusUpdate += (s, msg) => _pluginLog.Info("[yt-dlp] " + msg);
+      _ytDlpManager.OnError += (s, ex) => _pluginLog.Warning(ex, "[yt-dlp] " + ex.Message);
+
+      if (_config.AutoUpdateYtDlp && _ytDlpManager.IsAvailable()) {
+        Task.Run(async () => await _ytDlpManager.SelfUpdate());
+      }
+
+      // Initialize world-space video renderer
+      _worldRenderer = new WorldVideoRenderer(_config.WorldScreen, _gameGui);
+
+      // Create windows
+      _windowSystem = new WindowSystem("XivMediaPlayer");
+      _videoWindow = new VideoWindow(_pluginInterface, _textureProvider, _pluginLog);
+      _settingsWindow = new SettingsWindow(_config);
+      _browserWindow = new MediaBrowserWindow();
+      _screenSettingsWindow = new ScreenSettingsWindow(
+        _config.WorldScreen,
+        _worldRenderer,
+        onSave: () => {
+          _config.WorldScreen = _worldRenderer.Transform.Clone();
+          _config.Save();
+          _chat.Print("[Media Player] Screen placement saved.");
+        },
+        onPlaceAtCamera: () => PlaceScreenAtCamera()
+      );
+
+      // Set up catalog providers
+      string playlistDir = Path.Combine(Path.GetDirectoryName(_pluginInterface.AssemblyLocation.FullName) ?? "", "playlists");
+      var localProvider = new LocalPlaylistProvider(playlistDir);
+      localProvider.CreateSamplePlaylist();
+      _browserWindow.AddProvider(localProvider);
+
+      if (_ytDlpManager.IsAvailable()) {
+        var ytProvider = new YtDlpPlaylistProvider(_ytDlpManager);
+        _browserWindow.AddProvider(ytProvider);
+      }
+
+      _browserWindow.OnPlayRequested += OnBrowserPlayRequested;
+
+      _windowSystem.AddWindow(_videoWindow);
+      _windowSystem.AddWindow(_settingsWindow);
+      _windowSystem.AddWindow(_browserWindow);
+      _windowSystem.AddWindow(_screenSettingsWindow);
+
+      // Register draw + config UI
+      _pluginInterface.UiBuilder.Draw += OnDraw;
+      _pluginInterface.UiBuilder.OpenConfigUi += OnOpenConfig;
+
+      // Register commands
+      _commandManager.AddHandler("/media", new Dalamud.Game.Command.CommandInfo(OnMediaCommand) {
+        HelpMessage = "Media Player commands.\n" +
+          " /media — Open settings\n" +
+          " /media twitch <url> — Tune into a Twitch stream\n" +
+          " /media rtmp <url> — Tune into an RTMP stream\n" +
+          " /media play <url> — Play a media URL\n" +
+          " /media stop — Stop current stream\n" +
+          " /media video — Toggle video window\n" +
+          " /media browse — Open media browser",
+        ShowInHelp = true,
+      });
+
+      // Hook events
+      _framework.Update += OnFrameworkUpdate;
+      _clientState.TerritoryChanged += OnTerritoryChanged;
+      _clientState.Login += OnLogin;
+      _clientState.Logout += OnLogout;
+      _videoWindow.WindowResized += OnVideoWindowResized;
+
+      // Chat listener for twitch detection
+      _chat.ChatMessage += OnChatMessage;
+    }
+
+    #region Framework / Initialization
+
+    private unsafe void OnFrameworkUpdate(IFramework framework) {
+      if (_disposed) return;
+
+      if (!_hasBeenInitialized && _clientState.IsLoggedIn) {
+        try {
+          InitializeMediaManager();
+          _hasBeenInitialized = true;
+        } catch (Exception e) {
+          _pluginLog.Error(e, "Failed to initialize media manager");
+        }
+      }
+    }
+
+    private unsafe void InitializeMediaManager() {
+      var localPlayer = GetLocalPlayer();
+      if (localPlayer == null) return;
+
+      _playerObject = new MediaGameObject(localPlayer);
+      _camera = CameraManager.Instance()->GetActiveCamera();
+      _playerCamera = new MediaCameraObject(_camera);
+      _mediaManager = new MediaManager(_playerObject, _playerCamera, Path.GetDirectoryName(_pluginInterface.AssemblyLocation.FullName));
+      _mediaManager.OnErrorReceived += OnMediaError;
+      _mediaManager.LiveStreamVolume = _config.LivestreamVolume;
+      _videoWindow.MediaManager = _mediaManager;
+    }
+
+    private Dalamud.Game.ClientState.Objects.Types.IGameObject GetLocalPlayer() {
+      // Use reflection-free approach — IClientState doesn't expose LocalPlayer directly,
+      // but framework objects do. For simplicity we get it from the object table at index 0.
+      // Actually, IClientState has LocalPlayer in newer Dalamud.
+      try {
+        var prop = _clientState.GetType().GetProperty("LocalPlayer");
+        if (prop != null) {
+          return prop.GetValue(_clientState) as Dalamud.Game.ClientState.Objects.Types.IGameObject;
+        }
+      } catch { }
+      return null;
+    }
+
+    #endregion
+
+    #region Commands
+
+    private void OnMediaCommand(string command, string args) {
+      if (_disposed) return;
+
+      string[] splitArgs = args.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+      if (splitArgs.Length == 0) {
+        _settingsWindow.Toggle();
+        return;
+      }
+
+      switch (splitArgs[0].ToLower()) {
+        case "twitch":
+          if (splitArgs.Length > 1 && splitArgs[1].Contains("twitch.tv")) {
+            if (_playerObject != null) {
+              _lastStreamObject = _playerObject;
+              TuneIntoStream(splitArgs[1], _playerObject, false);
+            }
+          } else {
+            // Open twitch chat for current streamer
+            if (!string.IsNullOrEmpty(_currentStreamer)) {
+              try {
+                Process.Start(new ProcessStartInfo() {
+                  FileName = @"https://www.twitch.tv/popout/" + _currentStreamer + @"/chat?popout=",
+                  UseShellExecute = true,
+                  Verb = "OPEN"
+                });
+              } catch (Exception e) {
+                _pluginLog.Warning(e, e.Message);
+              }
+            } else {
+              _chat.PrintError("[Media Player] No active stream. Use: /media twitch <url>");
+            }
+          }
+          break;
+
+        case "rtmp":
+          if (splitArgs.Length > 1 && splitArgs[1].Contains("rtmp")) {
+            if (_playerObject != null) {
+              _lastStreamObject = _playerObject;
+              TuneIntoStream(splitArgs[1], _playerObject, true);
+            }
+          }
+          break;
+
+        case "play":
+          if (splitArgs.Length > 1) {
+            string url = splitArgs[1];
+            if (_playerObject != null) {
+              _lastStreamObject = _playerObject;
+              if (url.Contains("twitch.tv")) {
+                TuneIntoStream(url, _playerObject, false);
+              } else if (url.StartsWith("rtmp")) {
+                TuneIntoStream(url, _playerObject, true);
+              } else if (YtDlpManager.IsUrlSupported(url) && _ytDlpManager.IsAvailable()) {
+                // Resolve via yt-dlp then play
+                _chat.Print("[Media Player] Resolving URL via yt-dlp...");
+                PlayViaYtDlp(url, _playerObject);
+              } else {
+                // Fallback — direct URL to VLC
+                TuneIntoStream(url, _playerObject, true);
+              }
+            }
+          } else {
+            _chat.PrintError("[Media Player] Usage: /media play <url>");
+          }
+          break;
+
+        case "ytdlp-update":
+          if (_ytDlpManager.IsAvailable()) {
+            _chat.Print("[Media Player] Updating yt-dlp...");
+            Task.Run(async () => {
+              bool success = await _ytDlpManager.SelfUpdate();
+              _chat.Print(success ? "[Media Player] yt-dlp updated." : "[Media Player] yt-dlp update failed.");
+            });
+          } else {
+            _chat.PrintError("[Media Player] yt-dlp not found. Set the path in /media settings.");
+          }
+          break;
+
+        case "stop":
+          _mediaManager?.StopStream();
+          ResetStreamValues();
+          _chat.Print("[Media Player] Stream stopped.");
+          break;
+
+        case "video":
+          _videoWindow.Toggle();
+          break;
+
+        case "browse":
+          _browserWindow.Toggle();
+          break;
+
+        case "listen":
+          if (!string.IsNullOrEmpty(_potentialStream) && _playerObject != null) {
+            TuneIntoStream(_potentialStream, _playerObject, false);
+          }
+          break;
+
+        case "screen":
+          if (splitArgs.Length < 2) {
+            // No subcommand: toggle the settings window
+            _screenSettingsWindow.Toggle();
+          } else {
+            HandleScreenCommand(splitArgs);
+          }
+          break;
+
+        case "help":
+          _chat.Print("[Media Player] Commands:\n" +
+            " /media — Open settings\n" +
+            " /media twitch <url> — Tune into a Twitch stream\n" +
+            " /media rtmp <url> — Tune into an RTMP stream\n" +
+            " /media play <url> — Play a media URL\n" +
+            " /media stop — Stop current stream\n" +
+            " /media video — Toggle video window\n" +
+            " /media browse — Open media browser\n" +
+            " /media screen [place|move|rotate|scale|reset|save] — 3D screen\n" +
+            " /media listen — Tune into a shared stream\n" +
+            " /media ytdlp-update — Update yt-dlp\n" +
+            " /media help — Show this help");
+          break;
+
+        default:
+          _settingsWindow.Toggle();
+          break;
+      }
+    }
+
+    #endregion
+
+    #region Stream Management
+
+    private void TuneIntoStream(string url, MediaPlayerCore.IMediaGameObject audioGameObject, bool isNotTwitch) {
+      Task.Run(async () => {
+        string cleanedURL = RemoveSpecialSymbols(url);
+        _streamURLs = isNotTwitch ? new string[] { url } : TwitchFeedManager.GetServerResponse(cleanedURL);
+        _videoWindow.IsOpen = _config.DefaultVideoOpen == 0;
+        if (_streamURLs.Length > 0) {
+          _mediaManager.PlayStream(audioGameObject, _streamURLs[(int)_videoWindow.FeedType]);
+          _lastStreamURL = cleanedURL;
+          if (!isNotTwitch) {
+            _currentStreamer = cleanedURL.Replace(@"https://", null).Replace(@"www.", null).Replace("twitch.tv/", null);
+            _chat.Print(@"[Media Player] Tuning into " + _currentStreamer + @"!" +
+              "\r\nUse \"/media video\" to toggle the video feed." +
+              "\r\nUse \"/media stop\" to stop the stream.");
+          } else {
+            _currentStreamer = "Stream";
+            _chat.Print(@"[Media Player] Playing stream!" +
+              "\r\nUse \"/media video\" to toggle the video feed." +
+              "\r\nUse \"/media stop\" to stop the stream.");
+          }
+        }
+      });
+      _streamWasPlaying = true;
+      try {
+        _gameConfig.Set(SystemConfigOption.IsSndBgm, true);
+      } catch (Exception e) {
+        _pluginLog.Warning(e, e.Message);
+      }
+      _streamSetCooldown.Stop();
+      _streamSetCooldown.Reset();
+      _streamSetCooldown.Start();
+    }
+
+    private void PlayViaYtDlp(string url, MediaGameObject audioGameObject) {
+      Task.Run(async () => {
+        try {
+          // Try to get metadata for a nice chat message
+          var metadataTask = _ytDlpManager.GetMetadata(url);
+          var resolveTask = _ytDlpManager.ResolveStreamUrl(url);
+
+          string? streamUrl = await resolveTask;
+          if (string.IsNullOrEmpty(streamUrl)) {
+            _chat.PrintError("[Media Player] Failed to resolve URL via yt-dlp. Trying direct playback...");
+            TuneIntoStream(url, audioGameObject, true);
+            return;
+          }
+
+          var metadata = await metadataTask;
+          string title = metadata?.Title ?? "Unknown";
+          string uploader = metadata?.Uploader ?? "";
+          bool isLive = metadata?.IsLive ?? false;
+
+          _lastStreamObject = audioGameObject;
+          _streamURLs = new string[] { streamUrl };
+          _videoWindow.IsOpen = _config.DefaultVideoOpen == 0;
+
+          _mediaManager.PlayStream(audioGameObject, streamUrl);
+          _lastStreamURL = url;
+          _currentStreamer = !string.IsNullOrEmpty(uploader) ? uploader : title;
+
+          string statusMsg = isLive ? "LIVE" : (metadata?.Duration.HasValue == true
+            ? TimeSpan.FromSeconds(metadata.Duration.Value).ToString(@"mm\:ss") : "");
+
+          _chat.Print($"[Media Player] Now playing: {title}" +
+            (!string.IsNullOrEmpty(uploader) ? $" by {uploader}" : "") +
+            (!string.IsNullOrEmpty(statusMsg) ? $" [{statusMsg}]" : "") +
+            "\r\nUse \"/media video\" to toggle the video feed." +
+            "\r\nUse \"/media stop\" to stop.");
+
+          _streamWasPlaying = true;
+          try {
+            _gameConfig.Set(SystemConfigOption.IsSndBgm, true);
+          } catch (Exception e) {
+            _pluginLog.Warning(e, e.Message);
+          }
+          _streamSetCooldown.Stop();
+          _streamSetCooldown.Reset();
+          _streamSetCooldown.Start();
+        } catch (Exception e) {
+          _pluginLog.Warning(e, "[yt-dlp] " + e.Message);
+          _chat.PrintError("[Media Player] yt-dlp error: " + e.Message);
+        }
+      });
+    }
+
+    private void ChangeStreamQuality() {
+      if (_streamURLs != null) {
+        if (_streamWasPlaying && _streamURLs.Length > 0) {
+          Task.Run(async () => {
+            if ((int)_videoWindow.FeedType < _streamURLs.Length) {
+              if (_lastStreamObject != null) {
+                try {
+                  _mediaManager.ChangeStream(_lastStreamObject, _streamURLs[(int)_videoWindow.FeedType], _videoWindow.Size.Value.X);
+                } catch (Exception e) {
+                  _pluginLog.Warning(e, e.Message);
+                }
+              }
+            }
+          });
+        }
+      }
+    }
+
+    private void OnVideoWindowResized(object sender, EventArgs e) {
+      ChangeStreamQuality();
+    }
+
+    private unsafe void ResetStreamValues() {
+      Task.Run(async () => {
+        Thread.Sleep(1000);
+        while (Conditions.Instance()->BetweenAreas) {
+          Thread.Sleep(500);
+        }
+        _lastStreamObject = null;
+        _streamURLs = null;
+        if (_streamWasPlaying) {
+          _streamWasPlaying = false;
+          _videoWindow.IsOpen = false;
+          try {
+            _gameConfig.Set(SystemConfigOption.IsSndBgm, false);
+          } catch (Exception e) {
+            _pluginLog.Warning(e, e.Message);
+          }
+        }
+        _potentialStream = "";
+        _lastStreamURL = "";
+        _currentStreamer = "";
+        _streamSetCooldown.Stop();
+        _streamSetCooldown.Reset();
+      });
+    }
+
+    #endregion
+
+    #region Chat Twitch Detection
+
+    private void OnChatMessage(Dalamud.Game.Chat.IHandleableChatMessage msg) {
+      if (_disposed || _mediaManager == null) return;
+
+      var type = msg.LogKind;
+      if (type == XivChatType.Yell || type == XivChatType.Shout || type == XivChatType.TellIncoming) {
+        TwitchChatCheck(msg.Message.TextValue, type);
+      }
+    }
+
+    private unsafe void TwitchChatCheck(string messageText, XivChatType type) {
+      if (_config.TuneIntoTwitchStreams && IsResidential()) {
+        if (!_streamSetCooldown.IsRunning || _streamSetCooldown.ElapsedMilliseconds > 10000) {
+          var strings = messageText.Split(' ');
+          foreach (string value in strings) {
+            if (value.Contains("twitch.tv") && _lastStreamURL != value) {
+              if (_playerObject != null) {
+                var audioGameObject = _playerObject;
+                if (_mediaManager.IsAllowedToStartStream(audioGameObject)) {
+                  _lastStreamObject = _playerObject;
+                  TuneIntoStream(value
+                    .Trim('(').Trim(')')
+                    .Trim('[').Trim(']')
+                    .Trim('!').Trim('@'), audioGameObject, false);
+                }
+              }
+              break;
+            }
+          }
+        }
+      } else if (_config.TuneIntoTwitchStreamPrompt) {
+        var strings = messageText.Split(' ');
+        foreach (string value in strings) {
+          if (value.Contains("twitch.tv") && _lastStreamURL != value) {
+            _potentialStream = value;
+            _lastStreamURL = value;
+            string cleanedURL = RemoveSpecialSymbols(value);
+            string streamer = cleanedURL.Replace(@"https://", null).Replace(@"www.", null).Replace("twitch.tv/", null);
+            _chat.Print("[Media Player] " + streamer + " is hosting a stream! Use \"/media listen\" to tune in.");
+          }
+        }
+      }
+    }
+
+    private unsafe bool IsResidential() {
+      return HousingManager.Instance()->IsInside() || HousingManager.Instance()->OutdoorTerritory != null;
+    }
+
+    #endregion
+
+    #region Event Handlers
+
+    private void OnTerritoryChanged(uint territoryId) {
+      _videoWindow.IsOpen = false;
+      _mediaManager?.CleanSounds();
+      ResetStreamValues();
+    }
+
+    private void OnLogin() {
+      _hasBeenInitialized = false;
+    }
+
+    private void OnLogout(int type, int code) {
+      _mediaManager?.CleanSounds();
+      ResetStreamValues();
+    }
+
+    private void OnMediaError(object sender, MediaError e) {
+      _pluginLog.Warning(e.Exception, e.Exception?.Message);
+    }
+
+    #endregion
+
+    #region UI
+
+    private unsafe void OnDraw() {
+      _windowSystem.Draw();
+
+      // World-space video rendering
+      if (_worldRenderer?.IsActive == true) {
+        var textureWrap = _videoWindow.GetCurrentTextureWrap();
+        if (textureWrap != null) {
+          System.Numerics.Matrix4x4? vpMatrix = null;
+
+          // Build VP matrix for depth-tested rendering
+          if (_worldRenderer.UseDepthOcclusion && _camera != null) {
+            vpMatrix = GetViewProjectionMatrix();
+          }
+
+          _worldRenderer.Render(textureWrap, vpMatrix);
+        }
+      }
+    }
+
+    /// <summary>
+    /// Computes the game's combined View * Projection matrix from the active camera.
+    /// </summary>
+    private unsafe System.Numerics.Matrix4x4? GetViewProjectionMatrix() {
+      if (_camera == null) return null;
+
+      try {
+        var sceneCamera = _camera->CameraBase.SceneCamera;
+
+        // The ViewMatrix from SceneCamera is the view matrix
+        // Cast from FFXIV's Matrix4x4 to System.Numerics.Matrix4x4
+        var rawView = sceneCamera.ViewMatrix;
+        var view = System.Runtime.CompilerServices.Unsafe.As<
+          FFXIVClientStructs.FFXIV.Common.Math.Matrix4x4,
+          System.Numerics.Matrix4x4>(ref rawView);
+
+        // Build a perspective projection matrix from camera parameters
+        // FFXIV uses reverse-Z, so near/far are swapped
+        var device = FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Device.Instance();
+        if (device == null) return null;
+
+        float aspectRatio = device->AspectRatio;
+        float fov = sceneCamera.RenderCamera->FoV;
+        float nearPlane = sceneCamera.RenderCamera->NearPlane;
+        float farPlane = sceneCamera.RenderCamera->FarPlane;
+
+        // Reverse-Z perspective projection
+        var proj = CreateReverseZProjection(fov, aspectRatio, nearPlane, farPlane);
+
+        return System.Numerics.Matrix4x4.Multiply(view, proj);
+      } catch {
+        return null;
+      }
+    }
+
+    /// <summary>
+    /// Creates a reverse-Z perspective projection matrix (near=1, far=0).
+    /// </summary>
+    private static System.Numerics.Matrix4x4 CreateReverseZProjection(
+      float fovY, float aspectRatio, float nearPlane, float farPlane) {
+      float yScale = 1.0f / MathF.Tan(fovY * 0.5f);
+      float xScale = yScale / aspectRatio;
+
+      // Standard reverse-Z: maps near to 1.0 and far to 0.0
+      return new System.Numerics.Matrix4x4(
+        xScale, 0, 0, 0,
+        0, yScale, 0, 0,
+        0, 0, nearPlane / (nearPlane - farPlane), 1,
+        0, 0, -(nearPlane * farPlane) / (nearPlane - farPlane), 0
+      );
+    }
+
+    private void OnOpenConfig() {
+      _settingsWindow.Toggle();
+    }
+
+    public void ToggleConfigUi() {
+      _settingsWindow.Toggle();
+    }
+
+    private void OnBrowserPlayRequested(object? sender, MediaCatalogItem item) {
+      if (_disposed || _playerObject == null) return;
+
+      _lastStreamObject = _playerObject;
+
+      // Route through yt-dlp if available, otherwise direct play
+      if (YtDlpManager.IsUrlSupported(item.Url) && _ytDlpManager.IsAvailable()) {
+        PlayViaYtDlp(item.Url, _playerObject);
+      } else if (item.Url.Contains("twitch.tv")) {
+        TuneIntoStream(item.Url, _playerObject, false);
+      } else {
+        TuneIntoStream(item.Url, _playerObject, true);
+      }
+    }
+
+    #endregion
+
+    #region Utilities
+
+    private static string RemoveSpecialSymbols(string value) {
+      return Regex.Replace(value, @"[^a-zA-Z0-9:/._\-]", "");
+    }
+
+    #endregion
+
+    #region IDisposable
+
+    private unsafe void HandleScreenCommand(string[] args) {
+      if (args.Length < 2) {
+        _chat.Print("[Media Player] Screen commands:\n" +
+          " /media screen place — Place screen at your look-at point\n" +
+          " /media screen move <x> <y> <z> — Adjust position\n" +
+          " /media screen rotate <yaw> [pitch] — Set rotation\n" +
+          " /media screen scale <w> <h> — Set size (world units)\n" +
+          " /media screen reset — Return to overlay mode\n" +
+          " /media screen save — Save current placement");
+        return;
+      }
+
+      switch (args[1].ToLower()) {
+        case "place":
+          PlaceScreenAtCamera();
+          break;
+
+        case "move":
+          if (args.Length >= 5 &&
+            float.TryParse(args[2], out float mx) &&
+            float.TryParse(args[3], out float my) &&
+            float.TryParse(args[4], out float mz)) {
+            _worldRenderer.MoveBy(new System.Numerics.Vector3(mx, my, mz));
+            var pos = _worldRenderer.Transform.Position;
+            _chat.Print($"[Media Player] Screen moved to ({pos.X:F1}, {pos.Y:F1}, {pos.Z:F1})");
+          } else {
+            _chat.PrintError("[Media Player] Usage: /media screen move <x> <y> <z>");
+          }
+          break;
+
+        case "rotate":
+          if (args.Length >= 3 && float.TryParse(args[2], out float yaw)) {
+            float pitch = args.Length >= 4 && float.TryParse(args[3], out float p) ? p : 0;
+            _worldRenderer.SetRotation(yaw, pitch);
+            _chat.Print($"[Media Player] Screen rotation: yaw={yaw:F0}° pitch={pitch:F0}°");
+          } else {
+            _chat.PrintError("[Media Player] Usage: /media screen rotate <yaw> [pitch]");
+          }
+          break;
+
+        case "scale":
+          if (args.Length >= 4 &&
+            float.TryParse(args[2], out float sw) &&
+            float.TryParse(args[3], out float sh)) {
+            _worldRenderer.SetScale(sw, sh);
+            _chat.Print($"[Media Player] Screen size: {sw:F1} x {sh:F1} world units");
+          } else {
+            _chat.PrintError("[Media Player] Usage: /media screen scale <width> <height>");
+          }
+          break;
+
+        case "reset":
+          _worldRenderer.Reset();
+          _chat.Print("[Media Player] Screen returned to overlay mode.");
+          break;
+
+        case "save":
+          _config.WorldScreen = _worldRenderer.Transform.Clone();
+          _config.Save();
+          _chat.Print("[Media Player] Screen placement saved.");
+          break;
+
+        default:
+          _chat.PrintError($"[Media Player] Unknown screen command: {args[1]}");
+          break;
+      }
+    }
+
+    private unsafe void PlaceScreenAtCamera() {
+      if (_camera != null) {
+        var camRawPos = _camera->CameraBase.SceneCamera.Object.Position;
+        var camPos = new System.Numerics.Vector3(camRawPos.X, camRawPos.Y, camRawPos.Z);
+        var viewMatrix = _camera->CameraBase.SceneCamera.ViewMatrix;
+        var forward = new System.Numerics.Vector3(viewMatrix.M13, viewMatrix.M23, viewMatrix.M33);
+        var screenPos = camPos - forward * 5.0f;
+        _worldRenderer.PlaceAt(screenPos, camPos);
+        _chat.Print($"[Media Player] Screen placed at ({screenPos.X:F1}, {screenPos.Y:F1}, {screenPos.Z:F1})");
+      } else {
+        _chat.PrintError("[Media Player] Camera not available.");
+      }
+    }
+
+    public void Dispose() {
+      _disposed = true;
+      _videoWindow.MarkDisposed();
+
+      _framework.Update -= OnFrameworkUpdate;
+      _clientState.TerritoryChanged -= OnTerritoryChanged;
+      _clientState.Login -= OnLogin;
+      _clientState.Logout -= OnLogout;
+      _videoWindow.WindowResized -= OnVideoWindowResized;
+      _chat.ChatMessage -= OnChatMessage;
+
+      _pluginInterface.UiBuilder.Draw -= OnDraw;
+      _pluginInterface.UiBuilder.OpenConfigUi -= OnOpenConfig;
+
+      _commandManager.RemoveHandler("/media");
+
+      _worldRenderer?.Dispose();
+      _mediaManager?.Dispose();
+      _windowSystem?.RemoveAllWindows();
+    }
+
+    #endregion
+  }
+}

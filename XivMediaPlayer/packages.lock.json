@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0-windows7.0": {
+      "DalamudPackager": {
+        "type": "Direct",
+        "requested": "[15.0.0, )",
+        "resolved": "15.0.0",
+        "contentHash": "411vwC8/X8Z/sQ2TI6v3SvOn66xFPeOjFn3Zn+h0d3Ox2t1kFm66AhDvmx/qcMwVrR+Hidxj0dadpQ2dgyXMBQ=="
+      },
+      "DotNet.ReproducibleBuilds": {
+        "type": "Direct",
+        "requested": "[1.2.39, )",
+        "resolved": "1.2.39",
+        "contentHash": "fcFN01tDTIQqDuTwr1jUQK/geofiwjG5DycJQOnC72i1SsLAk1ELe+apBOuZ11UMQG8YKFZG1FgvjZPbqHyatg=="
+      },
+      "Vortice.D3DCompiler": {
+        "type": "Direct",
+        "requested": "[3.5.0, )",
+        "resolved": "3.5.0",
+        "contentHash": "zPo545NXqrKbQf0EDK4jKmxe1KS4v9c+04eycFrfsokX/h0sZKkfmqcluXYzUh/F+5dv6kN9kUf7OTRO2mLqqQ==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "Vortice.DirectX": "3.5.0"
+        }
+      },
+      "Vortice.Direct3D11": {
+        "type": "Direct",
+        "requested": "[3.5.0, )",
+        "resolved": "3.5.0",
+        "contentHash": "TUVz5tml5tTlk1UpQgh/0cj74ehmlyzvQeGdVkdQGACth2v2t1d+/f84dqT/Trs/5O2WdIvXfYQe2yxALLR5mQ==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "Vortice.DXGI": "3.5.0"
+        }
+      },
+      "LibVLCSharp": {
+        "type": "Transitive",
+        "resolved": "3.9.0",
+        "contentHash": "wydvN5kotK5y/ZRC04/F6YUqesJCzdixaItRkR8L0/nOLSs2/BJ7rKRbU7BxkxpKIBqlN8EpuXxH/fQEZEHtuw=="
+      },
+      "NAudio": {
+        "type": "Transitive",
+        "resolved": "2.2.1",
+        "contentHash": "c0DzwiyyklM0TP39Y7RObwO3QkWecgM6H60ikiEnsV/aEAJPbj5MFCLaD8BSfKuZe0HGuh9GRGWWlJmSxDc9MA==",
+        "dependencies": {
+          "NAudio.Asio": "2.2.1",
+          "NAudio.Core": "2.2.1",
+          "NAudio.Midi": "2.2.1",
+          "NAudio.Wasapi": "2.2.1",
+          "NAudio.WinForms": "2.2.1",
+          "NAudio.WinMM": "2.2.1"
+        }
+      },
+      "NAudio.Asio": {
+        "type": "Transitive",
+        "resolved": "2.2.1",
+        "contentHash": "hQglyOT5iT3XuGpBP8ZG0+aoqwRfidHjTNehpoWwX0g6KJEgtH2VaqM2nuJ2mheKZa/IBqB4YQTZVvrIapzfOA==",
+        "dependencies": {
+          "NAudio.Core": "2.2.1"
+        }
+      },
+      "NAudio.Core": {
+        "type": "Transitive",
+        "resolved": "2.2.1",
+        "contentHash": "GgkdP6K/7FqXFo7uHvoqGZTJvW4z8g2IffhOO4JHaLzKCdDOUEzVKtveoZkCuUX8eV2HAINqi7VFqlFndrnz/g=="
+      },
+      "NAudio.Midi": {
+        "type": "Transitive",
+        "resolved": "2.2.1",
+        "contentHash": "6r23ylGo5aeP02WFXsPquz0T0hFJWyh+7t++tz19tc3Kr38NHm+Z9j+FiAv+xkH8tZqXJqus9Q8p6u7bidIgbw==",
+        "dependencies": {
+          "NAudio.Core": "2.2.1"
+        }
+      },
+      "NAudio.Wasapi": {
+        "type": "Transitive",
+        "resolved": "2.2.1",
+        "contentHash": "lFfXoqacZZe0WqNChJgGYI+XV/n/61LzPHT3C1CJp4khoxeo2sziyX5wzNYWeCMNbsWxFvT3b3iXeY1UYjBhZw==",
+        "dependencies": {
+          "NAudio.Core": "2.2.1"
+        }
+      },
+      "NAudio.WinForms": {
+        "type": "Transitive",
+        "resolved": "2.2.1",
+        "contentHash": "DlDkewY1myY0A+3NrYRJD+MZhZV0yy1mNF6dckB27IQ9XCs/My5Ip8BZcoSHOsaPSe2GAjvoaDnk6N9w8xTv7w==",
+        "dependencies": {
+          "NAudio.WinMM": "2.2.1"
+        }
+      },
+      "NAudio.WinMM": {
+        "type": "Transitive",
+        "resolved": "2.2.1",
+        "contentHash": "xFHRFwH4x6aq3IxRbewvO33ugJRvZFEOfO62i7uQJRUNW2cnu6BeBTHUS0JD5KBucZbHZaYqxQG8dwZ47ezQuQ==",
+        "dependencies": {
+          "NAudio.Core": "2.2.1"
+        }
+      },
+      "Newtonsoft.Json": {
+        "type": "Transitive",
+        "resolved": "13.0.3",
+        "contentHash": "HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI+gkLcBKAOxix/tLEAAHC+UvDNPv4a2d18lOReHMOagPa+zQ=="
+      },
+      "SharpGen.Runtime": {
+        "type": "Transitive",
+        "resolved": "2.1.2-beta",
+        "contentHash": "nqZAjfEG1jX1ivvdZLsi6Pkt0DiOJyuOgRgldNFsmjXFPhxUbXQibofLSwuDZidL2kkmtTF8qLoRIeqeVdXgYw=="
+      },
+      "SharpGen.Runtime.COM": {
+        "type": "Transitive",
+        "resolved": "2.1.2-beta",
+        "contentHash": "HBCrb6HfnUWx9v5/GjJeBr5DuodZLnHlFQQYXPrQs1Hbe1c6Wd0uCXf+SJp4hW8fQNxjXEu0FgiyHGlA/SRzRw==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta"
+        }
+      },
+      "SixLabors.ImageSharp": {
+        "type": "Transitive",
+        "resolved": "3.1.7",
+        "contentHash": "9fIOOAsyLFid6qKypM2Iy0Z3Q9yoanV8VoYAHtI2sYGMNKzhvRTjgFDHonIiVe+ANtxIxM6SuqUzj0r91nItpA=="
+      },
+      "VideoLAN.LibVLC.Windows": {
+        "type": "Transitive",
+        "resolved": "3.0.18",
+        "contentHash": "A7Fg86aSziadDxB4F8AWN6kHNgEYJqerdPG9SflPM0GDO9m/O2jnc60mfSa52xOh5EC4U62W0y4kdyw+FgB2iQ=="
+      },
+      "Vortice.DirectX": {
+        "type": "Transitive",
+        "resolved": "3.5.0",
+        "contentHash": "LwyojEqRCaYgMoEqKsLnHWJ85wM237wFzZy/w57kvQPDsEd+zcqdwDYswOCEdizcLtDBzX/Xt4bbUPgFi8Kp4w==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "SharpGen.Runtime.COM": "2.1.2-beta",
+          "Vortice.Mathematics": "1.7.8"
+        }
+      },
+      "Vortice.DXGI": {
+        "type": "Transitive",
+        "resolved": "3.5.0",
+        "contentHash": "W1dHY13DbitLJDVAAD8+YiGddqzBP1m3wN3pfEmxYrrE+dGEV/31aaw8EV74GXYnJQZ2vWJCnc7LCFPR2YkBnw==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "Vortice.DirectX": "3.5.0"
+        }
+      },
+      "Vortice.Mathematics": {
+        "type": "Transitive",
+        "resolved": "1.7.8",
+        "contentHash": "hpVlfej54yC6Qaq9AYXWgTgF8SDz2dtKbDNZGO8msjn3NjdkUBnFcIzYfOWyvwvpr3aqZPKh4WSSnJ78GxyIWg=="
+      },
+      "mediaplayercore": {
+        "type": "Project",
+        "dependencies": {
+          "LibVLCSharp": "[3.9.0, )",
+          "NAudio": "[2.2.1, )",
+          "NAudio.Core": "[2.2.1, )",
+          "NAudio.Wasapi": "[2.2.1, )",
+          "NAudio.WinMM": "[2.2.1, )",
+          "Newtonsoft.Json": "[13.0.3, )",
+          "SixLabors.ImageSharp": "[3.1.7, )",
+          "VideoLAN.LibVLC.Windows": "[3.0.18, )"
+        }
+      }
+    }
+  }
+}
