@@ -138,9 +138,8 @@ float4 PS(VS_OUT input) : SV_TARGET {
   // Use the BackBuffer Alpha channel for perfect UI masking!
   float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
   
-  if (bbAlpha > 0.1) {
-    color.a = 0; // Hide video pixels behind UI
-  }
+  // Smoothly blend out the video behind UI drop shadows and gradients
+  color.a *= saturate(1.0 - bbAlpha);
   
   return color;
 }

@@ -800,6 +800,7 @@ namespace XivMediaPlayer {
 
     /// <summary>
     /// Computes the game's combined View * Projection matrix from the active camera.
+    /// Reads both matrices directly from FFXIV to guarantee perfect sync.
     /// </summary>
     private unsafe System.Numerics.Matrix4x4? GetViewProjectionMatrix() {
       if (_camera == null) return null;
@@ -812,37 +813,17 @@ namespace XivMediaPlayer {
           FFXIVClientStructs.FFXIV.Common.Math.Matrix4x4,
           System.Numerics.Matrix4x4>(ref rawView);
 
-        var device = FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Device.Instance();
-        if (device == null) return null;
+        if (sceneCamera.RenderCamera == null) return null;
 
-        float aspectRatio = device->AspectRatio;
-        float fov = sceneCamera.RenderCamera->FoV;
-        float nearPlane = sceneCamera.RenderCamera->NearPlane;
-        float farPlane = sceneCamera.RenderCamera->FarPlane;
-
-        var proj = CreateReverseZProjection(fov, aspectRatio, nearPlane, farPlane);
+        var rawProj = sceneCamera.RenderCamera->ProjectionMatrix;
+        var proj = System.Runtime.CompilerServices.Unsafe.As<
+          FFXIVClientStructs.FFXIV.Common.Math.Matrix4x4,
+          System.Numerics.Matrix4x4>(ref rawProj);
 
         return System.Numerics.Matrix4x4.Multiply(view, proj);
       } catch {
         return null;
       }
-    }
-
-    /// <summary>
-    /// Creates a reverse-Z perspective projection matrix (near=1, far=0).
-    /// </summary>
-    private static System.Numerics.Matrix4x4 CreateReverseZProjection(
-      float fovY, float aspectRatio, float nearPlane, float farPlane) {
-      float yScale = 1.0f / MathF.Tan(fovY * 0.5f);
-      float xScale = yScale / aspectRatio;
-
-      // Standard reverse-Z: maps near to 1.0 and far to 0.0
-      return new System.Numerics.Matrix4x4(
-        xScale, 0, 0, 0,
-        0, yScale, 0, 0,
-        0, 0, nearPlane / (nearPlane - farPlane), 1,
-        0, 0, -(nearPlane * farPlane) / (nearPlane - farPlane), 0
-      );
     }
 
     private void OnOpenConfig() {

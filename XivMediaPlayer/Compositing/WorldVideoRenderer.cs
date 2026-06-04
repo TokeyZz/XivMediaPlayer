@@ -169,9 +169,16 @@ namespace XivMediaPlayer.Compositing {
           return;
         }
 
+        // ImGui/Dalamud coordinates are in desktop-space (viewport.Pos might not be 0,0).
+        // DepthTestedRenderer expects local coordinates (0 to screenW, 0 to screenH).
+        var localTL = sTL - viewport.Pos;
+        var localTR = sTR - viewport.Pos;
+        var localBR = sBR - viewport.Pos;
+        var localBL = sBL - viewport.Pos;
+
         // Per-corner depths interpolated in shader for correct angled-view occlusion
         bool success = _depthRenderer.Render(
-          (sTL, sTR, sBR, sBL),
+          (localTL, localTR, localBR, localBL),
           videoSrvPtr,
           depthCapture.CapturedSRV,
           cornerDepths,

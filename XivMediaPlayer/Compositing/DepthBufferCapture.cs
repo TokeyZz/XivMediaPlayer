@@ -73,31 +73,9 @@ namespace XivMediaPlayer.Compositing {
         System.Runtime.InteropServices.Marshal.AddRef(_context.Device.NativePointer);
         _device = _context.Device;
 
-        // Find the game's depth texture pointer
-        // Use RenderTargetManager.DepthStencil — this is the scene depth buffer
-        // and retains valid data even during the ImGui/Present pass.
-        var rtm = FFXIVClientStructs.FFXIV.Client.Graphics.Render.RenderTargetManager.Instance();
-        if (rtm != null && rtm->DepthStencil != null && rtm->DepthStencil->D3D11Texture2D != null) {
-          _gameDepthTexturePtr = (IntPtr)rtm->DepthStencil->D3D11Texture2D;
-          _debugInfo = $"Using RTM DepthStencil: {_gameDepthTexturePtr:X}";
-        } else {
-          // Fallback to SwapChain depth (may not have scene data)
-          var swapChain = ffxivDevice->SwapChain;
-          if (swapChain != null && swapChain->DepthStencil != null && swapChain->DepthStencil->D3D11Texture2D != null) {
-            _gameDepthTexturePtr = (IntPtr)swapChain->DepthStencil->D3D11Texture2D;
-            _debugInfo = $"Using SwapChain DepthStencil (fallback): {_gameDepthTexturePtr:X}";
-          }
-        }
-
-        if (_gameDepthTexturePtr == IntPtr.Zero) {
-          _debugInfo = "No depth texture found.";
-          return false;
-        }
-
-        // Do initial depth copy to set up textures
-        var depthTexture = new ID3D11Texture2D(_gameDepthTexturePtr);
-        CopyDepthBuffer(depthTexture);
-
+        // We now fetch the DepthStencil pointer dynamically every frame in BeginFrame()
+        // to prevent access violations when the user resizes the window and the
+        // SwapChain/RTM destroys the old texture.
         _initialized = true;
         return true;
       } catch (Exception ex) {
@@ -183,17 +161,31 @@ namespace XivMediaPlayer.Compositing {
     }
 
     /// <summary>
-    /// Call each frame to copy the latest depth data from the game.
+    /// Call at the very start of OnDraw. Copies the game's depth buffer.
     /// </summary>
     public void BeginFrame() {
-      if (_disposed || _gameDepthTexturePtr == IntPtr.Zero) return;
+      if (!_initialized || _disposed) return;
 
       try {
-        var depthTexture = new ID3D11Texture2D(_gameDepthTexturePtr);
+        var rtm = FFXIVClientStructs.FFXIV.Client.Graphics.Render.RenderTargetManager.Instance();
+        if (rtm != null && rtm->DepthStencil != null && rtm->DepthStencil->D3D11Texture2D != null) {
+          _gameDepthTexturePtr = (IntPtr)rtm->DepthStencil->D3D11Texture2D;
+        } else {
+          var ffxivDevice = Device.Instance();
+          if (ffxivDevice != null && ffxivDevice->SwapChain != null && ffxivDevice->SwapChain->DepthStencil != null && ffxivDevice->SwapChain->DepthStencil->D3D11Texture2D != null) {
+            _gameDepthTexturePtr = (IntPtr)ffxivDevice->SwapChain->DepthStencil->D3D11Texture2D;
+          } else {
+            _gameDepthTexturePtr = IntPtr.Zero;
+          }
+        }
+
+        if (_gameDepthTexturePtr == IntPtr.Zero) return;
+
+        using var depthTexture = new ID3D11Texture2D(_gameDepthTexturePtr);
         CopyDepthBuffer(depthTexture);
         ReadDepthToArray();
       } catch {
-        // ignore — texture may become invalid during shutdown
+        // ignore — texture may become invalid during shutdown or resize
       }
     }
 
