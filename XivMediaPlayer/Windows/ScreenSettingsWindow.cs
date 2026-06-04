@@ -169,6 +169,18 @@ namespace XivMediaPlayer.Windows {
       // Info 
       ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f),
         $"Screen: {_scale.X:F1}m x {_scale.Y:F1}m at ({_position.X:F1}, {_position.Y:F1}, {_position.Z:F1})");
+
+      var depthDebug = _renderer.DepthDebugInfo;
+      if (!string.IsNullOrEmpty(depthDebug)) {
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Depth Debug");
+        ImGui.TextWrapped(depthDebug);
+      }
+      var rendererError = _renderer.DepthRendererError;
+      if (!string.IsNullOrEmpty(rendererError)) {
+        ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), $"GPU Error: {rendererError}");
+      }
     }
 
     /// <summary>

@@ -251,18 +251,25 @@ namespace XivMediaPlayer.Compositing {
     }
 
     /// <summary>
+    /// Screen quad corners in screen space, for depth preview overlay.
+    /// </summary>
+    public (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl)? ScreenQuadCorners { get; set; }
+
+    /// <summary>
+    /// Per-corner depth thresholds for the screen quad.
+    /// </summary>
+    public Vector4? ScreenQuadDepths { get; set; }
+
+    /// <summary>
     /// Generate the preview image from the captured depth copy.
-    /// Call this during ImGui draw when the preview window is open.
     /// </summary>
     public void GeneratePreview() {
       if (_disposed || _depthCopy == null || _stagingTexture == null) return;
 
       try {
-        // Copy depth to staging for CPU read
         _context.CopyResource(_stagingTexture, _depthCopy);
         var mapped = _context.Map(_stagingTexture, 0, MapMode.Read);
         try {
-          // Downscale to reasonable preview size
           int captureW = Math.Min(480, _texWidth);
           int captureH = Math.Min(270, _texHeight);
           int stepX = _texWidth / captureW;
@@ -276,11 +283,8 @@ namespace XivMediaPlayer.Compositing {
 
           float minDepth = float.MaxValue, maxDepth = float.MinValue;
           int nonZeroCount = 0;
-          
-          // Temp buffer for raw depth values
           var depthValues = new float[captureW * captureH];
 
-          // First pass: read depth values and find range
           for (int y = 0; y < captureH; y++) {
             for (int x = 0; x < captureW; x++) {
               int srcX = x * stepX;
@@ -313,15 +317,64 @@ namespace XivMediaPlayer.Compositing {
             }
           }
 
-          // Second pass: map depth to grayscale with auto-contrast
-          // Closer objects = brighter (inverted)
+          // Precompute screen quad overlay
+          bool hasQuad = ScreenQuadCorners.HasValue && ScreenQuadDepths.HasValue;
+          Vector2 qTL = default, qTR = default, qBR = default, qBL = default;
+          Vector4 qDepths = default;
+          if (hasQuad) {
+            var corners = ScreenQuadCorners.Value;
+            qDepths = ScreenQuadDepths.Value;
+            float sx = (float)captureW / _texWidth;
+            float sy = (float)captureH / _texHeight;
+            qTL = corners.tl * new Vector2(sx, sy);
+            qTR = corners.tr * new Vector2(sx, sy);
+            qBR = corners.br * new Vector2(sx, sy);
+            qBL = corners.bl * new Vector2(sx, sy);
+          }
+
           float range = maxDepth - minDepth;
           if (range < 0.0001f) range = 1f;
 
           for (int i = 0; i < captureW * captureH; i++) {
+            int px = i % captureW;
+            int py = i / captureW;
             float normalized = (depthValues[i] - minDepth) / range;
             byte val = (byte)(Math.Clamp(1f - normalized, 0f, 1f) * 255f);
             int idx = i * 4;
+
+            if (hasQuad) {
+              var p = new Vector2(px, py);
+              if (InverseBilerp(p, qTL, qTR, qBR, qBL, out float u, out float v)
+                  && u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+                float dTop = qDepths.X + (qDepths.Y - qDepths.X) * u;
+                float dBot = qDepths.W + (qDepths.Z - qDepths.W) * u;
+                float threshold = dTop + (dBot - dTop) * v;
+
+                bool isEdge = u < 0.02f || u > 0.98f || v < 0.02f || v > 0.98f;
+                if (isEdge) {
+                  _lastRgbaData[idx + 0] = 255;
+                  _lastRgbaData[idx + 1] = 255;
+                  _lastRgbaData[idx + 2] = 0;
+                  _lastRgbaData[idx + 3] = 255;
+                  continue;
+                }
+
+                bool occluded = depthValues[i] > threshold;
+                if (occluded) {
+                  _lastRgbaData[idx + 0] = (byte)Math.Min(255, val / 2 + 128);
+                  _lastRgbaData[idx + 1] = (byte)(val / 3);
+                  _lastRgbaData[idx + 2] = (byte)(val / 3);
+                  _lastRgbaData[idx + 3] = 255;
+                } else {
+                  _lastRgbaData[idx + 0] = (byte)(val / 3);
+                  _lastRgbaData[idx + 1] = (byte)Math.Min(255, val / 2 + 80);
+                  _lastRgbaData[idx + 2] = (byte)(val / 3);
+                  _lastRgbaData[idx + 3] = 255;
+                }
+                continue;
+              }
+            }
+
             _lastRgbaData[idx + 0] = val;
             _lastRgbaData[idx + 1] = val;
             _lastRgbaData[idx + 2] = val;
@@ -337,6 +390,41 @@ namespace XivMediaPlayer.Compositing {
         _debugInfo = $"Preview error: {ex.Message}";
       }
     }
+
+    private static bool InverseBilerp(Vector2 p, Vector2 a, Vector2 b, Vector2 c, Vector2 d,
+      out float u, out float v) {
+      u = v = -1;
+      var e = b - a;
+      var f = d - a;
+      var g = a - b + c - d;
+      var h = p - a;
+
+      float k2 = Cross2D(g, f);
+      float k1 = Cross2D(e, f) + Cross2D(h, g);
+      float k0 = Cross2D(h, e);
+
+      if (MathF.Abs(k2) < 0.0001f) {
+        if (MathF.Abs(k1) < 0.0001f) return false;
+        v = -k0 / k1;
+      } else {
+        float disc = k1 * k1 - 4f * k0 * k2;
+        if (disc < 0) return false;
+        disc = MathF.Sqrt(disc);
+        float v0 = (-k1 - disc) / (2f * k2);
+        float v1 = (-k1 + disc) / (2f * k2);
+        v = (v0 >= -0.01f && v0 <= 1.01f) ? v0 : v1;
+      }
+
+      var denom = e + v * g;
+      if (MathF.Abs(denom.X) > MathF.Abs(denom.Y))
+        u = (h.X - v * f.X) / denom.X;
+      else
+        u = (h.Y - v * f.Y) / denom.Y;
+
+      return true;
+    }
+
+    private static float Cross2D(Vector2 a, Vector2 b) => a.X * b.Y - a.Y * b.X;
 
     public void Dispose() {
       if (_disposed) return;

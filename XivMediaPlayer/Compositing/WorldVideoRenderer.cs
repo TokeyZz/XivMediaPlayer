@@ -69,35 +69,44 @@ namespace XivMediaPlayer.Compositing {
     public void Render(IDalamudTextureWrap textureWrap,
       DepthBufferCapture depthCapture = null,
       Vector3? cameraPos = null,
+      Vector3? cameraForward = null,
       float nearPlane = 0.1f, float farPlane = 10000f) {
       if (_disposed || !IsActive || textureWrap == null) return;
 
-      if (_useDepthOcclusion && depthCapture != null && cameraPos.HasValue) {
-        RenderWithOcclusion(textureWrap, depthCapture, cameraPos.Value, nearPlane, farPlane);
+      if (_useDepthOcclusion && depthCapture != null && cameraPos.HasValue && cameraForward.HasValue) {
+        RenderWithOcclusion(textureWrap, depthCapture, cameraPos.Value,
+          cameraForward.Value, nearPlane, farPlane);
       } else {
         RenderScreenSpace(textureWrap);
       }
     }
 
     /// <summary>
-    /// GPU-accelerated per-pixel depth occlusion. Uses the same methodology as the
-    /// old CPU grid (WorldToScreen corners + reverse-Z depth threshold) but runs
-    /// the depth comparison per-pixel on the GPU instead of per-cell on the CPU.
+    /// Debug info: per-corner depth thresholds and sampled game depths at corners.
+    /// </summary>
+    public string DepthDebugInfo { get; private set; }
+
+    /// <summary>
+    /// GPU-accelerated per-pixel depth occlusion. Uses WorldToScreen for positioning
+    /// and view-space Z (dot with camera forward) for depth thresholds.
     /// </summary>
     private void RenderWithOcclusion(IDalamudTextureWrap textureWrap, DepthBufferCapture depthCapture,
-      Vector3 cameraPos, float nearPlane, float farPlane) {
+      Vector3 cameraPos, Vector3 cameraForward, float nearPlane, float farPlane) {
       var (tl, tr, br, bl) = _transform.Corners;
 
-      // Same projection as before — WorldToScreen is the source of truth
+      // WorldToScreen is the source of truth for screen positions
       WorldToScreenClamped(tl, out var sTL, out _);
       WorldToScreenClamped(tr, out var sTR, out _);
       WorldToScreenClamped(br, out var sBR, out _);
       WorldToScreenClamped(bl, out var sBL, out _);
 
-      // Compute per-corner depths for accurate angled-view occlusion
+      // Compute per-corner depth using view-space Z (distance along camera forward)
+      // This matches what the depth buffer stores, unlike Euclidean distance
+      // Note: FFXIV view matrix Z-axis points AWAY from look direction, so negate
       float ComputeDepth(Vector3 corner) {
-        float dist = Vector3.Distance(cameraPos, corner);
-        float d = nearPlane * (farPlane - dist) / (dist * (farPlane - nearPlane));
+        float viewZ = Vector3.Dot(corner - cameraPos, -cameraForward);
+        if (viewZ <= 0) return 0f;
+        float d = nearPlane * (farPlane - viewZ) / (viewZ * (farPlane - nearPlane));
         return Math.Clamp(d, 0f, 1f);
       }
       float depthTL = ComputeDepth(tl);
@@ -106,7 +115,20 @@ namespace XivMediaPlayer.Compositing {
       float depthBL = ComputeDepth(bl);
       var cornerDepths = new Vector4(depthTL, depthTR, depthBR, depthBL);
 
-      // Use center depth for glow visibility (still cheap 8x8 CPU sample)
+      // Sample game depth at corners for debug
+      float gameTL = depthCapture.GetDepthAt((int)sTL.X, (int)sTL.Y);
+      float gameTR = depthCapture.GetDepthAt((int)sTR.X, (int)sTR.Y);
+      float gameBR = depthCapture.GetDepthAt((int)sBR.X, (int)sBR.Y);
+      float gameBL = depthCapture.GetDepthAt((int)sBL.X, (int)sBL.Y);
+      DepthDebugInfo = $"Threshold: TL={depthTL:F6} TR={depthTR:F6} BR={depthBR:F6} BL={depthBL:F6}\n" +
+                        $"GameDepth: TL={gameTL:F6} TR={gameTR:F6} BR={gameBR:F6} BL={gameBL:F6}\n" +
+                        $"Occluded?: TL={gameTL > depthTL} TR={gameTR > depthTR} BR={gameBR > depthBR} BL={gameBL > depthBL}";
+
+      // Feed screen quad info to depth capture for preview overlay
+      depthCapture.ScreenQuadCorners = (sTL, sTR, sBR, sBL);
+      depthCapture.ScreenQuadDepths = cornerDepths;
+
+      // Average depth for glow visibility
       float centerDepth = (depthTL + depthTR + depthBR + depthBL) * 0.25f;
 
       var drawList = ImGui.GetBackgroundDrawList();

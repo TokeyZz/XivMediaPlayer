@@ -764,6 +764,7 @@ namespace XivMediaPlayer {
         if (textureWrap != null) {
           // Get camera info for depth occlusion
           System.Numerics.Vector3? cameraPos = null;
+          System.Numerics.Vector3? cameraForward = null;
           float nearPlane = 0.1f, farPlane = 10000f;
 
           if (_worldRenderer.UseDepthOcclusion && _camera != null) {
@@ -773,10 +774,18 @@ namespace XivMediaPlayer {
               cameraPos = new System.Numerics.Vector3(camPos.X, camPos.Y, camPos.Z);
               nearPlane = sceneCamera.RenderCamera->NearPlane;
               farPlane = sceneCamera.RenderCamera->FarPlane;
+
+              // Extract camera forward from view matrix (3rd column = forward in view space)
+              var rawView = sceneCamera.ViewMatrix;
+              var view = System.Runtime.CompilerServices.Unsafe.As<
+                FFXIVClientStructs.FFXIV.Common.Math.Matrix4x4,
+                System.Numerics.Matrix4x4>(ref rawView);
+              cameraForward = System.Numerics.Vector3.Normalize(
+                new System.Numerics.Vector3(view.M13, view.M23, view.M33));
             } catch { }
           }
 
-          _worldRenderer.Render(textureWrap, _depthCapture, cameraPos, nearPlane, farPlane);
+          _worldRenderer.Render(textureWrap, _depthCapture, cameraPos, cameraForward, nearPlane, farPlane);
         }
       }
     }
