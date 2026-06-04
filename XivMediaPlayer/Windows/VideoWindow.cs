@@ -31,6 +31,7 @@ namespace XivMediaPlayer.Windows {
     private bool _wasNotOpen;
     Stopwatch eventTriggerCooldown = new Stopwatch();
     private IDalamudTextureWrap _frameToLoad;
+    private IDalamudTextureWrap _blackFrame;
     private byte[] _lastLoadedFrame;
     private bool taskAlreadyRunning;
     private bool _disposed;
@@ -46,9 +47,65 @@ namespace XivMediaPlayer.Windows {
       Position = new Vector2(0, 0);
       PositionCondition = ImGuiCond.Once;
       eventTriggerCooldown.Start();
+      CreateBlackFrame();
     }
 
     public MediaManager MediaManager { get => _mediaManager; set => _mediaManager = value; }
+
+    /// <summary>
+    /// Decodes the latest VLC frame into a texture.
+    /// Called every frame from Plugin.OnDraw(), regardless of window visibility,
+    /// so the world renderer can get fresh frames even when the ImGui window is closed.
+    /// </summary>
+    public void UpdateFrame() {
+      if (_disposed || _mediaManager == null) return;
+      if (_mediaManager.LastFrame == null || _mediaManager.LastFrame.Length == 0) {
+        if (wasStreaming) {
+          if (!deadStreamTimer.IsRunning) {
+            deadStreamTimer.Start();
+          }
+          if (deadStreamTimer.ElapsedMilliseconds > 10000) {
+            deadStreamTimer.Stop();
+            deadStreamTimer.Reset();
+            IsOpen = false;
+            wasStreaming = false;
+          }
+        }
+        return;
+      }
+
+      // We have frame data — decode it into a texture
+      wasStreaming = true;
+      if (deadStreamTimer.IsRunning) {
+        deadStreamTimer.Stop();
+        deadStreamTimer.Reset();
+      }
+
+      try {
+        if (!taskAlreadyRunning) {
+          _ = Task.Run(async () => {
+            taskAlreadyRunning = true;
+            ReadOnlyMemory<byte> bytes = new byte[0];
+            lock (_mediaManager.LastFrame) {
+              bytes = _mediaManager.LastFrame;
+            }
+
+            if (bytes.Length > 0) {
+              if (_lastLoadedFrame != _mediaManager.LastFrame) {
+                var newTexture = await _textureProvider.CreateFromImageAsync(bytes);
+                var oldTexture = _frameToLoad;
+                _frameToLoad = newTexture;
+                _lastLoadedFrame = _mediaManager.LastFrame;
+                oldTexture?.Dispose();
+              }
+            }
+            taskAlreadyRunning = false;
+          });
+        }
+      } catch (Exception e) {
+        _pluginLog.Warning(e, e.Message);
+      }
+    }
 
     public override async void Draw() {
       bool betweenAreas = false;
@@ -58,50 +115,8 @@ namespace XivMediaPlayer.Windows {
       if (IsOpen && betweenAreas && !_disposed) {
         Size = new Vector2(ImGui.GetWindowSize().X, ImGui.GetWindowSize().X * 0.5625f);
         SizeConstraints = new WindowSizeConstraints() { MaximumSize = ImGui.GetMainViewport().Size, MinimumSize = new Vector2(360, 480) };
-        if (_mediaManager != null && _mediaManager.LastFrame != null && _mediaManager.LastFrame.Length > 0) {
-          try {
-            if (!taskAlreadyRunning) {
-              _ = Task.Run(async () => {
-                taskAlreadyRunning = true;
-                ReadOnlyMemory<byte> bytes = new byte[0];
-                lock (_mediaManager.LastFrame) {
-                  bytes = _mediaManager.LastFrame;
-                }
-
-                if (bytes.Length > 0) {
-                  if (_lastLoadedFrame != _mediaManager.LastFrame) {
-                    _frameToLoad = await _textureProvider.CreateFromImageAsync(bytes);
-                    _lastLoadedFrame = _mediaManager.LastFrame;
-                  }
-                }
-                taskAlreadyRunning = false;
-              });
-            }
-            if (_frameToLoad != null) {
-              ImGui.Image(_frameToLoad.Handle, new Vector2(Size.Value.X, Size.Value.X * 0.5625f));
-            }
-          } catch (Exception e) {
-            _pluginLog.Warning(e, e.Message);
-          }
-          if (deadStreamTimer.IsRunning) {
-            deadStreamTimer.Stop();
-            deadStreamTimer.Reset();
-          }
-          wasStreaming = true;
-        } else {
-          if (wasStreaming) {
-            if (!deadStreamTimer.IsRunning) {
-              deadStreamTimer.Start();
-            }
-            if (deadStreamTimer.ElapsedMilliseconds > 10000) {
-              fpsCount = countedFrames + "";
-              countedFrames = 0;
-              deadStreamTimer.Stop();
-              deadStreamTimer.Reset();
-              IsOpen = false;
-              wasStreaming = false;
-            }
-          }
+        if (_frameToLoad != null) {
+          ImGui.Image(_frameToLoad.Handle, new Vector2(Size.Value.X, Size.Value.X * 0.5625f));
         }
         if (eventTriggerCooldown.ElapsedMilliseconds > 10000) {
           CheckWindowSize(true);
@@ -143,14 +158,35 @@ namespace XivMediaPlayer.Windows {
 
     public void MarkDisposed() {
       _disposed = true;
+      _frameToLoad?.Dispose();
+      _frameToLoad = null;
+      _blackFrame?.Dispose();
+      _blackFrame = null;
     }
 
     /// <summary>
     /// Returns the current video frame texture wrap,
-    /// for use by the world-space renderer.
+    /// or a black 16:9 placeholder if no video is playing.
     /// </summary>
     public IDalamudTextureWrap? GetCurrentTextureWrap() {
-      return _frameToLoad;
+      return _frameToLoad ?? _blackFrame;
+    }
+
+    /// <summary>
+    /// Creates a small black 16:9 texture as a placeholder.
+    /// </summary>
+    private void CreateBlackFrame() {
+      try {
+        int w = 16, h = 9;
+        var pixels = new byte[w * h * 4];
+        for (int i = 0; i < w * h; i++) {
+          pixels[i * 4 + 3] = 255;
+        }
+        _blackFrame = _textureProvider.CreateFromRaw(
+          new Dalamud.Interface.Textures.RawImageSpecification(w, h, 28), pixels);
+      } catch (Exception e) {
+        _pluginLog.Warning(e, "[Media Player] Failed to create black placeholder texture.");
+      }
     }
 
     /// <summary>

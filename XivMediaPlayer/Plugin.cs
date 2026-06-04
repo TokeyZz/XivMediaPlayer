@@ -653,6 +653,10 @@ namespace XivMediaPlayer {
     #region UI
 
     private unsafe void OnDraw() {
+      // Decode frames every tick, even if the video window is closed,
+      // so the world-space renderer always has fresh textures.
+      _videoWindow.UpdateFrame();
+
       _windowSystem.Draw();
 
       // World-space video rendering
