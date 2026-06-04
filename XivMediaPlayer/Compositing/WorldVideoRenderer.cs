@@ -108,7 +108,9 @@ namespace XivMediaPlayer.Compositing {
 
       // Draw backlit glow layers behind the video
       if (_enableGlow) {
-        RenderGlow(drawList, textureWrap, sTL, sTR, sBR, sBL);
+        // Compute screen visibility for glow attenuation
+        float visibility = ComputeVisibility(depthCapture, sTL, sTR, sBR, sBL, threshold);
+        RenderGlow(drawList, textureWrap, sTL, sTR, sBR, sBL, visibility);
       }
 
       const int gridSize = 512;
@@ -195,7 +197,7 @@ namespace XivMediaPlayer.Compositing {
 
       // Draw backlit glow layers behind the video
       if (_enableGlow) {
-        RenderGlow(drawList, textureWrap, sTL, sTR, sBR, sBL);
+        RenderGlow(drawList, textureWrap, sTL, sTR, sBR, sBL, 1f); // no occlusion = full glow
       }
 
       drawList.AddImageQuad(
@@ -211,7 +213,9 @@ namespace XivMediaPlayer.Compositing {
     /// Uses the video texture itself so the glow color naturally matches the content.
     /// </summary>
     private void RenderGlow(ImDrawListPtr drawList, IDalamudTextureWrap textureWrap,
-      Vector2 sTL, Vector2 sTR, Vector2 sBR, Vector2 sBL) {
+      Vector2 sTL, Vector2 sTR, Vector2 sBR, Vector2 sBL, float visibility) {
+      if (visibility <= 0.01f) return; // fully occluded — no glow
+
       // Lazy-init the GPU glow renderer
       if (_glowRenderer == null) {
         _glowRenderer = new GlowRenderer();
@@ -235,12 +239,43 @@ namespace XivMediaPlayer.Compositing {
       var gBR = center + (sBR - center) * scale;
       var gBL = center + (sBL - center) * scale;
 
+      // Soften visibility: glow ranges from 50% (fully occluded) to 100% (fully visible)
+      // This simulates light bleeding around/through occluding objects
+      float glowStrength = 0.5f + visibility * 0.5f;
+      byte alpha = (byte)(144 * glowStrength); // base ~56% scaled by softened visibility
+      uint color = (uint)(alpha << 24) | 0x00FFFFFF;
+
       drawList.AddImageQuad(
         glowId,
         gTL, gTR, gBR, gBL,
         new Vector2(0, 0), new Vector2(1, 0),
         new Vector2(1, 1), new Vector2(0, 1),
-        0x90FFFFFF); // ~56% alpha
+        color);
+    }
+
+    /// <summary>
+    /// Samples a sparse grid across the screen quad area to determine
+    /// what fraction of the screen is visible (not occluded by depth).
+    /// </summary>
+    private float ComputeVisibility(DepthBufferCapture depthCapture,
+      Vector2 sTL, Vector2 sTR, Vector2 sBR, Vector2 sBL, float threshold) {
+      const int sampleGrid = 8; // 8x8 = 64 samples (cheap)
+      int passing = 0;
+      int total = 0;
+
+      for (int sy = 0; sy < sampleGrid; sy++) {
+        for (int sx = 0; sx < sampleGrid; sx++) {
+          float u = (sx + 0.5f) / sampleGrid;
+          float v = (sy + 0.5f) / sampleGrid;
+          var pos = Bilerp(sTL, sTR, sBL, sBR, u, v);
+
+          float depth = depthCapture.GetDepthAt((int)pos.X, (int)pos.Y);
+          if (depth <= threshold) passing++; // not occluded
+          total++;
+        }
+      }
+
+      return total > 0 ? passing / (float)total : 1f;
     }
 
     private bool WorldToScreen(Vector3 worldPos, out Vector2 screenPos) {
