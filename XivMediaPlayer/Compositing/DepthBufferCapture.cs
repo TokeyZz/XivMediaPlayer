@@ -32,6 +32,12 @@ namespace XivMediaPlayer.Compositing {
 
     // Per-frame depth array for occlusion queries
     private float[] _depthData;
+    private bool _readDepthEnabled;
+
+    /// <summary>
+    /// Enable/disable per-frame CPU depth readback. Only enable when occlusion is active.
+    /// </summary>
+    public bool ReadDepthEnabled { get => _readDepthEnabled; set => _readDepthEnabled = value; }
 
     public string DebugInfo => _debugInfo;
     public byte[] LastRgbaData => _lastRgbaData;
@@ -191,9 +197,11 @@ namespace XivMediaPlayer.Compositing {
 
     /// <summary>
     /// Reads depth buffer from staging texture into a cached float array.
+    /// Uses unsafe pointer access for performance (2M pixels per frame).
     /// </summary>
     private void ReadDepthToArray() {
       if (_depthCopy == null || _stagingTexture == null || _context == null) return;
+      if (!_readDepthEnabled) return;
 
       try {
         _context.CopyResource(_stagingTexture, _depthCopy);
@@ -203,24 +211,24 @@ namespace XivMediaPlayer.Compositing {
             _depthData = new float[_texWidth * _texHeight];
           }
 
+          bool isD24 = _texFormat == Format.R24G8_Typeless || _texFormat == Format.D24_UNorm_S8_UInt;
+          const float inv24 = 1.0f / 0x00FFFFFF;
+
           for (int y = 0; y < _texHeight; y++) {
-            IntPtr rowPtr = mapped.DataPointer + y * (int)mapped.RowPitch;
-            for (int x = 0; x < _texWidth; x++) {
-              float depth = 0;
-              switch (_texFormat) {
-                case Format.R24G8_Typeless:
-                case Format.D24_UNorm_S8_UInt: {
-                    uint raw = (uint)Marshal.PtrToStructure<int>(rowPtr + x * 4);
-                    depth = (raw & 0x00FFFFFF) / (float)0x00FFFFFF;
-                    break;
-                  }
-                case Format.R32_Typeless:
-                case Format.D32_Float:
-                case Format.R32_Float:
-                  depth = Marshal.PtrToStructure<float>(rowPtr + x * 4);
-                  break;
+            byte* rowPtr = (byte*)mapped.DataPointer + y * (int)mapped.RowPitch;
+            uint* row32 = (uint*)rowPtr;
+            int offset = y * _texWidth;
+
+            if (isD24) {
+              for (int x = 0; x < _texWidth; x++) {
+                _depthData[offset + x] = (row32[x] & 0x00FFFFFF) * inv24;
               }
-              _depthData[y * _texWidth + x] = depth;
+            } else {
+              // D32_Float / R32_Float
+              float* rowF = (float*)rowPtr;
+              for (int x = 0; x < _texWidth; x++) {
+                _depthData[offset + x] = rowF[x];
+              }
             }
           }
         } finally {

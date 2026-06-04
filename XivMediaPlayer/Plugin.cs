@@ -676,16 +676,27 @@ namespace XivMediaPlayer {
 
       // World-space video rendering
       if (_worldRenderer?.IsActive == true) {
+        // Only read depth to CPU when occlusion is on
+        if (_depthCapture != null)
+          _depthCapture.ReadDepthEnabled = _worldRenderer.UseDepthOcclusion;
+
         var textureWrap = _videoWindow.GetCurrentTextureWrap();
         if (textureWrap != null) {
-          System.Numerics.Matrix4x4? vpMatrix = null;
+          // Get camera info for depth occlusion
+          System.Numerics.Vector3? cameraPos = null;
+          float nearPlane = 0.1f, farPlane = 10000f;
 
-          // Build VP matrix for depth-tested rendering
           if (_worldRenderer.UseDepthOcclusion && _camera != null) {
-            vpMatrix = GetViewProjectionMatrix();
+            try {
+              var sceneCamera = _camera->CameraBase.SceneCamera;
+              var camPos = sceneCamera.Object.Position;
+              cameraPos = new System.Numerics.Vector3(camPos.X, camPos.Y, camPos.Z);
+              nearPlane = sceneCamera.RenderCamera->NearPlane;
+              farPlane = sceneCamera.RenderCamera->FarPlane;
+            } catch { }
           }
 
-          _worldRenderer.Render(textureWrap, vpMatrix, _depthCapture);
+          _worldRenderer.Render(textureWrap, _depthCapture, cameraPos, nearPlane, farPlane);
         }
       }
     }

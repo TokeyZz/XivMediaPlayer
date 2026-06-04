@@ -58,12 +58,14 @@ namespace XivMediaPlayer.Compositing {
     /// <summary>
     /// Renders the video texture as a 3D quad in world space.
     /// </summary>
-    public void Render(IDalamudTextureWrap textureWrap, Matrix4x4? viewProjection = null,
-      DepthBufferCapture depthCapture = null) {
+    public void Render(IDalamudTextureWrap textureWrap,
+      DepthBufferCapture depthCapture = null,
+      Vector3? cameraPos = null,
+      float nearPlane = 0.1f, float farPlane = 10000f) {
       if (_disposed || !IsActive || textureWrap == null) return;
 
-      if (_useDepthOcclusion && depthCapture != null) {
-        RenderWithOcclusion(textureWrap, depthCapture);
+      if (_useDepthOcclusion && depthCapture != null && cameraPos.HasValue) {
+        RenderWithOcclusion(textureWrap, depthCapture, cameraPos.Value, nearPlane, farPlane);
       } else {
         RenderScreenSpace(textureWrap);
       }
@@ -72,7 +74,8 @@ namespace XivMediaPlayer.Compositing {
     /// <summary>
     /// Renders as a tessellated ImGui grid with per-vertex alpha from depth buffer.
     /// </summary>
-    private void RenderWithOcclusion(IDalamudTextureWrap textureWrap, DepthBufferCapture depthCapture) {
+    private void RenderWithOcclusion(IDalamudTextureWrap textureWrap, DepthBufferCapture depthCapture,
+      Vector3 cameraPos, float nearPlane, float farPlane) {
       var (tl, tr, br, bl) = _transform.Corners;
 
       // Project all 4 corners to screen space
@@ -83,18 +86,17 @@ namespace XivMediaPlayer.Compositing {
         return;
       }
 
-      // Determine reference depth: sample depth at corners and use the minimum
-      // (in reverse-Z, smaller = further away = the quad's expected depth plane).
-      // We take the min because corners least likely to be occluded represent the quad's true depth.
-      float d0 = depthCapture.GetDepthAt((int)sTL.X, (int)sTL.Y);
-      float d1 = depthCapture.GetDepthAt((int)sTR.X, (int)sTR.Y);
-      float d2 = depthCapture.GetDepthAt((int)sBR.X, (int)sBR.Y);
-      float d3 = depthCapture.GetDepthAt((int)sBL.X, (int)sBL.Y);
+      // Compute the quad's actual depth from camera distance
+      var quadCenter = (tl + tr + br + bl) * 0.25f;
+      float distance = Vector3.Distance(cameraPos, quadCenter);
 
-      // Use the minimum as the quad's depth reference (reverse-Z: lower = further)
-      float quadDepth = MathF.Min(MathF.Min(d0, d1), MathF.Min(d2, d3));
-      // Add a small tolerance
-      float threshold = quadDepth + 0.001f;
+      // Reverse-Z depth formula: near maps to 1.0, far maps to 0.0
+      // depth = near * (far - distance) / (distance * (far - near))
+      float quadDepth = nearPlane * (farPlane - distance) / (distance * (farPlane - nearPlane));
+      quadDepth = Math.Clamp(quadDepth, 0f, 1f);
+
+      // Threshold: anything with higher depth (closer in reverse-Z) occludes the quad
+      float threshold = quadDepth;
 
       const int gridSize = 512;
       var drawList = ImGui.GetBackgroundDrawList();
