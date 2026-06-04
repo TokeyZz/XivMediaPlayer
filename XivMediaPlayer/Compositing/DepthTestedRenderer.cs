@@ -52,7 +52,7 @@ namespace XivMediaPlayer.Compositing {
       public float IsPlaying;
       public float DynamicMinDepth;
       public float DynamicMaxDepth;
-      public float _pad2;
+      public float HasBackBuffer;
       public float _pad3;
     }
 
@@ -71,6 +71,7 @@ cbuffer Constants : register(b0) {
   float IsPlaying;
   float DynamicMinDepth;
   float DynamicMaxDepth;
+  float HasBackBuffer;
 };
 
 Texture2D VideoTexture : register(t0);
@@ -172,23 +173,63 @@ float4 PS(VS_OUT input) : SV_TARGET {
       
       if (gameDepth < 0.0001) depthMask = 0; // Ignore skybox
       
+       // Fade out the backlight for objects IN FRONT of the TV (like the player)
+       float tvDepth = (CornerDepths.x + CornerDepths.y + CornerDepths.z + CornerDepths.w) * 0.25;
+       if (gameDepth > tvDepth + 0.001) { // FFXIV uses reversed-Z, so > means closer to camera
+           // The player is in front of the TV. They should receive ZERO backlight!
+           depthMask = 0.0;
+       }
+      
+      // Physical light dissipation!
+      // Light loses energy over distance. If we don't fade it, it casts infinitely across the whole room (fog).
+      // Calculate distance from the TV (where uv is 0..1):
+      float2 distUV = max(float2(0, 0), max(float2(0, 0) - uv, uv - float2(1, 1)));
+      float dist = length(distUV);
+      
+      // Smoothly fade out the light as it travels away from the screen
+      float distanceFade = saturate(1.0 - dist * 0.4); // Adjust multiplier to change how far the light reaches
+      depthMask *= pow(distanceFade, 2.5); // Non-linear falloff for realism
+      
       if (depthMask > 0.001) {
-          // Calculate the most prominent color by averaging 5 points across the screen
+          // We replace the 9-point sample with a massive 144-point (12x12 grid) average!
+          // Because all screen pixels read the exact same UVs, this is a 100% texture cache hit
+          // and costs almost zero performance, but it creates an incredibly stable color.
+          // This completely eliminates the epilepsy flicker caused by moving objects!
           float3 prominentColor = float3(0, 0, 0);
-          prominentColor += VideoTexture.Sample(VideoSampler, float2(0.25, 0.25)).rgb;
-          prominentColor += VideoTexture.Sample(VideoSampler, float2(0.75, 0.25)).rgb;
-          prominentColor += VideoTexture.Sample(VideoSampler, float2(0.5, 0.5)).rgb;
-          prominentColor += VideoTexture.Sample(VideoSampler, float2(0.25, 0.75)).rgb;
-          prominentColor += VideoTexture.Sample(VideoSampler, float2(0.75, 0.75)).rgb;
-          prominentColor *= 0.2;
+          for (float x = 0.05; x < 1.0; x += 0.0833) {
+              for (float y = 0.05; y < 1.0; y += 0.0833) {
+                  prominentColor += VideoTexture.Sample(VideoSampler, float2(x, y)).rgb;
+              }
+          }
+          prominentColor /= 144.0;
           
           // Black pixels in the video should have zero influence. 
           // Brighter video pixels get more alpha.
           float luminance = dot(prominentColor, float3(0.299, 0.587, 0.114));
-          float alpha = saturate(depthMask * luminance * 4.0); // Multiplier controls max brightness
+          float alpha = saturate(depthMask * luminance * 3.5); 
           
-          // Simply tint and overlay the depth buffer
-          color = float4(prominentColor, alpha);
+          // We can afford a much higher opacity cap now that we are using Color Dodge,
+          // because it naturally preserves shadows without causing fog!
+          alpha = clamp(alpha, 0.0, 0.9); 
+          
+          // TRUE LIGHTING BLEND
+          // Instead of using ImGui's standard alpha blend (which washes out the background like fog),
+          // we sample the actual game pixel and ADD the light to it!
+          float3 light = prominentColor * alpha;
+          
+          if (HasBackBuffer > 0.5) {
+              float3 sceneColor = BackBufferTexture.Sample(VideoSampler, screenUV).rgb;
+              
+              // Color Dodge Blend: Final = Scene / (1.0 - Light)
+              // Screen blending raised the black floor, causing the grey fog over the shadows.
+              // Color Dodge preserves pure black shadows (0 / X = 0) while powerfully illuminating the textures!
+              float3 finalColor = saturate(sceneColor / max(0.001, 1.0 - light));
+              
+              color = float4(finalColor, 1.0); // Output opaque because we already blended the scene!
+          } else {
+              // Fallback to standard fog overlay if backbuffer is missing
+              color = float4(prominentColor, alpha);
+          }
       }
   }
 
@@ -395,7 +436,8 @@ float4 PS(VS_OUT input) : SV_TARGET {
           Progress = progress,
           IsPlaying = isPlaying ? 1.0f : 0.0f,
           DynamicMinDepth = minDepth,
-          DynamicMaxDepth = maxDepth
+          DynamicMaxDepth = maxDepth,
+          HasBackBuffer = backBufferSRV != null ? 1.0f : 0.0f
         };
         _context.UpdateSubresource(constants, _constantBuffer);
 
