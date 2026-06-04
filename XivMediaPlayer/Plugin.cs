@@ -32,6 +32,7 @@ namespace XivMediaPlayer
         // Static PluginService properties (following Dalamud SamplePlugin template)
         [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
         [PluginService] internal static IPluginLog Log { get; private set; } = null!;
+        [PluginService] internal static IKeyState KeyState { get; private set; } = null!;
 
         private readonly IDalamudPluginInterface _pluginInterface;
         private readonly ICommandManager _commandManager;
@@ -76,7 +77,12 @@ namespace XivMediaPlayer
         private int _lastCookieHash;
         private bool _hasBeenInitialized;
 
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int vKey);
+
         private Stopwatch _streamSetCooldown = new Stopwatch();
+
+        private bool _wasLeftMousePressed = false;
 
         public Plugin(
           IDalamudPluginInterface pluginInterface,
@@ -950,17 +956,17 @@ namespace XivMediaPlayer
                             hoverUV = uv;
 
                             // Handle clicks on media controls
-                            if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-                            {
+                            bool isLeftMousePressed = (GetAsyncKeyState(0x01) & 0x8000) != 0; // VK_LBUTTON
+                            bool isMouseClicked = isLeftMousePressed && !_wasLeftMousePressed;
+                            _wasLeftMousePressed = isLeftMousePressed;
+
+                            if (isMouseClicked) {
                                 _pluginLog.Information($"Media Control Clicked at UV: {uv.X:F2}, {uv.Y:F2}");
-                                if (uv.Y > 0.85f && activeStream != null)
-                                {
-                                    if (uv.X > 0.05f && uv.X < 0.10f && uv.Y > 0.88f && uv.Y < 0.94f)
-                                    {
+                                if (uv.Y > 0.85f && activeStream != null) {
+                                    if (uv.X > 0.05f && uv.X < 0.10f && uv.Y > 0.88f && uv.Y < 0.94f) {
                                         _pluginLog.Information("Toggling Play/Pause!");
                                         activeStream.Pause(); // Toggles play/pause
-                                    } else if (uv.Y > 0.90f && uv.Y < 0.92f && uv.X > 0.15f && uv.X < 0.95f)
-                                    {
+                                    } else if (uv.Y > 0.90f && uv.Y < 0.92f && uv.X > 0.15f && uv.X < 0.95f) {
                                         float seekProgress = (uv.X - 0.15f) / 0.80f;
                                         _pluginLog.Information($"Seeking to {seekProgress * 100}%");
                                         activeStream.Time = (long)(seekProgress * activeStream.Length);
