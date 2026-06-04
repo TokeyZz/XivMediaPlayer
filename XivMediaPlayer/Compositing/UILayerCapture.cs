@@ -32,10 +32,7 @@ namespace XivMediaPlayer.Compositing {
     public bool IsInitialized => _initialized;
     public ID3D11ShaderResourceView BackBufferSRV => _backBufferSRV;
     public ID3D11ShaderResourceView SceneDiffuseSRV => _sceneDiffuseSRV;
-    public int Width => _width;
-    public int Height => _height;
-
-    public bool Initialize(Dalamud.Plugin.Services.IAddonLifecycle addonLifecycle) {
+    public bool Initialize() {
       if (_initialized || _disposed) return _initialized;
 
       try {
@@ -51,12 +48,6 @@ namespace XivMediaPlayer.Compositing {
         Marshal.AddRef(_context.Device.NativePointer);
         _device = _context.Device;
 
-        _addonLifecycle = addonLifecycle;
-        if (_addonLifecycle != null) {
-          // Listen to PreDraw for ANY addon to catch the first UI draw of the frame
-          _addonLifecycle.RegisterListener(Dalamud.Game.Addon.Lifecycle.AddonEvent.PreDraw, OnAddonPreDraw);
-        }
-
         _initialized = true;
         _debugInfo = "Initialized, waiting for first capture.";
         return true;
@@ -66,51 +57,9 @@ namespace XivMediaPlayer.Compositing {
       }
     }
 
-    private void OnAddonPreDraw(Dalamud.Game.Addon.Lifecycle.AddonEvent type, Dalamud.Game.Addon.Lifecycle.AddonArgTypes.AddonArgs args) {
-      if (_disposed || !_initialized) return;
-
-      var frameCount = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework.Instance()->FrameCounter;
-      if (_lastPreDrawFrame == frameCount) return;
-      _lastPreDrawFrame = frameCount;
-
-      // This is the first Addon drawn this frame!
-      // The BackBuffer currently contains the fully rendered 3D scene + Post Processing, but NO UI!
-      CapturePreUI();
-    }
-
-    private void CapturePreUI() {
-      try {
-        var ffxivDevice = Device.Instance();
-        if (ffxivDevice == null || ffxivDevice->SwapChain == null) return;
-        var scPtr = (IntPtr)ffxivDevice->SwapChain->DXGISwapChain;
-        if (scPtr == IntPtr.Zero) return;
-
-        using var swapChain = new IDXGISwapChain(scPtr);
-        using var backBuffer = swapChain.GetBuffer<ID3D11Texture2D>(0);
-        var bbDesc = backBuffer.Description;
-
-        if (_sceneDiffuseCopy == null ||
-            _sceneDiffuseCopy.Description.Width != bbDesc.Width ||
-            _sceneDiffuseCopy.Description.Height != bbDesc.Height) {
-          _sceneDiffuseSRV?.Dispose();
-          _sceneDiffuseCopy?.Dispose();
-
-          bbDesc.BindFlags = BindFlags.ShaderResource;
-          bbDesc.Usage = ResourceUsage.Default;
-          bbDesc.CPUAccessFlags = CpuAccessFlags.None;
-          _sceneDiffuseCopy = _device.CreateTexture2D(bbDesc);
-          _sceneDiffuseSRV = _device.CreateShaderResourceView(_sceneDiffuseCopy);
-        }
-
-        _context.CopyResource(_sceneDiffuseCopy, backBuffer);
-      } catch (Exception ex) {
-        _debugInfo = $"CapturePreUI error: {ex.Message}";
-      }
-    }
-
     /// <summary>
     /// Call at the very start of OnDraw, before any ImGui rendering.
-    /// Captures the current back buffer (Scene + Game UI) for later restoration.
+    /// Captures the current back buffer (Scene + Game UI). The alpha channel contains the UI mask!
     /// </summary>
     public void CaptureFrame() {
       if (_disposed || !_initialized) return;
@@ -277,9 +226,6 @@ namespace XivMediaPlayer.Compositing {
     public void Dispose() {
       if (_disposed) return;
       _disposed = true;
-      if (_addonLifecycle != null) {
-        _addonLifecycle.UnregisterListener(Dalamud.Game.Addon.Lifecycle.AddonEvent.PreDraw, OnAddonPreDraw);
-      }
       _backBufferSRV?.Dispose();
       _backBufferCopy?.Dispose();
       _sceneDiffuseSRV?.Dispose();

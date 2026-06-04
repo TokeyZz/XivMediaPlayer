@@ -41,7 +41,6 @@ namespace XivMediaPlayer {
     private readonly IGameGui _gameGui;
     private readonly IObjectTable _objectTable;
     private readonly IGameInteropProvider _gameInterop;
-    private readonly Dalamud.Plugin.Services.IAddonLifecycle _addonLifecycle;
 
     private readonly Configuration _config;
     private readonly WindowSystem _windowSystem;
@@ -87,8 +86,7 @@ namespace XivMediaPlayer {
       ITextureProvider textureProvider,
       IGameGui gameGui,
       IObjectTable objectTable,
-      IGameInteropProvider gameInterop,
-      Dalamud.Plugin.Services.IAddonLifecycle addonLifecycle) {
+      IGameInteropProvider gameInterop) {
       _pluginInterface = pluginInterface;
       _commandManager = commandManager;
       _chat = chat;
@@ -100,7 +98,6 @@ namespace XivMediaPlayer {
       _gameGui = gameGui;
       _objectTable = objectTable;
       _gameInterop = gameInterop;
-      _addonLifecycle = addonLifecycle;
 
       // Load configuration
       _config = (Configuration)_pluginInterface.GetPluginConfig()
@@ -120,7 +117,7 @@ namespace XivMediaPlayer {
       _worldRenderer = new WorldVideoRenderer(_config.WorldScreen, _gameGui);
       
       _uiCapture = new UILayerCapture();
-      _uiCapture.Initialize(_addonLifecycle);
+      _uiCapture.Initialize();
 
       // Create windows
       _windowSystem = new WindowSystem("XivMediaPlayer");

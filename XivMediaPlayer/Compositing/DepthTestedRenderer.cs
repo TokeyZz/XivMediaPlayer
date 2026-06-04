@@ -62,7 +62,6 @@ cbuffer Constants : register(b0) {
 Texture2D VideoTexture : register(t0);
 Texture2D DepthTexture : register(t1);
 Texture2D BackBufferTexture : register(t2);
-Texture2D SceneDiffuseTexture : register(t3);
 SamplerState VideoSampler : register(s0);
 SamplerState DepthSampler : register(s1);
 
@@ -136,11 +135,14 @@ float4 PS(VS_OUT input) : SV_TARGET {
     color.a = 0;
   }
 
-  // Visualize BackBuffer Alpha channel
+  // Use the BackBuffer Alpha channel for perfect UI masking!
   float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
   
-  // Return the alpha as a grayscale color to see if it matches the UI
-  return float4(bbAlpha, bbAlpha, bbAlpha, 1.0);
+  if (bbAlpha > 0.1) {
+    color.a = 0; // Hide video pixels behind UI
+  }
+  
+  return color;
 }
 ";
 
@@ -242,8 +244,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
       ID3D11ShaderResourceView depthSRV,
       Vector4 cornerDepths,
       int screenWidth, int screenHeight,
-      ID3D11ShaderResourceView backBufferSRV,
-      ID3D11ShaderResourceView diffuseSRV) {
+      ID3D11ShaderResourceView backBufferSRV) {
 
       if (!_initialized || _disposed || videoTextureSRV == IntPtr.Zero || depthSRV == null) return false;
 
@@ -280,7 +281,6 @@ float4 PS(VS_OUT input) : SV_TARGET {
         _context.PSSetShaderResource(0, videoSRV);
         _context.PSSetShaderResource(1, depthSRV);
         _context.PSSetShaderResource(2, backBufferSRV);
-        _context.PSSetShaderResource(3, diffuseSRV);
         _context.PSSetSampler(0, _videoSampler);
         _context.PSSetSampler(1, _depthSampler);
 
@@ -296,7 +296,6 @@ float4 PS(VS_OUT input) : SV_TARGET {
         _context.PSSetShaderResource(0, (ID3D11ShaderResourceView)null);
         _context.PSSetShaderResource(1, (ID3D11ShaderResourceView)null);
         _context.PSSetShaderResource(2, (ID3D11ShaderResourceView)null);
-        _context.PSSetShaderResource(3, (ID3D11ShaderResourceView)null);
         
         savedRTVs[0]?.Dispose();
         savedDSV?.Dispose();
