@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Vortice.Direct3D11;
@@ -8,15 +9,13 @@ using Vortice.D3DCompiler;
 namespace XivMediaPlayer.Compositing {
   /// <summary>
   /// Renders a textured quad with per-pixel depth occlusion using a fullscreen
-  /// shader pass. Takes screen-space corners (from WorldToScreen) and computes
-  /// correct UVs per-pixel via inverse bilinear interpolation — no triangle
-  /// seams or perspective distortion.
+  /// shader pass.
   /// </summary>
   internal unsafe class DepthTestedRenderer : IDisposable {
     private ID3D11Device _device;
     private ID3D11DeviceContext _context;
 
-    // Pipeline state
+    // Shaders
     private ID3D11VertexShader _vertexShader;
     private ID3D11PixelShader _pixelShader;
     private ID3D11BlendState _blendState;
@@ -62,6 +61,8 @@ cbuffer Constants : register(b0) {
 
 Texture2D VideoTexture : register(t0);
 Texture2D DepthTexture : register(t1);
+Texture2D BackBufferTexture : register(t2);
+Texture2D SceneDiffuseTexture : register(t3);
 SamplerState VideoSampler : register(s0);
 SamplerState DepthSampler : register(s1);
 
@@ -70,7 +71,6 @@ struct VS_OUT {
   float2 uv : TEXCOORD;
 };
 
-// Fullscreen triangle — no vertex buffer needed
 VS_OUT VS(uint id : SV_VertexID) {
   VS_OUT o;
   o.uv = float2((id << 1) & 2, id & 2);
@@ -78,20 +78,15 @@ VS_OUT VS(uint id : SV_VertexID) {
   return o;
 }
 
-// 2D cross product
 float cross2d(float2 a, float2 b) {
   return a.x * b.y - a.y * b.x;
 }
 
-// Inverse bilinear interpolation: given a point p inside quad (a,b,c,d),
-// returns (u,v) where p = bilerp(a,b,c,d, u,v)
-// a=TL, b=TR, c=BR, d=BL
-// p = (1-v)*((1-u)*a + u*b) + v*((1-u)*d + u*c)
 float2 InverseBilinear(float2 p, float2 a, float2 b, float2 c, float2 d) {
-  float2 e = b - a;       // top edge
-  float2 f = d - a;       // left edge
-  float2 g = a - b + c - d; // cross term
-  float2 h = p - a;       // vector to point
+  float2 e = b - a;
+  float2 f = d - a;
+  float2 g = a - b + c - d;
+  float2 h = p - a;
 
   float k2 = cross2d(g, f);
   float k1 = cross2d(e, f) + cross2d(h, g);
@@ -99,7 +94,6 @@ float2 InverseBilinear(float2 p, float2 a, float2 b, float2 c, float2 d) {
 
   float v;
   if (abs(k2) < 0.0001) {
-    // Linear case
     v = -k0 / k1;
   } else {
     float disc = k1 * k1 - 4.0 * k0 * k2;
@@ -107,11 +101,9 @@ float2 InverseBilinear(float2 p, float2 a, float2 b, float2 c, float2 d) {
     disc = sqrt(disc);
     float v0 = (-k1 - disc) / (2.0 * k2);
     float v1 = (-k1 + disc) / (2.0 * k2);
-    // Pick the solution in [0,1]
     v = (v0 >= -0.001 && v0 <= 1.001) ? v0 : v1;
   }
 
-  // Compute u from v
   float2 denom = e + v * g;
   float u;
   if (abs(denom.x) > abs(denom.y)) {
@@ -125,30 +117,30 @@ float2 InverseBilinear(float2 p, float2 a, float2 b, float2 c, float2 d) {
 
 float4 PS(VS_OUT input) : SV_TARGET {
   float2 pixelPos = input.pos.xy;
-
-  // Compute UV via inverse bilinear — correct for any quad shape
   float2 uv = InverseBilinear(pixelPos, CornerTL, CornerTR, CornerBR, CornerBL);
 
-  // Outside the quad? Transparent.
   if (uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1) {
     return float4(0, 0, 0, 0);
   }
 
   float4 color = VideoTexture.Sample(VideoSampler, uv);
 
-  // Bilinear interpolation of per-corner depths using the same UV
-  float depthTop = lerp(CornerDepths.x, CornerDepths.y, uv.x);   // TL → TR
-  float depthBot = lerp(CornerDepths.w, CornerDepths.z, uv.x);   // BL → BR
+  // Depth occlusion
+  float depthTop = lerp(CornerDepths.x, CornerDepths.y, uv.x);
+  float depthBot = lerp(CornerDepths.w, CornerDepths.z, uv.x);
   float quadDepth = lerp(depthTop, depthBot, uv.y);
 
-  // Depth comparison per-pixel with interpolated threshold
   float2 screenUV = pixelPos / ScreenSize;
   float gameDepth = DepthTexture.Sample(DepthSampler, screenUV).r;
   if (gameDepth > quadDepth) {
     color.a = 0;
   }
 
-  return color;
+  // Visualize BackBuffer Alpha channel
+  float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
+  
+  // Return the alpha as a grayscale color to see if it matches the UI
+  return float4(bbAlpha, bbAlpha, bbAlpha, 1.0);
 }
 ";
 
@@ -179,7 +171,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
         var psBytecode = Compiler.Compile(ShaderCode, "PS", "", "ps_5_0");
         _pixelShader = _device.CreatePixelShader(psBytecode.Span);
 
-        // Constant buffer (48 bytes: 4x float2 corners + float2 screen + float depth + float pad)
+        // Constant buffers
         _constantBuffer = _device.CreateBuffer(new BufferDescription {
           ByteWidth = Marshal.SizeOf<PSConstants>(),
           Usage = ResourceUsage.Default,
@@ -227,7 +219,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
       _rtWidth = width;
       _rtHeight = height;
 
-      _renderTarget = _device.CreateTexture2D(new Texture2DDescription {
+      var texDesc = new Texture2DDescription {
         Width = width,
         Height = height,
         MipLevels = 1,
@@ -237,22 +229,21 @@ float4 PS(VS_OUT input) : SV_TARGET {
         Usage = ResourceUsage.Default,
         BindFlags = BindFlags.RenderTarget | BindFlags.ShaderResource,
         CPUAccessFlags = CpuAccessFlags.None,
-      });
+      };
 
+      _renderTarget = _device.CreateTexture2D(texDesc);
       _renderTargetView = _device.CreateRenderTargetView(_renderTarget);
       _renderTargetSRV = _device.CreateShaderResourceView(_renderTarget);
     }
 
-    /// <summary>
-    /// Render the video quad with per-pixel depth occlusion.
-    /// Uses a fullscreen pass with inverse bilinear UV mapping.
-    /// </summary>
-    public bool Render(
+    public unsafe bool Render(
       (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl) screenCorners,
       IntPtr videoTextureSRV,
       ID3D11ShaderResourceView depthSRV,
       Vector4 cornerDepths,
-      int screenWidth, int screenHeight) {
+      int screenWidth, int screenHeight,
+      ID3D11ShaderResourceView backBufferSRV,
+      ID3D11ShaderResourceView diffuseSRV) {
 
       if (!_initialized || _disposed || videoTextureSRV == IntPtr.Zero || depthSRV == null) return false;
 
@@ -265,7 +256,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
       try {
         _context.ClearRenderTargetView(_renderTargetView, new Vortice.Mathematics.Color4(0, 0, 0, 0));
 
-        // Update constants with screen corners + depth threshold
+        // Update constants
         var constants = new PSConstants {
           CornerTL = screenCorners.tl,
           CornerTR = screenCorners.tr,
@@ -276,7 +267,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
         };
         _context.UpdateSubresource(constants, _constantBuffer);
 
-        // Set pipeline — no vertex buffer, no input layout
+        // Set pipeline
         _context.IASetInputLayout(null);
         _context.IASetPrimitiveTopology(Vortice.Direct3D.PrimitiveTopology.TriangleList);
 
@@ -288,6 +279,8 @@ float4 PS(VS_OUT input) : SV_TARGET {
         var videoSRV = new ID3D11ShaderResourceView(videoTextureSRV);
         _context.PSSetShaderResource(0, videoSRV);
         _context.PSSetShaderResource(1, depthSRV);
+        _context.PSSetShaderResource(2, backBufferSRV);
+        _context.PSSetShaderResource(3, diffuseSRV);
         _context.PSSetSampler(0, _videoSampler);
         _context.PSSetSampler(1, _depthSampler);
 
@@ -295,7 +288,6 @@ float4 PS(VS_OUT input) : SV_TARGET {
         _context.RSSetViewport(0, 0, screenWidth, screenHeight);
         _context.OMSetRenderTargets(_renderTargetView);
 
-        // Draw fullscreen triangle (3 verts from SV_VertexID)
         _context.Draw(3, 0);
 
         return true;
@@ -303,6 +295,11 @@ float4 PS(VS_OUT input) : SV_TARGET {
         _context.OMSetRenderTargets(savedRTVs, savedDSV);
         _context.PSSetShaderResource(0, (ID3D11ShaderResourceView)null);
         _context.PSSetShaderResource(1, (ID3D11ShaderResourceView)null);
+        _context.PSSetShaderResource(2, (ID3D11ShaderResourceView)null);
+        _context.PSSetShaderResource(3, (ID3D11ShaderResourceView)null);
+        
+        savedRTVs[0]?.Dispose();
+        savedDSV?.Dispose();
       }
     }
 

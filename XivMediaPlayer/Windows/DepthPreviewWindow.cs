@@ -19,11 +19,13 @@ namespace XivMediaPlayer.Windows {
     private int _lastDataHash;
     private bool _disposed;
     private string _rtmProbeResult;
+    private string _sceneProbeResult;
 
     /// <summary>
     /// The shared depth capture instance. Initialized externally.
     /// </summary>
     public DepthBufferCapture Capture { get; set; }
+    public UILayerCapture UICapture { get; set; }
 
     public DepthPreviewWindow(ITextureProvider textureProvider, IPluginLog pluginLog)
       : base("Depth Buffer Preview", ImGuiWindowFlags.None, false) {
@@ -53,6 +55,17 @@ namespace XivMediaPlayer.Windows {
           _rtmProbeResult = DepthBufferProbe.ProbeAllDepthTextures();
         }
         ImGui.TextWrapped(_rtmProbeResult);
+      }
+
+      // Scene color probe
+      if (ImGui.CollapsingHeader("Scene Color RTs")) {
+        if (_sceneProbeResult == null) {
+          _sceneProbeResult = SceneColorProbe.ProbeAllColorTextures();
+        }
+        if (ImGui.Button("Rescan Color RTs")) {
+          _sceneProbeResult = SceneColorProbe.ProbeAllColorTextures();
+        }
+        ImGui.TextWrapped(_sceneProbeResult);
       }
 
       ImGui.Separator();
@@ -90,6 +103,19 @@ namespace XivMediaPlayer.Windows {
         }
       } else {
         ImGui.TextColored(new Vector4(1, 1, 0, 1), "No depth data captured yet.");
+      }
+
+      // UI Capture debug section
+      if (UICapture != null) {
+        ImGui.Separator();
+        ImGui.TextColored(new Vector4(0, 1, 1, 1), $"UI Capture: {UICapture.DebugInfo}");
+        ImGui.Text($"Addon rects: {UICapture.LastAddonRects.Count}");
+        if (ImGui.CollapsingHeader("Detected Addons")) {
+          for (int i = 0; i < UICapture.LastAddonRects.Count; i++) {
+            var r = UICapture.LastAddonRects[i];
+            ImGui.Text($"  [{i}] {r.Name}: ({r.X},{r.Y}) {r.W}x{r.H}");
+          }
+        }
       }
     }
 
