@@ -39,7 +39,7 @@ namespace MediaPlayerCore {
       _updateLoop = Task.Run(() => Update());
     }
 
-    public async void PlayStream(IMediaGameObject playerObject, string audioPath, int delay = 0, Dictionary<string, string>? httpHeaders = null) {
+    public void PlayStream(IMediaGameObject playerObject, string audioPath, int delay = 0, Dictionary<string, string>? httpHeaders = null) {
       Task.Run(() => {
         try {
           OnNewMediaTriggered?.Invoke(this, EventArgs.Empty);
@@ -64,7 +64,7 @@ namespace MediaPlayerCore {
       });
     }
 
-    public async void ChangeStream(IMediaGameObject playerObject, string audioPath, float width) {
+    public void ChangeStream(IMediaGameObject playerObject, string audioPath, float width) {
       Task.Run(() => {
         try {
           OnNewMediaTriggered?.Invoke(this, EventArgs.Empty);
@@ -81,12 +81,12 @@ namespace MediaPlayerCore {
       });
     }
 
-    public async void StopStream() {
+    public void StopStream() {
       // Copy references before clearing to avoid collection modification issues
       var streams = _playbackStreams.Values.ToArray();
       _playbackStreams.Clear();
       // VLC's Stop() is synchronous and blocks — run on background thread
-      await Task.Run(() => {
+      Task.Run(() => {
         foreach (var stream in streams) {
           try {
             stream?.Stop();

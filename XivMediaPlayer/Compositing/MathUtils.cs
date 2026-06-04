@@ -78,5 +78,47 @@ namespace XivMediaPlayer.Compositing {
       t = f * Vector3.Dot(edge2, q);
       return t > 0.00001f;
     }
+
+    /// <summary>
+    /// Computes the 2D cross product of two vectors.
+    /// </summary>
+    public static float Cross2D(Vector2 a, Vector2 b) {
+      return a.X * b.Y - a.Y * b.X;
+    }
+
+    /// <summary>
+    /// Computes the UV coordinates of a point within a 2D arbitrary quadrilateral.
+    /// </summary>
+    public static Vector2 InverseBilinear(Vector2 p, Vector2 a, Vector2 b, Vector2 c, Vector2 d) {
+      Vector2 e = b - a;
+      Vector2 f = d - a;
+      Vector2 g = a - b + c - d;
+      Vector2 h = p - a;
+
+      float k2 = Cross2D(g, f);
+      float k1 = Cross2D(e, f) + Cross2D(h, g);
+      float k0 = Cross2D(h, e);
+
+      float w = k1 * k1 - 4.0f * k0 * k2;
+      if (w < 0.0f) return new Vector2(-1, -1);
+
+      w = (float)System.Math.Sqrt(w);
+      float v1 = (-k1 - w) / (2.0f * k2);
+      float v2 = (-k1 + w) / (2.0f * k2);
+      float v = (v1 >= 0.0f && v1 <= 1.0f) ? v1 : v2;
+
+      float denominatorX = e.X + g.X * v;
+      float u = 0;
+      if (System.Math.Abs(denominatorX) > 0.0001f) {
+        u = (h.X - f.X * v) / denominatorX;
+      } else {
+        float denominatorY = e.Y + g.Y * v;
+        if (System.Math.Abs(denominatorY) > 0.0001f) {
+           u = (h.Y - f.Y * v) / denominatorY;
+        }
+      }
+
+      return new Vector2(u, v);
+    }
   }
 }

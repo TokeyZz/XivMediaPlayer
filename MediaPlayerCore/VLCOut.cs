@@ -28,16 +28,20 @@ namespace MediaPlayerCore {
     }
     void IWavePlayer.Init(IWaveProvider waveProvider) {
     }
-    public async void Init(string soundPath, string libVLCPath) {
-      string location = libVLCPath + @"\libvlc\win-x64";
-      Core.Initialize(location);
-      libVLC = new LibVLC("--vout", "none");
-      var media = new Media(libVLC, soundPath, FromType.FromPath);
-      await media.Parse(MediaParseOptions.ParseLocal);
-      _vlcPlayer = new MediaPlayer(media);
-      var processingCancellationTokenSource = new CancellationTokenSource();
-      _vlcPlayer.Stopped += (s, e) => processingCancellationTokenSource.CancelAfter(1);
-      _vlcPlayer.Stopped += _vlcPlayer_Stopped;
+    public void Init(string soundPath, string libVLCPath) {
+      Task.Run(async delegate {
+        try {
+          string location = libVLCPath + @"\libvlc\win-x64";
+          Core.Initialize(location);
+          libVLC = new LibVLC("--vout", "none");
+          var media = new Media(libVLC, soundPath, FromType.FromPath);
+          await media.Parse(MediaParseOptions.ParseLocal);
+          _vlcPlayer = new MediaPlayer(media);
+          var processingCancellationTokenSource = new CancellationTokenSource();
+          _vlcPlayer.Stopped += (s, e) => processingCancellationTokenSource.CancelAfter(1);
+          _vlcPlayer.Stopped += _vlcPlayer_Stopped;
+        } catch { }
+      });
     }
 
     private void _vlcPlayer_Stopped(object? sender, EventArgs e) {

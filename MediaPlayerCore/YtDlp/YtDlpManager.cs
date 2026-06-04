@@ -127,9 +127,13 @@ namespace MediaPlayerCore.YtDlp {
       }
 
       try {
-        string result = await RunYtDlp($"--dump-json --no-download \"{url}\"");
+        string result = await RunYtDlp($"--dump-json --no-download --no-playlist \"{url}\"");
         if (!string.IsNullOrEmpty(result)) {
-          return JsonConvert.DeserializeObject<YtDlpMetadata>(result);
+          var firstJsonLine = result.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                                    .FirstOrDefault(l => l.TrimStart().StartsWith("{"));
+          if (firstJsonLine != null) {
+            return JsonConvert.DeserializeObject<YtDlpMetadata>(firstJsonLine);
+          }
         }
       } catch (Exception e) {
         OnError?.Invoke(this, e);
@@ -312,40 +316,49 @@ namespace MediaPlayerCore.YtDlp {
 
     private async Task<string> RunYtDlp(string arguments) {
       return await Task.Run(() => {
-        lock (_lock) {
-          // Inject cookies if available (e.g. from VRCVideoCacher browser extension)
-          string fullArgs = BuildCommonArgs() + arguments;
-          var psi = new ProcessStartInfo {
-            FileName = _ytDlpPath,
-            Arguments = fullArgs,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-          };
+        // Inject cookies if available (e.g. from VRCVideoCacher browser extension)
+        string fullArgs = BuildCommonArgs() + arguments;
+        var psi = new ProcessStartInfo {
+          FileName = _ytDlpPath,
+          Arguments = fullArgs,
+          UseShellExecute = false,
+          RedirectStandardOutput = true,
+          RedirectStandardError = true,
+          CreateNoWindow = true,
+          StandardOutputEncoding = Encoding.UTF8,
+          StandardErrorEncoding = Encoding.UTF8,
+        };
 
-          using var process = Process.Start(psi);
-          if (process == null) {
-            throw new Exception("Failed to start yt-dlp process");
-          }
-
-          string output = process.StandardOutput.ReadToEnd();
-          string error = process.StandardError.ReadToEnd();
-
-          // Timeout after 30 seconds
-          if (!process.WaitForExit(30000)) {
-            try { process.Kill(); } catch { }
-            throw new TimeoutException("yt-dlp timed out after 30 seconds");
-          }
-
-          if (process.ExitCode != 0 && string.IsNullOrEmpty(output)) {
-            throw new Exception($"yt-dlp exited with code {process.ExitCode}: {error}");
-          }
-
-          return output;
+        using var process = Process.Start(psi);
+        if (process == null) {
+          throw new Exception("Failed to start yt-dlp process");
         }
+
+        bool timedOut = false;
+        using var timer = new Timer(_ => {
+          timedOut = true;
+          try { process.Kill(); } catch { }
+        }, null, 30000, Timeout.Infinite);
+
+        // Read stderr asynchronously to prevent buffer deadlocks
+        string error = "";
+        process.ErrorDataReceived += (s, e) => { if (e.Data != null) error += e.Data + "\n"; };
+        process.BeginErrorReadLine();
+
+        string output = process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        
+        timer.Change(Timeout.Infinite, Timeout.Infinite);
+
+        if (timedOut) {
+          throw new TimeoutException("yt-dlp timed out after 30 seconds");
+        }
+
+        if (process.ExitCode != 0 && string.IsNullOrEmpty(output)) {
+          throw new Exception($"yt-dlp exited with code {process.ExitCode}: {error}");
+        }
+
+        return output;
       });
     }
 
@@ -427,7 +440,7 @@ namespace MediaPlayerCore.YtDlp {
     /// Builds the common argument prefix (cookies, etc.) for all yt-dlp calls.
     /// </summary>
     private string BuildCommonArgs() {
-      string args = "--impersonate chrome ";
+      string args = "--impersonate chrome --socket-timeout 15 ";
 
       // Cookie injection
       if (!string.IsNullOrEmpty(CookieBrowser)) {

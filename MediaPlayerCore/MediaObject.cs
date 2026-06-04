@@ -140,8 +140,8 @@ namespace MediaPlayerCore {
       Invalidated = true;
     }
 
-    public async void Play(string mediaPath, float volume, int delay, Dictionary<string, string>? httpHeaders = null) {
-      await Task.Run(async delegate {
+    public void Play(string mediaPath, float volume, int delay, Dictionary<string, string>? httpHeaders = null) {
+      Task.Run(async delegate {
         try {
           if (!string.IsNullOrEmpty(mediaPath) && PlaybackState == PlaybackState.Stopped) {
             try {
@@ -215,17 +215,19 @@ namespace MediaPlayerCore {
       });
     }
 
-    public async void ChangeVideoStream(string soundPath, float width) {
-      try {
-        if (_vlcWasAbleToStart) {
-          var media = new Media(libVLC, soundPath, soundPath.StartsWith("http") || soundPath.StartsWith("rtmp")
-                   ? FromType.FromLocation : FromType.FromPath);
-          await media.Parse(soundPath.StartsWith("http") || soundPath.StartsWith("rtmp")
-            ? MediaParseOptions.ParseNetwork : MediaParseOptions.ParseLocal);
-          _vlcPlayer.Media = media;
-          _vlcPlayer.Play();
-        }
-      } catch (Exception e) { OnErrorReceived?.Invoke(this, new MediaError() { Exception = e }); }
+    public void ChangeVideoStream(string soundPath, float width) {
+      Task.Run(async delegate {
+        try {
+          if (_vlcWasAbleToStart) {
+            var media = new Media(libVLC, soundPath, soundPath.StartsWith("http") || soundPath.StartsWith("rtmp")
+                     ? FromType.FromLocation : FromType.FromPath);
+            await media.Parse(soundPath.StartsWith("http") || soundPath.StartsWith("rtmp")
+              ? MediaParseOptions.ParseNetwork : MediaParseOptions.ParseLocal);
+            _vlcPlayer.Media = media;
+            _vlcPlayer.Play();
+          }
+        } catch (Exception e) { OnErrorReceived?.Invoke(this, new MediaError() { Exception = e }); }
+      });
     }
 
     public static float AngleDir(Vector3 fwd, Vector3 targetDir, Vector3 up) {

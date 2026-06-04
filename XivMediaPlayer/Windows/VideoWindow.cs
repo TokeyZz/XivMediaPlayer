@@ -107,7 +107,7 @@ namespace XivMediaPlayer.Windows {
       }
     }
 
-    public override async void Draw() {
+    public override void Draw() {
       bool betweenAreas = false;
       unsafe {
         betweenAreas = !Conditions.Instance()->BetweenAreas;
