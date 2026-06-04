@@ -5,6 +5,13 @@ using System.Collections.Generic;
 
 namespace XivMediaPlayer {
   [Serializable]
+  public class RoomMediaState {
+      public string CurrentUrl { get; set; } = "";
+      public long TimecodeMs { get; set; } = 0;
+      public List<string> Playlist { get; set; } = new List<string>();
+  }
+
+  [Serializable]
   public class Configuration : IPluginConfiguration {
     public event EventHandler OnConfigurationChanged;
 
@@ -31,6 +38,8 @@ namespace XivMediaPlayer {
     // Per-location screen placements: key = location string, value = transform
     public Dictionary<string, MediaPlayerCore.Compositing.WorldScreenTransform> ScreenPlacements { get; set; }
       = new Dictionary<string, MediaPlayerCore.Compositing.WorldScreenTransform>();
+
+    public Dictionary<string, RoomMediaState> RoomMediaStates { get; set; } = new Dictionary<string, RoomMediaState>();
 
     #endregion
 

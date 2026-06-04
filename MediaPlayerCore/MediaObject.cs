@@ -141,7 +141,7 @@ namespace MediaPlayerCore {
       Invalidated = true;
     }
 
-    public void Play(string mediaPath, float volume, int delay, Dictionary<string, string>? httpHeaders = null) {
+    public void Play(string mediaPath, float volume, int startTimeMs, Dictionary<string, string>? httpHeaders) {
       Task.Run(async delegate {
         try {
           if (!string.IsNullOrEmpty(mediaPath) && PlaybackState == PlaybackState.Stopped) {
@@ -175,6 +175,11 @@ namespace MediaPlayerCore {
 
               var media = new Media(libVLC, mediaPath, mediaPath.StartsWith("http") || mediaPath.StartsWith("rtmp")
                 ? FromType.FromLocation : FromType.FromPath);
+              
+              if (startTimeMs > 0) {
+                  media.AddOption($":start-time={startTimeMs / 1000.0}");
+              }
+
               Debug.WriteLine("[MediaObject] Parsing media...");
               await media.Parse(mediaPath.StartsWith("http") || mediaPath.StartsWith("rtmp")
                 ? MediaParseOptions.ParseNetwork : MediaParseOptions.ParseLocal);
@@ -196,6 +201,21 @@ namespace MediaPlayerCore {
               }
               _baseVolume = volume;
               Volume = volume;
+              
+              long exactSeekMs = startTimeMs;
+              _vlcPlayer.Playing += (s, e) => {
+                  if (exactSeekMs > 0) {
+                      // Fire exact seek to correct keyframe snapping margin of error
+                      Task.Run(async () => {
+                          await Task.Delay(100);
+                          if (_vlcPlayer != null) {
+                              _vlcPlayer.Time = exactSeekMs;
+                          }
+                          exactSeekMs = 0;
+                      });
+                  }
+              };
+
               bool playResult = _vlcPlayer.Play();
               Debug.WriteLine($"[MediaObject] VLC Play() returned: {playResult}");
               _vlcWasAbleToStart = playResult;

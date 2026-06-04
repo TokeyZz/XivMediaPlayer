@@ -58,7 +58,9 @@ namespace XivMediaPlayer
         private UILayerCapture _uiCapture;
 
         private MediaManager _mediaManager;
-        private YtDlpManager _ytDlpManager;
+        private readonly YtDlpManager _ytDlpManager;
+
+        private string _lastLocationKey = "";
         private IMediaGameObject? _playerObject;
         private IMediaGameObject? _lastStreamObject;
         private Queue<string> _mediaQueue = new Queue<string>();
@@ -205,6 +207,14 @@ namespace XivMediaPlayer
 
             // Chat listener for twitch detection
             _chat.ChatMessage += OnChatMessage;
+
+            // Run initial restore (deferred to allow housing data to load if logging in directly to a house)
+            Task.Run(async () =>
+            {
+                await Task.Delay(3000);
+                RestoreScreenForCurrentLocation();
+                RestoreMediaForCurrentLocation();
+            });
         }
 
         #region Framework / Initialization
@@ -324,7 +334,7 @@ namespace XivMediaPlayer
                         if (_playerObject != null)
                         {
                             _lastStreamObject = _playerObject;
-                            TuneIntoStream(splitArgs[1], _playerObject, false);
+                            PlayViaYtDlp(splitArgs[1], _playerObject, 0);
                         }
                     } else
                     {
@@ -356,7 +366,7 @@ namespace XivMediaPlayer
                         if (_playerObject != null)
                         {
                             _lastStreamObject = _playerObject;
-                            TuneIntoStream(splitArgs[1], _playerObject, true);
+                            TuneIntoStream(splitArgs[1], _playerObject, 0);
                         }
                     }
                     break;
@@ -385,7 +395,7 @@ namespace XivMediaPlayer
                         } else
                         {
                             // Fallback — direct URL to VLC
-                            TuneIntoStream(url, _playerObject, true);
+                            TuneIntoStream(url, _playerObject, 0);
                         }
                     } else
                     {
@@ -432,7 +442,7 @@ namespace XivMediaPlayer
                 case "listen":
                     if (!string.IsNullOrEmpty(_potentialStream) && _playerObject != null)
                     {
-                        TuneIntoStream(_potentialStream, _playerObject, false);
+                        PlayViaYtDlp(_potentialStream, _playerObject, 0);
                     }
                     break;
 
@@ -472,30 +482,21 @@ namespace XivMediaPlayer
 
         #region Stream Management
 
-        private void TuneIntoStream(string url, MediaPlayerCore.IMediaGameObject audioGameObject, bool isNotTwitch, Dictionary<string, string>? httpHeaders = null)
+        private void TuneIntoStream(string url, MediaPlayerCore.IMediaGameObject audioGameObject, int startTimeMs = 0, Dictionary<string, string>? httpHeaders = null)
         {
             Task.Run(async () =>
             {
                 string cleanedURL = RemoveSpecialSymbols(url);
-                _streamURLs = isNotTwitch ? new string[] { url } : TwitchFeedManager.GetServerResponse(cleanedURL);
+                _streamURLs = new string[] { url };
                 _videoWindow.IsOpen = _config.DefaultVideoOpen == 0;
                 if (_streamURLs.Length > 0)
                 {
-                    _mediaManager.PlayStream(audioGameObject, _streamURLs[(int)_videoWindow.FeedType], 0, httpHeaders);
+                    _mediaManager.PlayStream(audioGameObject, _streamURLs[(int)_videoWindow.FeedType], startTimeMs, httpHeaders);
                     _lastStreamURL = cleanedURL;
-                    if (!isNotTwitch)
-                    {
-                        _currentStreamer = cleanedURL.Replace(@"https://", null).Replace(@"www.", null).Replace("twitch.tv/", null);
-                        _chat.Print(@"[Media Player] Tuning into " + _currentStreamer + @"!" +
-                          "\r\nUse \"/media video\" to toggle the video feed." +
-                          "\r\nUse \"/media stop\" to stop the stream.");
-                    } else
-                    {
                         _currentStreamer = "Stream";
                         _chat.Print(@"[Media Player] Playing stream!" +
                           "\r\nUse \"/media video\" to toggle the video feed." +
                           "\r\nUse \"/media stop\" to stop the stream.");
-                    }
                 }
             });
             _streamWasPlaying = true;
@@ -511,7 +512,7 @@ namespace XivMediaPlayer
             _streamSetCooldown.Start();
         }
 
-        private void PlayViaYtDlp(string url, IMediaGameObject audioGameObject)
+        private void PlayViaYtDlp(string url, IMediaGameObject audioGameObject, int startTimeMs = 0)
         {
             Task.Run(async () =>
             {
@@ -535,7 +536,7 @@ namespace XivMediaPlayer
                     if (string.IsNullOrEmpty(streamUrl))
                     {
                         _chat.PrintError("[Media Player] Failed to resolve URL via yt-dlp. Trying direct playback...");
-                        TuneIntoStream(url, audioGameObject, true, metadata?.HttpHeaders);
+                        TuneIntoStream(url, audioGameObject, startTimeMs, metadata?.HttpHeaders);
                         return;
                     }
                     string title = metadata?.Title ?? "Unknown";
@@ -546,7 +547,7 @@ namespace XivMediaPlayer
                     _streamURLs = new string[] { streamUrl };
                     _videoWindow.IsOpen = _config.DefaultVideoOpen == 0;
 
-                    _mediaManager.PlayStream(audioGameObject, streamUrl, 0, metadata?.HttpHeaders);
+                    _mediaManager.PlayStream(audioGameObject, streamUrl, startTimeMs, metadata?.HttpHeaders);
                     _lastStreamURL = url;
                     _currentStreamer = !string.IsNullOrEmpty(uploader) ? uploader : title;
 
@@ -687,10 +688,10 @@ namespace XivMediaPlayer
                                 if (_mediaManager.IsAllowedToStartStream(audioGameObject))
                                 {
                                     _lastStreamObject = _playerObject;
-                                    TuneIntoStream(value
+                                    PlayViaYtDlp(value
                                       .Trim('(').Trim(')')
                                       .Trim('[').Trim(']')
-                                      .Trim('!').Trim('@'), audioGameObject, false);
+                                      .Trim('!').Trim('@'), audioGameObject, 0);
                                 }
                             }
                             break;
@@ -725,6 +726,7 @@ namespace XivMediaPlayer
 
         private void OnTerritoryChanged(uint territoryId)
         {
+            SaveMediaStateForCurrentLocation();
             _videoWindow.IsOpen = false;
             _mediaManager?.CleanSounds();
             ResetStreamValues();
@@ -734,6 +736,7 @@ namespace XivMediaPlayer
             {
                 await Task.Delay(3000); // Wait for housing data to be available
                 RestoreScreenForCurrentLocation();
+                RestoreMediaForCurrentLocation();
             });
         }
 
@@ -743,7 +746,7 @@ namespace XivMediaPlayer
         private void SaveScreenForCurrentLocation()
         {
             if (_worldRenderer?.Transform == null || !_worldRenderer.Transform.Enabled) return;
-            var key = GetLocationKey();
+            var key = _lastLocationKey;
             if (string.IsNullOrEmpty(key)) return;
             _config.ScreenPlacements[key] = _worldRenderer.Transform.Clone();
             _config.Save();
@@ -766,6 +769,70 @@ namespace XivMediaPlayer
             {
                 _worldRenderer.Transform.Enabled = false; // Turn off 3D screen in new zones by default
             }
+        }
+
+        /// <summary>
+        /// Saves the current media URL, queue, and timecode for the current location.
+        /// </summary>
+        private void SaveMediaStateForCurrentLocation()
+        {
+            var key = _lastLocationKey;
+            if (string.IsNullOrEmpty(key)) return;
+
+            var state = new RoomMediaState();
+            
+            var activeStream = _mediaManager?.ActiveStream;
+            if (activeStream != null && !string.IsNullOrEmpty(activeStream.SoundPath))
+            {
+                // We use _lastStreamURL to save the original un-resolved YouTube/Twitch URL
+                // so we can re-resolve it via yt-dlp upon entering the room next time!
+                state.CurrentUrl = !string.IsNullOrEmpty(_lastStreamURL) ? _lastStreamURL : activeStream.SoundPath;
+                state.TimecodeMs = activeStream.Time;
+            }
+
+            state.Playlist = new System.Collections.Generic.List<string>(_mediaQueue);
+
+            _config.RoomMediaStates[key] = state;
+            _config.Save();
+            _pluginLog.Information($"Saved media state for {key}: {state.CurrentUrl} @ {state.TimecodeMs}ms ({state.Playlist.Count} queued)");
+        }
+
+        /// <summary>
+        /// Restores media playback from config for the current location.
+        /// </summary>
+        private void RestoreMediaForCurrentLocation()
+        {
+            var key = GetLocationKey();
+            if (string.IsNullOrEmpty(key)) return;
+
+            if (_config.RoomMediaStates.TryGetValue(key, out var state))
+            {
+                _pluginLog.Information($"Restoring media state for {key}");
+                
+                // Restore queue
+                _mediaQueue.Clear();
+                if (state.Playlist != null)
+                {
+                    foreach (var url in state.Playlist)
+                    {
+                        _mediaQueue.Enqueue(url);
+                    }
+                }
+
+                // Start playback if there was a URL
+                if (!string.IsNullOrEmpty(state.CurrentUrl) && _playerObject != null)
+                {
+                    _chat.Print($"[Media Player] Resuming playback in this room...");
+                    PlayViaYtDlp(state.CurrentUrl, _playerObject, (int)state.TimecodeMs);
+                }
+            } else 
+            {
+                // If there's no state, still ensure we track the key so saving works later!
+                _lastLocationKey = key;
+                return;
+            }
+            
+            _lastLocationKey = key;
         }
 
         /// <summary>
@@ -961,13 +1028,12 @@ namespace XivMediaPlayer
                     var mousePos = ImGui.GetIO().MousePos;
                     var (tl, tr, br, bl) = _worldRenderer.Transform.Corners;
 
-                    if (_gameGui.WorldToScreen(tl, out var sTL) &&
-                        _gameGui.WorldToScreen(tr, out var sTR) &&
-                        _gameGui.WorldToScreen(br, out var sBR) &&
-                        _gameGui.WorldToScreen(bl, out var sBL))
-                    {
+                    _gameGui.WorldToScreen(tl, out var sTL);
+                    _gameGui.WorldToScreen(tr, out var sTR);
+                    _gameGui.WorldToScreen(br, out var sBR);
+                    _gameGui.WorldToScreen(bl, out var sBL);
 
-                        var uv = MathUtils.InverseBilinear(mousePos, sTL, sTR, sBR, sBL);
+                    var uv = MathUtils.InverseBilinear(mousePos, sTL, sTR, sBR, sBL);
                         if (uv.X >= 0 && uv.X <= 1 && uv.Y >= 0 && uv.Y <= 1)
                         {
                             hoverUV = uv;
@@ -1019,7 +1085,6 @@ namespace XivMediaPlayer
                                 }
                             }
                         }
-                    }
 
 
                     _worldRenderer.Render(textureWrap, _depthCapture, cameraPos, cameraForward, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying);
@@ -1077,13 +1142,10 @@ namespace XivMediaPlayer
             // Route through yt-dlp if available, otherwise direct play
             if (YtDlpManager.IsUrlSupported(item.Url) && _ytDlpManager.IsAvailable())
             {
-                PlayViaYtDlp(item.Url, _playerObject);
-            } else if (item.Url.Contains("twitch.tv"))
-            {
-                TuneIntoStream(item.Url, _playerObject, false);
+                PlayViaYtDlp(item.Url, _playerObject, 0);
             } else
             {
-                TuneIntoStream(item.Url, _playerObject, true);
+                TuneIntoStream(item.Url, _playerObject, 0);
             }
         }
 
@@ -1203,7 +1265,11 @@ namespace XivMediaPlayer
 
         public void Dispose()
         {
+            if (_disposed) return;
             _disposed = true;
+
+            SaveScreenForCurrentLocation();
+            SaveMediaStateForCurrentLocation();
             _videoWindow.MarkDisposed();
 
             _framework.Update -= OnFrameworkUpdate;
