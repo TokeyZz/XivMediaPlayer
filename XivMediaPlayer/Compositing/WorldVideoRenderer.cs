@@ -177,6 +177,8 @@ namespace XivMediaPlayer.Compositing {
         var localBR = sBR - viewport.Pos;
         var localBL = sBL - viewport.Pos;
 
+        depthCapture.GetMinMaxDepth(out float minDepth, out float maxDepth);
+
         // Per-corner depths interpolated in shader for correct angled-view occlusion
         bool success = _depthRenderer.Render(
           (localTL, localTR, localBR, localBL),
@@ -185,7 +187,8 @@ namespace XivMediaPlayer.Compositing {
           cornerDepths,
           screenW, screenH,
           uiCapture?.BackBufferSRV,
-          hoverUV, progress, isPlaying);
+          hoverUV, progress, isPlaying,
+          minDepth, maxDepth);
 
         if (success && _depthRenderer.OutputSRV != null) {
           var outputPtr = _depthRenderer.OutputSRV.NativePointer;

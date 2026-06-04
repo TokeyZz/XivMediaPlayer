@@ -46,10 +46,14 @@ namespace XivMediaPlayer.Compositing {
       public float _pad1;
       public Vector4 CornerDepths; // TL, TR, BR, BL depths
       
-      // New fields appended at the end (16 bytes total)
+      // New fields appended at the end
       public Vector2 HoverUV;
       public float Progress;
       public float IsPlaying;
+      public float DynamicMinDepth;
+      public float DynamicMaxDepth;
+      public float _pad2;
+      public float _pad3;
     }
 
     private const string ShaderCode = @"
@@ -65,6 +69,8 @@ cbuffer Constants : register(b0) {
   float2 HoverUV;
   float Progress;
   float IsPlaying;
+  float DynamicMinDepth;
+  float DynamicMaxDepth;
 };
 
 Texture2D VideoTexture : register(t0);
@@ -149,11 +155,22 @@ float4 PS(VS_OUT input) : SV_TARGET {
       // Draw unoccluded TV
       color = VideoTexture.Sample(VideoSampler, uv);
   } else {
-      // AMBILIGHT GLOW (Pure Depth Overlay)
-      // Use the raw depth texture itself as the ONLY mask.
-      // FFXIV uses reversed-Z (1.0 is near). 
-      // Using a lower power (2.0) makes the falloff much gentler so it reaches further into the room.
-      float depthMask = pow(gameDepth, 2.0);
+      // Dynamic depth auto-ranging exactly like the preview window!
+      float range = DynamicMaxDepth - DynamicMinDepth;
+      if (range < 0.0001) range = 1.0;
+      
+      // Calculate normalized depth (1.0 = minDepth/far, 0.0 = maxDepth/near)
+      // Since FFXIV uses reversed-Z, gameDepth is high near the camera and low far away.
+      float normalized = saturate((gameDepth - DynamicMinDepth) / range);
+      
+      // We want light to cast on the background (far geometry). 
+      // The preview window does 1.0 - normalized to flip it. We do the same!
+      float depthMask = 1.0 - normalized;
+      
+      // Smooth it out to look like ambient lighting instead of a harsh solid mask
+      depthMask = pow(depthMask, 2.0); 
+      
+      if (gameDepth < 0.0001) depthMask = 0; // Ignore skybox
       
       if (depthMask > 0.001) {
           // Calculate the most prominent color by averaging 5 points across the screen
@@ -165,9 +182,10 @@ float4 PS(VS_OUT input) : SV_TARGET {
           prominentColor += VideoTexture.Sample(VideoSampler, float2(0.75, 0.75)).rgb;
           prominentColor *= 0.2;
           
-          // Boost luminance and the overall depth mask so the effect is strongly visible
+          // Black pixels in the video should have zero influence. 
+          // Brighter video pixels get more alpha.
           float luminance = dot(prominentColor, float3(0.299, 0.587, 0.114));
-          float alpha = saturate(depthMask * (luminance * 2.0 + 0.5) * 3.0);
+          float alpha = saturate(depthMask * luminance * 4.0); // Multiplier controls max brightness
           
           // Simply tint and overlay the depth buffer
           color = float4(prominentColor, alpha);
@@ -351,7 +369,8 @@ float4 PS(VS_OUT input) : SV_TARGET {
       Vector4 cornerDepths,
       int screenWidth, int screenHeight,
       ID3D11ShaderResourceView backBufferSRV,
-      Vector2? hoverUV, float progress, bool isPlaying) {
+      Vector2? hoverUV, float progress, bool isPlaying,
+      float minDepth, float maxDepth) {
 
       if (!_initialized || _disposed || videoTextureSRV == IntPtr.Zero || depthSRV == null) return false;
 
@@ -374,7 +393,9 @@ float4 PS(VS_OUT input) : SV_TARGET {
           HoverUV = hoverUV ?? new Vector2(-1, -1),
           CornerDepths = cornerDepths,
           Progress = progress,
-          IsPlaying = isPlaying ? 1.0f : 0.0f
+          IsPlaying = isPlaying ? 1.0f : 0.0f,
+          DynamicMinDepth = minDepth,
+          DynamicMaxDepth = maxDepth
         };
         _context.UpdateSubresource(constants, _constantBuffer);
 

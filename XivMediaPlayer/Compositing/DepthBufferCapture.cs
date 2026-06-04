@@ -243,6 +243,35 @@ namespace XivMediaPlayer.Compositing {
     }
 
     /// <summary>
+    /// Quickly finds the min and max depth in the current depth buffer, ignoring the skybox.
+    /// Used for auto-ranging the ambilight shader.
+    /// </summary>
+    public void GetMinMaxDepth(out float minDepth, out float maxDepth) {
+        minDepth = 0.001f;
+        maxDepth = 1.0f;
+        
+        if (_depthData == null) return;
+        
+        float min = 1.0f;
+        float max = 0.001f;
+        
+        // Scan a grid of points instead of every pixel to save CPU
+        int step = 16;
+        for (int i = 0; i < _depthData.Length; i += step) {
+            float d = _depthData[i];
+            if (d > 0.0001f) {
+                if (d < min) min = d;
+                if (d > max) max = d;
+            }
+        }
+        
+        if (max >= min) {
+            minDepth = min;
+            maxDepth = max;
+        }
+    }
+
+    /// <summary>
     /// Screen quad corners in screen space, for depth preview overlay.
     /// </summary>
     public (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl)? ScreenQuadCorners { get; set; }
