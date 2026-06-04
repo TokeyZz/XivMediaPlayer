@@ -40,6 +40,7 @@ namespace XivMediaPlayer {
     private readonly ITextureProvider _textureProvider;
     private readonly IGameGui _gameGui;
     private readonly IObjectTable _objectTable;
+    private readonly IGameInteropProvider _gameInterop;
 
     private readonly Configuration _config;
     private readonly WindowSystem _windowSystem;
@@ -48,6 +49,8 @@ namespace XivMediaPlayer {
     private readonly MediaBrowserWindow _browserWindow;
     private readonly ScreenSettingsWindow _screenSettingsWindow;
     private WorldVideoRenderer _worldRenderer;
+    private DepthPreviewWindow _depthPreviewWindow;
+    private DepthBufferCapture _depthCapture;
 
     private MediaManager _mediaManager;
     private YtDlpManager _ytDlpManager;
@@ -81,7 +84,8 @@ namespace XivMediaPlayer {
       IPluginLog pluginLog,
       ITextureProvider textureProvider,
       IGameGui gameGui,
-      IObjectTable objectTable) {
+      IObjectTable objectTable,
+      IGameInteropProvider gameInterop) {
       _pluginInterface = pluginInterface;
       _commandManager = commandManager;
       _chat = chat;
@@ -92,6 +96,7 @@ namespace XivMediaPlayer {
       _textureProvider = textureProvider;
       _gameGui = gameGui;
       _objectTable = objectTable;
+      _gameInterop = gameInterop;
 
       // Load configuration
       _config = (Configuration)_pluginInterface.GetPluginConfig()
@@ -137,12 +142,19 @@ namespace XivMediaPlayer {
         _browserWindow.AddProvider(ytProvider);
       }
 
+      _depthCapture = new DepthBufferCapture();
+      _depthCapture.Initialize();
+
+      _depthPreviewWindow = new DepthPreviewWindow(_textureProvider, _pluginLog);
+      _depthPreviewWindow.Capture = _depthCapture;
+
       _browserWindow.OnPlayRequested += OnBrowserPlayRequested;
 
       _windowSystem.AddWindow(_videoWindow);
       _windowSystem.AddWindow(_settingsWindow);
       _windowSystem.AddWindow(_browserWindow);
       _windowSystem.AddWindow(_screenSettingsWindow);
+      _windowSystem.AddWindow(_depthPreviewWindow);
 
       // Register draw + config UI
       _pluginInterface.UiBuilder.Draw += OnDraw;
@@ -653,6 +665,9 @@ namespace XivMediaPlayer {
     #region UI
 
     private unsafe void OnDraw() {
+      // Reset per-frame depth capture flag
+      _depthCapture?.BeginFrame();
+
       // Decode frames every tick, even if the video window is closed,
       // so the world-space renderer always has fresh textures.
       _videoWindow.UpdateFrame();
@@ -824,6 +839,11 @@ namespace XivMediaPlayer {
           _chat.Print("[Media Player] Screen placement saved.");
           break;
 
+        case "depth":
+          _depthPreviewWindow.IsOpen = !_depthPreviewWindow.IsOpen;
+          _chat.Print($"[Media Player] Depth preview {( _depthPreviewWindow.IsOpen ? "opened" : "closed")}.");
+          break;
+
         default:
           _chat.PrintError($"[Media Player] Unknown screen command: {args[1]}");
           break;
@@ -861,6 +881,8 @@ namespace XivMediaPlayer {
       _commandManager.RemoveHandler("/media");
 
       _worldRenderer?.Dispose();
+      _depthCapture?.Dispose();
+      _depthPreviewWindow?.Dispose();
       _mediaManager?.Dispose();
       _windowSystem?.RemoveAllWindows();
     }
