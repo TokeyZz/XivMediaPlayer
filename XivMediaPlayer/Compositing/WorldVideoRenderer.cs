@@ -78,13 +78,11 @@ namespace XivMediaPlayer.Compositing {
       Vector3 cameraPos, float nearPlane, float farPlane) {
       var (tl, tr, br, bl) = _transform.Corners;
 
-      // Project all 4 corners to screen space
-      if (!WorldToScreen(tl, out var sTL) ||
-        !WorldToScreen(tr, out var sTR) ||
-        !WorldToScreen(br, out var sBR) ||
-        !WorldToScreen(bl, out var sBL)) {
-        return;
-      }
+      // Project all corners to screen space (never cull)
+      WorldToScreenClamped(tl, out var sTL, out _);
+      WorldToScreenClamped(tr, out var sTR, out _);
+      WorldToScreenClamped(br, out var sBR, out _);
+      WorldToScreenClamped(bl, out var sBL, out _);
 
       // Compute the quad's actual depth from camera distance
       var quadCenter = (tl + tr + br + bl) * 0.25f;
@@ -174,12 +172,10 @@ namespace XivMediaPlayer.Compositing {
     private void RenderScreenSpace(IDalamudTextureWrap textureWrap) {
       var (tl, tr, br, bl) = _transform.Corners;
 
-      if (!WorldToScreen(tl, out var sTL) ||
-        !WorldToScreen(tr, out var sTR) ||
-        !WorldToScreen(br, out var sBR) ||
-        !WorldToScreen(bl, out var sBL)) {
-        return;
-      }
+      WorldToScreenClamped(tl, out var sTL, out _);
+      WorldToScreenClamped(tr, out var sTR, out _);
+      WorldToScreenClamped(br, out var sBR, out _);
+      WorldToScreenClamped(bl, out var sBL, out _);
 
       var drawList = ImGui.GetBackgroundDrawList();
       drawList.AddImageQuad(
@@ -196,6 +192,28 @@ namespace XivMediaPlayer.Compositing {
       }
       screenPos = Vector2.Zero;
       return false;
+    }
+
+    /// <summary>
+    /// Projects a world position to screen with coordinate clamping to prevent
+    /// extreme values from causing ImGui rendering artifacts.
+    /// </summary>
+    private bool WorldToScreenClamped(Vector3 worldPos, out Vector2 screenPos, out bool isBehind) {
+      screenPos = Vector2.Zero;
+      isBehind = false;
+
+      if (_gameGui == null) return false;
+
+      bool onScreen = _gameGui.WorldToScreen(worldPos, out screenPos);
+      isBehind = !onScreen;
+
+      // Clamp to prevent extreme coordinates
+      var viewport = ImGui.GetMainViewport();
+      float maxRange = MathF.Max(viewport.Size.X, viewport.Size.Y) * 2f;
+      screenPos.X = Math.Clamp(screenPos.X, -maxRange, maxRange);
+      screenPos.Y = Math.Clamp(screenPos.Y, -maxRange, maxRange);
+
+      return true;
     }
 
     public void PlaceAt(Vector3 position, Vector3 lookAt) {

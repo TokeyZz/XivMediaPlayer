@@ -159,6 +159,10 @@ namespace XivMediaPlayer {
       // Register draw + config UI
       _pluginInterface.UiBuilder.Draw += OnDraw;
       _pluginInterface.UiBuilder.OpenConfigUi += OnOpenConfig;
+      _pluginInterface.UiBuilder.DisableUserUiHide = true;
+      _pluginInterface.UiBuilder.DisableGposeUiHide = true;
+      _pluginInterface.UiBuilder.DisableCutsceneUiHide = true;
+      _pluginInterface.UiBuilder.DisableAutomaticUiHide = true;
 
       // Register commands
       _commandManager.AddHandler("/media", new Dalamud.Game.Command.CommandInfo(OnMediaCommand) {
