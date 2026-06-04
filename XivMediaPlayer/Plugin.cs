@@ -199,6 +199,10 @@ namespace XivMediaPlayer {
           InitializeMediaManager();
           // Only mark done if we actually succeeded
           _hasBeenInitialized = _playerObject != null;
+          if (_hasBeenInitialized) {
+            // Restore saved screen placement for current location on plugin load
+            RestoreScreenForCurrentLocation();
+          }
         } catch (Exception e) {
           _pluginLog.Error(e, "Failed to initialize media manager");
         }

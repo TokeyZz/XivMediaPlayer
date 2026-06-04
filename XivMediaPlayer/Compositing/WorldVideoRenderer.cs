@@ -4,6 +4,7 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Plugin.Services;
+using System.Runtime.CompilerServices;
 
 namespace XivMediaPlayer.Compositing {
   /// <summary>
@@ -18,8 +19,15 @@ namespace XivMediaPlayer.Compositing {
     private readonly WorldScreenTransform _transform;
     private readonly IGameGui? _gameGui;
     private DepthTestedRenderer? _depthRenderer;
+    private GlowRenderer? _glowRenderer;
     private bool _disposed;
     private bool _useDepthOcclusion;
+    private bool _enableGlow = true;
+
+    /// <summary>
+    /// Whether to render a backlit glow effect around the screen.
+    /// </summary>
+    public bool EnableGlow { get => _enableGlow; set => _enableGlow = value; }
 
     public WorldScreenTransform Transform => _transform;
 
@@ -96,8 +104,14 @@ namespace XivMediaPlayer.Compositing {
       // Threshold: anything with higher depth (closer in reverse-Z) occludes the quad
       float threshold = quadDepth;
 
-      const int gridSize = 512;
       var drawList = ImGui.GetBackgroundDrawList();
+
+      // Draw backlit glow layers behind the video
+      if (_enableGlow) {
+        RenderGlow(drawList, textureWrap, sTL, sTR, sBR, sBL);
+      }
+
+      const int gridSize = 512;
 
       // For each grid cell, draw a textured quad with depth-based alpha
       for (int gy = 0; gy < gridSize; gy++) {
@@ -178,12 +192,63 @@ namespace XivMediaPlayer.Compositing {
       WorldToScreenClamped(bl, out var sBL, out _);
 
       var drawList = ImGui.GetBackgroundDrawList();
+
+      // Draw backlit glow layers behind the video
+      if (_enableGlow) {
+        RenderGlow(drawList, textureWrap, sTL, sTR, sBR, sBL);
+      }
+
       drawList.AddImageQuad(
         textureWrap.Handle,
         sTL, sTR, sBR, sBL,
         new Vector2(0, 0), new Vector2(1, 0),
         new Vector2(1, 1), new Vector2(0, 1),
         0xFFFFFFFF);
+    }
+
+    /// <summary>
+    /// Draws soft glow layers behind the video quad to simulate screen illumination.
+    /// Uses the video texture itself so the glow color naturally matches the content.
+    /// </summary>
+    private void RenderGlow(ImDrawListPtr drawList, IDalamudTextureWrap textureWrap,
+      Vector2 sTL, Vector2 sTR, Vector2 sBR, Vector2 sBL) {
+      // Lazy-init the GPU glow renderer
+      if (_glowRenderer == null) {
+        _glowRenderer = new GlowRenderer();
+        _glowRenderer.Initialize(32); // 32x32 downsample = heavy blur
+      }
+      if (!_glowRenderer.IsInitialized) return;
+
+      // Update the downsampled glow texture from the current video frame
+      var texId = textureWrap.Handle;
+      var texPtr = Unsafe.As<ImTextureID, IntPtr>(ref texId);
+      if (!_glowRenderer.UpdateFromVideoTexture(texPtr)) return;
+      var glowPtr = _glowRenderer.GlowTextureHandle;
+      if (glowPtr == IntPtr.Zero) return;
+      var glowId = Unsafe.As<IntPtr, ImTextureID>(ref glowPtr);
+
+      var center = (sTL + sTR + sBR + sBL) * 0.25f;
+
+      // Draw 2 glow layers using the blurred texture
+      var layers = new (float scale, byte alpha)[] {
+        (1.15f, 80),   // tight bright glow
+        (1.40f, 40),   // wider soft ambient
+      };
+
+      foreach (var (scale, alpha) in layers) {
+        var gTL = center + (sTL - center) * scale;
+        var gTR = center + (sTR - center) * scale;
+        var gBR = center + (sBR - center) * scale;
+        var gBL = center + (sBL - center) * scale;
+        uint color = (uint)(alpha << 24) | 0x00FFFFFF;
+
+        drawList.AddImageQuad(
+          glowId,
+          gTL, gTR, gBR, gBL,
+          new Vector2(0, 0), new Vector2(1, 0),
+          new Vector2(1, 1), new Vector2(0, 1),
+          color);
+      }
     }
 
     private bool WorldToScreen(Vector3 worldPos, out Vector2 screenPos) {
@@ -240,6 +305,7 @@ namespace XivMediaPlayer.Compositing {
     public void Dispose() {
       _disposed = true;
       _depthRenderer?.Dispose();
+      _glowRenderer?.Dispose();
     }
   }
 }
