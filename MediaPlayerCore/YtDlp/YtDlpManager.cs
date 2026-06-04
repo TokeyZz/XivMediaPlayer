@@ -3,457 +3,533 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Text;
 
-namespace MediaPlayerCore.YtDlp {
-  /// <summary>
-  /// Metadata returned by yt-dlp --dump-json for a given URL.
-  /// </summary>
-  public class YtDlpMetadata {
-    [JsonProperty("title")]
-    public string? Title { get; set; }
-
-    [JsonProperty("duration")]
-    public double? Duration { get; set; }
-
-    [JsonProperty("thumbnail")]
-    public string? Thumbnail { get; set; }
-
-    [JsonProperty("uploader")]
-    public string? Uploader { get; set; }
-
-    [JsonProperty("url")]
-    public string? Url { get; set; }
-
-    [JsonProperty("webpage_url")]
-    public string? WebpageUrl { get; set; }
-
-    [JsonProperty("is_live")]
-    public bool? IsLive { get; set; }
-
-    [JsonProperty("http_headers")]
-    public Dictionary<string, string>? HttpHeaders { get; set; }
-
-    [JsonProperty("ext")]
-    public string? Extension { get; set; }
-  }
-
-  /// <summary>
-  /// Manages yt-dlp binary execution for resolving stream URLs and fetching metadata.
-  /// Supports YouTube, Twitch, and 1000+ other sites.
-  /// </summary>
-  public class YtDlpManager {
-    private string _ytDlpPath;
-    private string? _cookiesPath;
-    private int _preferredMaxHeight;
-    private readonly object _lock = new object();
-
-    public event EventHandler<string>? OnStatusUpdate;
-    public event EventHandler<Exception>? OnError;
-
+namespace MediaPlayerCore.YtDlp
+{
     /// <summary>
-    /// Path to the yt-dlp executable.
+    /// Metadata returned by yt-dlp --dump-json for a given URL.
     /// </summary>
-    public string YtDlpPath {
-      get => _ytDlpPath;
-      set => _ytDlpPath = value;
+    public class YtDlpMetadata
+    {
+        [JsonProperty("title")]
+        public string? Title { get; set; }
+
+        [JsonProperty("duration")]
+        public double? Duration { get; set; }
+
+        [JsonProperty("thumbnail")]
+        public string? Thumbnail { get; set; }
+
+        [JsonProperty("uploader")]
+        public string? Uploader { get; set; }
+
+        [JsonProperty("url")]
+        public string? Url { get; set; }
+
+        [JsonProperty("webpage_url")]
+        public string? WebpageUrl { get; set; }
+
+        [JsonProperty("is_live")]
+        public bool? IsLive { get; set; }
+
+        [JsonProperty("http_headers")]
+        public Dictionary<string, string>? HttpHeaders { get; set; }
+
+        [JsonProperty("ext")]
+        public string? Extension { get; set; }
     }
 
     /// <summary>
-    /// Preferred max video height for quality selection (e.g. 360, 480, 720, 1080).
-    /// 0 = best available.
+    /// Manages yt-dlp binary execution for resolving stream URLs and fetching metadata.
+    /// Supports YouTube, Twitch, and 1000+ other sites.
     /// </summary>
-    public int PreferredMaxHeight {
-      get => _preferredMaxHeight;
-      set => _preferredMaxHeight = value;
-    }
+    public class YtDlpManager
+    {
+        private string _ytDlpPath;
+        private string? _cookiesPath;
+        private int _preferredMaxHeight;
+        private readonly object _lock = new object();
 
-    public YtDlpManager(string pluginDir, int preferredMaxHeight = 720) {
-      _ytDlpPath = Path.Combine(pluginDir, "yt-dlp.exe");
-      _preferredMaxHeight = preferredMaxHeight;
-      _cookiesPath = FindCookiesFile();
-    }
+        public event EventHandler<string>? OnStatusUpdate;
+        public event EventHandler<Exception>? OnError;
 
-    /// <summary>
-    /// Returns true if a valid cookies file was found (e.g. from VRCVideoCacher).
-    /// </summary>
-    public bool HasCookies => !string.IsNullOrEmpty(_cookiesPath) && File.Exists(_cookiesPath);
-
-    /// <summary>
-    /// Returns true if the yt-dlp binary exists at the configured path.
-    /// </summary>
-    public bool IsAvailable() {
-      return !string.IsNullOrEmpty(_ytDlpPath) && File.Exists(_ytDlpPath);
-    }
-
-    /// <summary>
-    /// Resolves a URL to a direct stream URL suitable for VLC playback.
-    /// Returns null if resolution fails.
-    /// </summary>
-    public async Task<string?> ResolveStreamUrl(string url) {
-      if (!IsAvailable()) {
-        OnError?.Invoke(this, new FileNotFoundException("yt-dlp binary not found at: " + _ytDlpPath));
-        return null;
-      }
-
-      try {
-        OnStatusUpdate?.Invoke(this, "Resolving stream URL...");
-
-        string formatArg = _preferredMaxHeight > 0
-          ? $"b[height<={_preferredMaxHeight}]/b"
-          : "b";
-
-        string result = await RunYtDlp($"--get-url -f \"{formatArg}\" \"{url}\"");
-        string? streamUrl = result?.Trim().Split('\n').FirstOrDefault()?.Trim();
-
-        if (!string.IsNullOrEmpty(streamUrl)) {
-          OnStatusUpdate?.Invoke(this, "Stream URL resolved.");
-          return streamUrl;
+        /// <summary>
+        /// Path to the yt-dlp executable.
+        /// </summary>
+        public string YtDlpPath
+        {
+            get => _ytDlpPath;
+            set => _ytDlpPath = value;
         }
 
-        OnError?.Invoke(this, new Exception("yt-dlp returned empty URL for: " + url));
-        return null;
-      } catch (Exception e) {
-        OnError?.Invoke(this, e);
-        return null;
-      }
-    }
-
-    /// <summary>
-    /// Fetches metadata (title, duration, uploader, thumbnail, etc.) for a URL.
-    /// Returns null if fetching fails.
-    /// </summary>
-    public async Task<YtDlpMetadata?> GetMetadata(string url) {
-      if (!IsAvailable()) {
-        return null;
-      }
-
-      try {
-        string result = await RunYtDlp($"--dump-json --no-download --no-playlist \"{url}\"");
-        if (!string.IsNullOrEmpty(result)) {
-          var firstJsonLine = result.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                                    .FirstOrDefault(l => l.TrimStart().StartsWith("{"));
-          if (firstJsonLine != null) {
-            return JsonConvert.DeserializeObject<YtDlpMetadata>(firstJsonLine);
-          }
-        }
-      } catch (Exception e) {
-        OnError?.Invoke(this, e);
-      }
-      return null;
-    }
-
-    /// <summary>
-    /// Resolves a URL to multiple quality stream URLs.
-    /// Returns an array where index 0 = audio-only, then ascending quality.
-    /// Falls back to single URL if format listing fails.
-    /// </summary>
-    public async Task<string[]> ResolveMultiQualityUrls(string url) {
-      if (!IsAvailable()) {
-        return Array.Empty<string>();
-      }
-
-      try {
-        // Try to get URLs at specific quality levels
-        var qualities = new[] { 360, 480, 720, 1080 };
-        var urls = new List<string>();
-
-        // Audio only
-        string? audioUrl = await ResolveUrlWithFormat(url, "bestaudio");
-        urls.Add(audioUrl ?? "");
-
-        // Video at each quality level
-        foreach (int height in qualities) {
-          string? qualityUrl = await ResolveUrlWithFormat(url, $"b[height<={height}]/b");
-          urls.Add(qualityUrl ?? "");
+        /// <summary>
+        /// Preferred max video height for quality selection (e.g. 360, 480, 720, 1080).
+        /// 0 = best available.
+        /// </summary>
+        public int PreferredMaxHeight
+        {
+            get => _preferredMaxHeight;
+            set => _preferredMaxHeight = value;
         }
 
-        // If we got at least one valid URL, return the array
-        if (urls.Any(u => !string.IsNullOrEmpty(u))) {
-          return urls.ToArray();
+        public YtDlpManager(string pluginDir, int preferredMaxHeight = 720)
+        {
+            _ytDlpPath = Path.Combine(pluginDir, "yt-dlp.exe");
+            _preferredMaxHeight = preferredMaxHeight;
+            _cookiesPath = FindCookiesFile();
         }
 
-        // Fallback: just get best URL
-        string? bestUrl = await ResolveStreamUrl(url);
-        if (!string.IsNullOrEmpty(bestUrl)) {
-          return new string[] { bestUrl, bestUrl, bestUrl, bestUrl, bestUrl };
-        }
-      } catch (Exception e) {
-        OnError?.Invoke(this, e);
-      }
-      return Array.Empty<string>();
-    }
+        /// <summary>
+        /// Returns true if a valid cookies file was found (e.g. from VRCVideoCacher).
+        /// </summary>
+        public bool HasCookies => !string.IsNullOrEmpty(_cookiesPath) && File.Exists(_cookiesPath);
 
-    /// <summary>
-    /// Checks if the given URL is likely supported by yt-dlp
-    /// (not a raw stream or local file).
-    /// </summary>
-    public static bool IsUrlSupported(string url) {
-      if (string.IsNullOrWhiteSpace(url)) return false;
-      // Don't try yt-dlp on raw streams or local files
-      if (url.StartsWith("rtmp://", StringComparison.OrdinalIgnoreCase)) return false;
-      if (url.StartsWith("rtsp://", StringComparison.OrdinalIgnoreCase)) return false;
-      if (File.Exists(url)) return false;
-      // Must be an HTTP URL
-      return url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-        || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Attempts to self-update yt-dlp via yt-dlp -U.
-    /// </summary>
-    public async Task<bool> SelfUpdate() {
-      if (!IsAvailable()) return false;
-
-      try {
-        OnStatusUpdate?.Invoke(this, "Updating yt-dlp...");
-        string result = await RunYtDlp("-U");
-        OnStatusUpdate?.Invoke(this, "yt-dlp update complete.");
-        return true;
-      } catch (Exception e) {
-        OnError?.Invoke(this, e);
-        return false;
-      }
-    }
-
-    #region Private Helpers
-
-    private const string YtDlpDownloadUrl =
-      "https://github.com/yt-dlp/yt-dlp/releases/download/2026.03.17/yt-dlp.exe";
-
-    private const string ChromeCookieUnlockUrl =
-      "https://github.com/seproDev/yt-dlp-ChromeCookieUnlock/releases/latest/download/yt-dlp-ChromeCookieUnlock.zip";
-
-    private string PluginDir => Path.GetDirectoryName(_ytDlpPath) ?? ".";
-    private string PluginsDir => Path.Combine(PluginDir, "yt-dlp-plugins");
-    private string ChromeCookieUnlockPath => Path.Combine(PluginsDir, "yt-dlp-ChromeCookieUnlock.zip");
-
-    /// <summary>
-    /// Ensures yt-dlp and all dependencies are available.
-    /// Downloads missing components, then self-updates yt-dlp.
-    /// Call this at plugin startup on a background thread.
-    /// </summary>
-    public async Task EnsureAvailableAsync() {
-      if (!IsAvailable()) {
-        await DownloadYtDlp();
-      }
-
-      // Download companion tools if missing
-      await EnsureChromeCookieUnlock();
-
-      if (IsAvailable()) {
-        await SelfUpdate();
-      }
-
-      // Report cookie status
-      if (HasCookies) {
-        OnStatusUpdate?.Invoke(this, $"Using cookies from: {_cookiesPath}");
-      } else if (!string.IsNullOrEmpty(CookieBrowser)) {
-        OnStatusUpdate?.Invoke(this, $"Using cookies from browser: {CookieBrowser}");
-      } else {
-        OnStatusUpdate?.Invoke(this, "No YouTube cookies found. Place cookies.txt in plugin dir, or install VRCVideoCacher browser extension.");
-      }
-    }
-
-    /// <summary>
-    /// Downloads yt-dlp.exe from GitHub releases to the plugin directory.
-    /// </summary>
-    private async Task DownloadYtDlp() {
-      await DownloadFile(YtDlpDownloadUrl, _ytDlpPath, "yt-dlp");
-    }
-
-    /// <summary>
-    /// Downloads the ChromeCookieUnlock plugin if missing.
-    /// Placed in yt-dlp-plugins/ next to yt-dlp.exe so it's auto-discovered.
-    /// </summary>
-    private async Task EnsureChromeCookieUnlock() {
-      if (File.Exists(ChromeCookieUnlockPath)) return;
-      Directory.CreateDirectory(PluginsDir);
-      await DownloadFile(ChromeCookieUnlockUrl, ChromeCookieUnlockPath, "ChromeCookieUnlock plugin");
-    }
-
-    /// <summary>
-    /// Generic file downloader with temp-file-then-move pattern.
-    /// </summary>
-    private async Task DownloadFile(string url, string targetPath, string displayName) {
-      try {
-        string targetDir = Path.GetDirectoryName(targetPath) ?? ".";
-        Directory.CreateDirectory(targetDir);
-
-        OnStatusUpdate?.Invoke(this, $"Downloading {displayName}...");
-
-        using var httpClient = new System.Net.Http.HttpClient();
-        httpClient.Timeout = TimeSpan.FromMinutes(5);
-        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("XivMediaPlayer/1.0");
-
-        using var response = await httpClient.GetAsync(url, System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
-        response.EnsureSuccessStatusCode();
-
-        // Write to a temp file first, then move (atomic-ish)
-        string tempPath = targetPath + ".tmp";
-        using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None)) {
-          await response.Content.CopyToAsync(fs);
+        /// <summary>
+        /// Returns true if the yt-dlp binary exists at the configured path.
+        /// </summary>
+        public bool IsAvailable()
+        {
+            return !string.IsNullOrEmpty(_ytDlpPath) && File.Exists(_ytDlpPath);
         }
 
-        // Replace existing if present
-        if (File.Exists(targetPath)) {
-          File.Delete(targetPath);
-        }
-        File.Move(tempPath, targetPath);
+        /// <summary>
+        /// Resolves a URL to a direct stream URL suitable for VLC playback.
+        /// Returns null if resolution fails.
+        /// </summary>
+        public async Task<string?> ResolveStreamUrl(string url)
+        {
+            if (!IsAvailable())
+            {
+                OnError?.Invoke(this, new FileNotFoundException("yt-dlp binary not found at: " + _ytDlpPath));
+                return null;
+            }
 
-        OnStatusUpdate?.Invoke(this, $"{displayName} downloaded.");
-      } catch (Exception e) {
-        OnError?.Invoke(this, new Exception($"Failed to download {displayName}: " + e.Message, e));
-      }
-    }
+            try
+            {
+                OnStatusUpdate?.Invoke(this, "Resolving stream URL...");
 
-    private async Task<string?> ResolveUrlWithFormat(string url, string format) {
-      try {
-        string result = await RunYtDlp($"--get-url -f \"{format}\" \"{url}\"");
-        return result?.Trim().Split('\n').FirstOrDefault()?.Trim();
-      } catch {
-        return null;
-      }
-    }
+                string formatArg = _preferredMaxHeight > 0
+                  ? $"b[height<={_preferredMaxHeight}]/b"
+                  : "b";
 
-    private async Task<string> RunYtDlp(string arguments) {
-      return await Task.Run(() => {
-        // Inject cookies if available (e.g. from VRCVideoCacher browser extension)
-        string fullArgs = BuildCommonArgs() + arguments;
-        var psi = new ProcessStartInfo {
-          FileName = _ytDlpPath,
-          Arguments = fullArgs,
-          UseShellExecute = false,
-          RedirectStandardOutput = true,
-          RedirectStandardError = true,
-          CreateNoWindow = true,
-          StandardOutputEncoding = Encoding.UTF8,
-          StandardErrorEncoding = Encoding.UTF8,
-        };
+                string result = await RunYtDlp($"--get-url -f \"{formatArg}\" \"{url}\"");
+                string? streamUrl = result?.Trim().Split('\n').FirstOrDefault()?.Trim();
 
-        using var process = Process.Start(psi);
-        if (process == null) {
-          throw new Exception("Failed to start yt-dlp process");
+                if (!string.IsNullOrEmpty(streamUrl))
+                {
+                    OnStatusUpdate?.Invoke(this, "Stream URL resolved.");
+                    return streamUrl;
+                }
+
+                OnError?.Invoke(this, new Exception("yt-dlp returned empty URL for: " + url));
+                return null;
+            } catch (Exception e)
+            {
+                OnError?.Invoke(this, e);
+                return null;
+            }
         }
 
-        bool timedOut = false;
-        using var timer = new Timer(_ => {
-          timedOut = true;
-          try { process.Kill(); } catch { }
-        }, null, 30000, Timeout.Infinite);
+        /// <summary>
+        /// Fetches metadata (title, duration, uploader, thumbnail, etc.) for a URL.
+        /// Returns null if fetching fails.
+        /// </summary>
+        public async Task<YtDlpMetadata?> GetMetadata(string url)
+        {
+            if (!IsAvailable())
+            {
+                return null;
+            }
 
-        // Read stderr asynchronously to prevent buffer deadlocks
-        string error = "";
-        process.ErrorDataReceived += (s, e) => { if (e.Data != null) error += e.Data + "\n"; };
-        process.BeginErrorReadLine();
-
-        string output = process.StandardOutput.ReadToEnd();
-        process.WaitForExit();
-        
-        timer.Change(Timeout.Infinite, Timeout.Infinite);
-
-        if (timedOut) {
-          throw new TimeoutException("yt-dlp timed out after 30 seconds");
+            try
+            {
+                string result = await RunYtDlp($"--dump-json --no-download --no-playlist \"{url}\"");
+                if (!string.IsNullOrEmpty(result))
+                {
+                    var firstJsonLine = result.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                                              .FirstOrDefault(l => l.TrimStart().StartsWith("{"));
+                    if (firstJsonLine != null)
+                    {
+                        return JsonConvert.DeserializeObject<YtDlpMetadata>(firstJsonLine);
+                    }
+                }
+            } catch (Exception e)
+            {
+                OnError?.Invoke(this, e);
+            }
+            return null;
         }
 
-        if (process.ExitCode != 0 && string.IsNullOrEmpty(output)) {
-          throw new Exception($"yt-dlp exited with code {process.ExitCode}: {error}");
+        /// <summary>
+        /// Resolves a URL to multiple quality stream URLs.
+        /// Returns an array where index 0 = audio-only, then ascending quality.
+        /// Falls back to single URL if format listing fails.
+        /// </summary>
+        public async Task<string[]> ResolveMultiQualityUrls(string url)
+        {
+            if (!IsAvailable())
+            {
+                return Array.Empty<string>();
+            }
+
+            try
+            {
+                // Try to get URLs at specific quality levels
+                var qualities = new[] { 360, 480, 720, 1080 };
+                var urls = new List<string>();
+
+                // Audio only
+                string? audioUrl = await ResolveUrlWithFormat(url, "bestaudio");
+                urls.Add(audioUrl ?? "");
+
+                // Video at each quality level
+                foreach (int height in qualities)
+                {
+                    string? qualityUrl = await ResolveUrlWithFormat(url, $"b[height<={height}]/b");
+                    urls.Add(qualityUrl ?? "");
+                }
+
+                // If we got at least one valid URL, return the array
+                if (urls.Any(u => !string.IsNullOrEmpty(u)))
+                {
+                    return urls.ToArray();
+                }
+
+                // Fallback: just get best URL
+                string? bestUrl = await ResolveStreamUrl(url);
+                if (!string.IsNullOrEmpty(bestUrl))
+                {
+                    return new string[] { bestUrl, bestUrl, bestUrl, bestUrl, bestUrl };
+                }
+            } catch (Exception e)
+            {
+                OnError?.Invoke(this, e);
+            }
+            return Array.Empty<string>();
         }
 
-        return output;
-      });
-    }
-
-    /// <summary>
-    /// Looks for a cookies file in order of priority:
-    /// 1. Plugin directory (cookies.txt — user-provided or auto-saved from clipboard)
-    /// 2. VRCVideoCacher's youtube_cookies.txt (from browser extension)
-    /// </summary>
-    private string? FindCookiesFile() {
-      // Check plugin directory first
-      string pluginDir = Path.GetDirectoryName(_ytDlpPath) ?? ".";
-      string localCookies = Path.Combine(pluginDir, "cookies.txt");
-      if (File.Exists(localCookies)) return localCookies;
-
-      // Check VRCVideoCacher location (%APPDATA%/VRCVideoCacher/)
-      string vrcCookies = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "VRCVideoCacher", "youtube_cookies.txt");
-      if (File.Exists(vrcCookies)) return vrcCookies;
-
-      return null;
-    }
-
-    /// <summary>
-    /// Returns the path where cookies.txt will be saved (plugin directory).
-    /// </summary>
-    public string CookiesSavePath => Path.Combine(
-      Path.GetDirectoryName(_ytDlpPath) ?? ".", "cookies.txt");
-
-    /// <summary>
-    /// Checks if text looks like Netscape cookie format (tab-separated, 7 fields per line).
-    /// Used for auto-detecting cookies on the clipboard.
-    /// </summary>
-    public static bool IsNetscapeCookieFormat(string? text) {
-      if (string.IsNullOrWhiteSpace(text)) return false;
-
-      var lines = text.Split('\n')
-        .Select(l => l.Trim())
-        .Where(l => !string.IsNullOrEmpty(l) && !l.StartsWith("#"))
-        .ToArray();
-
-      if (lines.Length < 2) return false;
-
-      // At least half the non-comment lines should be 7-field tab-separated
-      int validCount = 0;
-      foreach (var line in lines) {
-        var parts = line.Split('\t');
-        if (parts.Length == 7 && (parts[0].Contains('.') || parts[0] == "localhost")) {
-          validCount++;
+        /// <summary>
+        /// Checks if the given URL is likely supported by yt-dlp
+        /// (not a raw stream or local file).
+        /// </summary>
+        public static bool IsUrlSupported(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return false;
+            // Don't try yt-dlp on raw streams or local files
+            if (url.StartsWith("rtmp://", StringComparison.OrdinalIgnoreCase)) return false;
+            if (url.StartsWith("rtsp://", StringComparison.OrdinalIgnoreCase)) return false;
+            if (File.Exists(url)) return false;
+            // Must be an HTTP URL
+            return url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+              || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
         }
-      }
 
-      return validCount >= 2 && validCount >= lines.Length / 2;
+        /// <summary>
+        /// Attempts to self-update yt-dlp via yt-dlp -U.
+        /// </summary>
+        public async Task<bool> SelfUpdate()
+        {
+            if (!IsAvailable()) return false;
+
+            try
+            {
+                OnStatusUpdate?.Invoke(this, "Updating yt-dlp...");
+                string result = await RunYtDlp("-U");
+                OnStatusUpdate?.Invoke(this, "yt-dlp update complete.");
+                return true;
+            } catch (Exception e)
+            {
+                OnError?.Invoke(this, e);
+                return false;
+            }
+        }
+
+        #region Private Helpers
+
+        private const string Deno =
+            "https://github.com/denoland/deno/releases/download/v2.8.2/deno-x86_64-pc-windows-msvc.zip";
+        private const string YtDlpDownloadUrl =
+          "https://github.com/yt-dlp/yt-dlp/releases/download/2026.03.17/yt-dlp.exe";
+        private const string ChromeCookieUnlockUrl =
+          "https://github.com/seproDev/yt-dlp-ChromeCookieUnlock/releases/latest/download/yt-dlp-ChromeCookieUnlock.zip";
+
+        private string PluginDir => Path.GetDirectoryName(_ytDlpPath) ?? ".";
+        private string PluginsDir => Path.Combine(PluginDir, "yt-dlp-plugins");
+        private string ChromeCookieUnlockPath => Path.Combine(PluginsDir, "yt-dlp-ChromeCookieUnlock.zip");
+        private string DenoPath => Path.Combine(PluginDir, "deno.zip");
+
+        /// <summary>
+        /// Ensures yt-dlp and all dependencies are available.
+        /// Downloads missing components, then self-updates yt-dlp.
+        /// Call this at plugin startup on a background thread.
+        /// </summary>
+        public async Task EnsureAvailableAsync()
+        {
+            if (!IsAvailable())
+            {
+                await DownloadYtDlp();
+            }
+
+            // Download companion tools if missing
+            await EnsureChromeCookieUnlock();
+            await EnsureDeno();
+
+            if (IsAvailable())
+            {
+                await SelfUpdate();
+            }
+
+            // Report cookie status
+            if (HasCookies)
+            {
+                OnStatusUpdate?.Invoke(this, $"Using cookies from: {_cookiesPath}");
+            } else if (!string.IsNullOrEmpty(CookieBrowser))
+            {
+                OnStatusUpdate?.Invoke(this, $"Using cookies from browser: {CookieBrowser}");
+            } else
+            {
+                OnStatusUpdate?.Invoke(this, "No YouTube cookies found. Place cookies.txt in plugin dir, or install VRCVideoCacher browser extension.");
+            }
+        }
+
+        /// <summary>
+        /// Downloads yt-dlp.exe from GitHub releases to the plugin directory.
+        /// </summary>
+        private async Task DownloadYtDlp()
+        {
+            await DownloadFile(YtDlpDownloadUrl, _ytDlpPath, "yt-dlp");
+        }
+
+        /// <summary>
+        /// Downloads the ChromeCookieUnlock plugin if missing.
+        /// Placed in yt-dlp-plugins/ next to yt-dlp.exe so it's auto-discovered.
+        /// </summary>
+        private async Task EnsureChromeCookieUnlock()
+        {
+            if (File.Exists(ChromeCookieUnlockPath)) return;
+            Directory.CreateDirectory(PluginsDir);
+            await DownloadFile(ChromeCookieUnlockUrl, ChromeCookieUnlockPath, "ChromeCookieUnlock plugin");
+        }
+
+        /// <summary>
+        /// Downloads the ChromeCookieUnlock plugin if missing.
+        /// Placed in yt-dlp-plugins/ next to yt-dlp.exe so it's auto-discovered.
+        /// </summary>
+        private async Task EnsureDeno()
+        {
+            if (File.Exists(DenoPath.Replace(".zip", ".exe"))) return;
+            await DownloadFile(Deno, DenoPath, "Deno");
+            ZipFile.ExtractToDirectory(DenoPath, PluginDir);
+        }
+
+        /// <summary>
+        /// Generic file downloader with temp-file-then-move pattern.
+        /// </summary>
+        private async Task DownloadFile(string url, string targetPath, string displayName)
+        {
+            try
+            {
+                string targetDir = Path.GetDirectoryName(targetPath) ?? ".";
+                Directory.CreateDirectory(targetDir);
+
+                OnStatusUpdate?.Invoke(this, $"Downloading {displayName}...");
+
+                using var httpClient = new System.Net.Http.HttpClient();
+                httpClient.Timeout = TimeSpan.FromMinutes(5);
+                httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("XivMediaPlayer/1.0");
+
+                using var response = await httpClient.GetAsync(url, System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
+                response.EnsureSuccessStatusCode();
+
+                // Write to a temp file first, then move (atomic-ish)
+                string tempPath = targetPath + ".tmp";
+                using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    await response.Content.CopyToAsync(fs);
+                }
+
+                // Replace existing if present
+                if (File.Exists(targetPath))
+                {
+                    File.Delete(targetPath);
+                }
+                File.Move(tempPath, targetPath);
+
+                OnStatusUpdate?.Invoke(this, $"{displayName} downloaded.");
+            } catch (Exception e)
+            {
+                OnError?.Invoke(this, new Exception($"Failed to download {displayName}: " + e.Message, e));
+            }
+        }
+
+        private async Task<string?> ResolveUrlWithFormat(string url, string format)
+        {
+            try
+            {
+                string result = await RunYtDlp($"--get-url -f \"{format}\" \"{url}\"");
+                return result?.Trim().Split('\n').FirstOrDefault()?.Trim();
+            } catch
+            {
+                return null;
+            }
+        }
+
+        private async Task<string> RunYtDlp(string arguments)
+        {
+            return await Task.Run(() =>
+            {
+                // Inject cookies if available (e.g. from VRCVideoCacher browser extension)
+                string fullArgs = BuildCommonArgs() + arguments;
+                var psi = new ProcessStartInfo
+                {
+                    FileName = _ytDlpPath,
+                    Arguments = fullArgs,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8,
+                };
+
+                using var process = Process.Start(psi);
+                if (process == null)
+                {
+                    throw new Exception("Failed to start yt-dlp process");
+                }
+
+                bool timedOut = false;
+                using var timer = new Timer(_ =>
+                {
+                    timedOut = true;
+                    try { process.Kill(); } catch { }
+                }, null, 30000, Timeout.Infinite);
+
+                // Read stderr asynchronously to prevent buffer deadlocks
+                string error = "";
+                process.ErrorDataReceived += (s, e) => { if (e.Data != null) error += e.Data + "\n"; };
+                process.BeginErrorReadLine();
+
+                string output = process.StandardOutput.ReadToEnd();
+                process.WaitForExit();
+
+                timer.Change(Timeout.Infinite, Timeout.Infinite);
+
+                if (timedOut)
+                {
+                    throw new TimeoutException("yt-dlp timed out after 30 seconds");
+                }
+
+                if (process.ExitCode != 0 && string.IsNullOrEmpty(output))
+                {
+                    throw new Exception($"yt-dlp exited with code {process.ExitCode}: {error}");
+                }
+
+                return output;
+            });
+        }
+
+        /// <summary>
+        /// Looks for a cookies file in order of priority:
+        /// 1. Plugin directory (cookies.txt — user-provided or auto-saved from clipboard)
+        /// 2. VRCVideoCacher's youtube_cookies.txt (from browser extension)
+        /// </summary>
+        private string? FindCookiesFile()
+        {
+            // Check plugin directory first
+            string pluginDir = Path.GetDirectoryName(_ytDlpPath) ?? ".";
+            string localCookies = Path.Combine(pluginDir, "cookies.txt");
+            if (File.Exists(localCookies)) return localCookies;
+
+            //// Check VRCVideoCacher location (%APPDATA%/VRCVideoCacher/)
+            //string vrcCookies = Path.Combine(
+            //  Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            //  "VRCVideoCacher", "youtube_cookies.txt");
+            //if (File.Exists(vrcCookies)) return vrcCookies;
+
+            return null;
+        }
+
+        /// <summary>
+        /// Returns the path where cookies.txt will be saved (plugin directory).
+        /// </summary>
+        public string CookiesSavePath => Path.Combine(
+          Path.GetDirectoryName(_ytDlpPath) ?? ".", "cookies.txt");
+
+        /// <summary>
+        /// Checks if text looks like Netscape cookie format (tab-separated, 7 fields per line).
+        /// Used for auto-detecting cookies on the clipboard.
+        /// </summary>
+        public static bool IsNetscapeCookieFormat(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+
+            var lines = text.Split('\n')
+              .Select(l => l.Trim())
+              .Where(l => !string.IsNullOrEmpty(l) && !l.StartsWith("#"))
+              .ToArray();
+
+            if (lines.Length < 2) return false;
+
+            // At least half the non-comment lines should be 7-field tab-separated
+            int validCount = 0;
+            foreach (var line in lines)
+            {
+                var parts = line.Split('\t');
+                if (parts.Length == 7 && (parts[0].Contains('.') || parts[0] == "localhost"))
+                {
+                    validCount++;
+                }
+            }
+
+            return validCount >= 2 && validCount >= lines.Length / 2;
+        }
+
+        /// <summary>
+        /// Saves cookie text to the plugin directory and updates the cookie path.
+        /// Returns true if saved successfully.
+        /// </summary>
+        public bool SaveCookiesFromText(string cookieText)
+        {
+            try
+            {
+                File.WriteAllText(CookiesSavePath, cookieText);
+                _cookiesPath = CookiesSavePath;
+                OnStatusUpdate?.Invoke(this, "YouTube cookies saved from clipboard.");
+                return true;
+            } catch (Exception e)
+            {
+                OnError?.Invoke(this, new Exception("Failed to save cookies: " + e.Message, e));
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Optional: set to a browser name (chrome, firefox, edge) to use
+        /// yt-dlp's --cookies-from-browser feature instead of a cookie file.
+        /// </summary>
+        public string? CookieBrowser { get; set; }
+
+        /// <summary>
+        /// Builds the common argument prefix (cookies, etc.) for all yt-dlp calls.
+        /// </summary>
+        private string BuildCommonArgs()
+        {
+            string args = $"--impersonate chrome --js-runtimes \"deno:{DenoPath.Replace(".zip", ".exe")}\" --socket-timeout 15 ";
+
+            // Cookie injection
+            if (!string.IsNullOrEmpty(CookieBrowser))
+            {
+                args += $"--cookies-from-browser {CookieBrowser} ";
+            } else if (HasCookies)
+             {
+                args += $"--cookies \"{_cookiesPath}\" ";
+            }
+
+            return args;
+        }
+
+
+
+        #endregion
     }
-
-    /// <summary>
-    /// Saves cookie text to the plugin directory and updates the cookie path.
-    /// Returns true if saved successfully.
-    /// </summary>
-    public bool SaveCookiesFromText(string cookieText) {
-      try {
-        File.WriteAllText(CookiesSavePath, cookieText);
-        _cookiesPath = CookiesSavePath;
-        OnStatusUpdate?.Invoke(this, "YouTube cookies saved from clipboard.");
-        return true;
-      } catch (Exception e) {
-        OnError?.Invoke(this, new Exception("Failed to save cookies: " + e.Message, e));
-        return false;
-      }
-    }
-
-    /// <summary>
-    /// Optional: set to a browser name (chrome, firefox, edge) to use
-    /// yt-dlp's --cookies-from-browser feature instead of a cookie file.
-    /// </summary>
-    public string? CookieBrowser { get; set; }
-
-    /// <summary>
-    /// Builds the common argument prefix (cookies, etc.) for all yt-dlp calls.
-    /// </summary>
-    private string BuildCommonArgs() {
-      string args = "--impersonate chrome --socket-timeout 15 ";
-
-      // Cookie injection
-      if (!string.IsNullOrEmpty(CookieBrowser)) {
-        args += $"--cookies-from-browser {CookieBrowser} ";
-      } else if (HasCookies) {
-        args += $"--cookies \"{_cookiesPath}\" ";
-      }
-
-      return args;
-    }
-
-
-
-    #endregion
-  }
 }
