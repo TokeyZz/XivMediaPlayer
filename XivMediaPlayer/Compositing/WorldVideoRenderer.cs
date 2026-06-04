@@ -21,7 +21,7 @@ namespace XivMediaPlayer.Compositing {
     private DepthTestedRenderer? _depthRenderer;
     private GlowRenderer? _glowRenderer;
     private bool _disposed;
-    private bool _useDepthOcclusion;
+    private bool _useDepthOcclusion = true;
     private bool _enableGlow = true;
 
     /// <summary>
@@ -239,10 +239,8 @@ namespace XivMediaPlayer.Compositing {
       var gBR = center + (sBR - center) * scale;
       var gBL = center + (sBL - center) * scale;
 
-      // Soften visibility: glow ranges from 50% (fully occluded) to 100% (fully visible)
-      // This simulates light bleeding around/through occluding objects
-      float glowStrength = 0.5f + visibility * 0.5f;
-      byte alpha = (byte)(144 * glowStrength); // base ~56% scaled by softened visibility
+      // Flat 90% occlusion on glow layer — always renders at 10% strength
+      byte alpha = (byte)(144 * 0.10f);
       uint color = (uint)(alpha << 24) | 0x00FFFFFF;
 
       drawList.AddImageQuad(
