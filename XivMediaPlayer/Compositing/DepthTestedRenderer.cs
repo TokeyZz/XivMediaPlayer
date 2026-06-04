@@ -156,37 +156,18 @@ float4 PS(VS_OUT input) : SV_TARGET {
       // Draw unoccluded TV
       color = VideoTexture.Sample(VideoSampler, uv);
   } else {
-      // Dynamic depth auto-ranging exactly like the preview window!
-      float range = DynamicMaxDepth - DynamicMinDepth;
-      if (range < 0.0001) range = 1.0;
-      
-      // Calculate normalized depth (1.0 = minDepth/far, 0.0 = maxDepth/near)
-      // Since FFXIV uses reversed-Z, gameDepth is high near the camera and low far away.
-      float normalized = saturate((gameDepth - DynamicMinDepth) / range);
-      
-      // We want light to cast on the background (far geometry). 
-      // The preview window does 1.0 - normalized to flip it. We do the same!
-      float depthMask = 1.0 - normalized;
-      
-      // Smooth it out to look like ambient lighting instead of a harsh solid mask
-      depthMask = pow(depthMask, 2.0); 
-      
+      float depthMask = 1.0;
       if (gameDepth < 0.0001) depthMask = 0; // Ignore skybox
       
-       // Fade out the backlight for objects IN FRONT of the TV (like the player)
-       float tvDepth = (CornerDepths.x + CornerDepths.y + CornerDepths.z + CornerDepths.w) * 0.25;
-       if (gameDepth > tvDepth + 0.001) { // FFXIV uses reversed-Z, so > means closer to camera
-           // The player is in front of the TV. They should receive ZERO backlight!
-           depthMask = 0.0;
-       }
-      
-      // Physical light dissipation!
-      // Light loses energy over distance. If we don't fade it, it casts infinitely across the whole room (fog).
       // Calculate distance from the TV (where uv is 0..1):
       float2 distUV = max(float2(0, 0), max(float2(0, 0) - uv, uv - float2(1, 1)));
       float dist = length(distUV);
       
-      // Smoothly fade out the light as it travels away from the screen
+      // Removing the 2D in-front shadow blocker!
+      // Because we use Color Dodge, the light naturally wraps around 3D objects and beautifully illuminates them.
+      // Trying to fake shadows with a 2D screen-space cutout creates blocky rectangular lines on characters!
+      // Physical light dissipation!
+      // Light loses energy over distance. If we don't fade it, it casts infinitely across the whole room.
       float distanceFade = saturate(1.0 - dist * 0.4); // Adjust multiplier to change how far the light reaches
       depthMask *= pow(distanceFade, 2.5); // Non-linear falloff for realism
       
@@ -240,7 +221,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
   color.a *= saturate(1.0 - bbAlpha);
   
   // Media Controls UI overlay
-  if (isInside && HoverUV.x >= 0.0 && HoverUV.y >= 0.0) {
+  if (isInside && !occluded && HoverUV.x >= 0.0 && HoverUV.y >= 0.0) {
     if (uv.y > 0.85) {
       // Draw bottom bar background (semi-transparent black)
       color.rgb = lerp(color.rgb, float3(0.05, 0.05, 0.05), 0.7);
