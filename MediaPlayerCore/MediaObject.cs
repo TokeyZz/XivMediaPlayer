@@ -150,9 +150,14 @@ namespace MediaPlayerCore {
               Debug.WriteLine($"[MediaObject] Media path: {mediaPath.Substring(0, Math.Min(100, mediaPath.Length))}...");
 
               Core.Initialize(location);
+              string userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+              if (httpHeaders != null && httpHeaders.TryGetValue("User-Agent", out string customUserAgent)) {
+                userAgent = customUserAgent;
+              }
+
               var vlcArgs = new List<string> {
                 "--vout=none", 
-                "--http-user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                $"--http-user-agent={userAgent}",
                 "--http-reconnect",
                 "--network-caching=2000"
               };
@@ -287,18 +292,16 @@ namespace MediaPlayerCore {
     private void Display(IntPtr opaque, IntPtr picture) {
       if (!Invalidated) {
         try {
-          using (var image = new Image<Bgra32>((int)(_pitch / _bytePerPixel), (int)_lines))
           using (var sourceStream = _currentMappedFile.CreateViewStream()) {
-            var mg = image.GetPixelMemoryGroup();
-            for (int i = 0; i < mg.Count; i++) {
-              sourceStream.Read(MemoryMarshal.AsBytes(mg[i].Span));
-            }
             lock (_parent.LastFrame) {
-              MemoryStream stream = new MemoryStream();
-              image.SaveAsJpeg(stream);
-              stream.Flush();
-              stream.Position = 0;
-              _parent.LastFrame = stream.ToArray();
+              int totalBytes = (int)(_pitch * _lines);
+              if (_parent.LastFrame.Length != totalBytes) {
+                  _parent.LastFrame = new byte[totalBytes];
+              }
+              sourceStream.Read(_parent.LastFrame, 0, totalBytes);
+              _parent.LastFrameWidth = (int)(_pitch / _bytePerPixel);
+              _parent.LastFrameHeight = (int)_lines;
+              _parent.LastFrameCount++;
             }
           }
           _currentMappedViewAccessor.Dispose();

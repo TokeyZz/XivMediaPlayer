@@ -22,6 +22,9 @@ namespace MediaPlayerCore {
 
     public float LiveStreamVolume { get => _livestreamVolume; set => _livestreamVolume = value; }
     public byte[] LastFrame { get => _lastFrame; set => _lastFrame = value; }
+    public ulong LastFrameCount { get; set; } = 0;
+    public int LastFrameWidth { get; set; } = 0;
+    public int LastFrameHeight { get; set; } = 0;
     public bool Invalidated { get => _invalidated; set => _invalidated = value; }
     
     public MediaObject? ActiveStream {

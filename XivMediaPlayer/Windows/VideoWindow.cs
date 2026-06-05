@@ -32,6 +32,7 @@ namespace XivMediaPlayer.Windows {
     Stopwatch eventTriggerCooldown = new Stopwatch();
     private IDalamudTextureWrap _frameToLoad;
     private IDalamudTextureWrap _blackFrame;
+    private ulong _lastLoadedFrameCount = 0;
     private byte[] _lastLoadedFrame;
     private bool taskAlreadyRunning;
     private bool _disposed;
@@ -91,12 +92,12 @@ namespace XivMediaPlayer.Windows {
                 bytes = _mediaManager.LastFrame;
               }
 
-              if (bytes.Length > 0) {
-                if (_lastLoadedFrame != _mediaManager.LastFrame) {
-                  var newTexture = await _textureProvider.CreateFromImageAsync(bytes);
+              if (bytes.Length > 0 && _mediaManager.LastFrameWidth > 0 && _mediaManager.LastFrameHeight > 0) {
+                if (_lastLoadedFrameCount != _mediaManager.LastFrameCount) {
+                  var newTexture = _textureProvider.CreateFromRaw(Dalamud.Interface.Textures.RawImageSpecification.Bgra32(_mediaManager.LastFrameWidth, _mediaManager.LastFrameHeight), bytes.Span, "VideoWindowTexture");
                   var oldTexture = _frameToLoad;
                   _frameToLoad = newTexture;
-                  _lastLoadedFrame = _mediaManager.LastFrame;
+                  _lastLoadedFrameCount = _mediaManager.LastFrameCount;
                   oldTexture?.Dispose();
                 }
               }
