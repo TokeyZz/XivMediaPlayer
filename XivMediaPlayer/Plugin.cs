@@ -313,7 +313,7 @@ namespace XivMediaPlayer
                     if ((DateTime.UtcNow - _lastServerSyncFetch).TotalSeconds >= 10)
                     {
                         _lastServerSyncFetch = DateTime.UtcNow;
-                        _ = FetchMediaFromServerAsync();
+                        _ = FetchServerDataForCurrentLocationAsync();
                     }
                 }
             }
