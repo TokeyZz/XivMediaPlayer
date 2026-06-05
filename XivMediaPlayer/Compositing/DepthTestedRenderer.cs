@@ -56,8 +56,7 @@ namespace XivMediaPlayer.Compositing {
       public float HasBackBuffer;
       public float IsLockedTV;
       public float Volume;
-      public float _pad2;
-      public float _pad3;
+      public Vector2 RenderResolution;
       public float _pad4;
     }
 
@@ -88,7 +87,8 @@ cbuffer Constants : register(b0) {
   float HasBackBuffer;
   float IsLockedTV;
   float Volume;
-  float3 _padEnd;
+  float2 RenderResolution;
+  float _padEnd;
 };
 
 cbuffer UIConsts : register(b1) {
@@ -158,7 +158,15 @@ float4 PS(VS_OUT input) : SV_TARGET {
 
   bool isInside = (uv.x >= 0 && uv.x <= 1 && uv.y >= 0 && uv.y <= 1);
   float2 screenUV = pixelPos / ScreenSize;
-  float gameDepth = DepthTexture.Sample(DepthSampler, screenUV).r;
+  
+  // Dynamic Resolution scaling: the depth buffer texture size might be larger than the actual rendered area
+  float2 renderScale = float2(1.0, 1.0);
+  if (RenderResolution.x > 0 && RenderResolution.y > 0) {
+      renderScale = RenderResolution / ScreenSize;
+  }
+  float2 depthUV = screenUV * renderScale;
+  
+  float gameDepth = DepthTexture.Sample(DepthSampler, depthUV).r;
   float4 color = float4(0, 0, 0, 0);
 
   bool occluded = false;
@@ -484,6 +492,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
       ID3D11ShaderResourceView backBufferSRV,
       Vector2? hoverUV, float progress, bool isPlaying, bool isLocked,
       float minDepth, float maxDepth, float volume,
+      float renderWidth, float renderHeight,
       List<(int X, int Y, int W, int H, string Name)> uiRects) {
 
       if (!_initialized || _disposed || videoTextureSRV == IntPtr.Zero || depthSRV == null) return false;
@@ -512,7 +521,8 @@ float4 PS(VS_OUT input) : SV_TARGET {
           DynamicMaxDepth = maxDepth,
           HasBackBuffer = backBufferSRV != null ? 1.0f : 0.0f,
           IsLockedTV = isLocked ? 1.0f : 0.0f,
-          Volume = volume
+          Volume = volume,
+          RenderResolution = new Vector2(renderWidth, renderHeight),
         };
         _context.UpdateSubresource(constants, _constantBuffer);
 

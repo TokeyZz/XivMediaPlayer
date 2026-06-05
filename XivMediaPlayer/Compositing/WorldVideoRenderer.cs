@@ -228,6 +228,7 @@ namespace XivMediaPlayer.Compositing {
           uiCapture?.BackBufferSRV,
           hoverUV, progress, isPlaying, isLocked,
           minDepth, maxDepth, volume,
+          depthCapture.RenderWidth, depthCapture.RenderHeight,
           uiCapture?.LastAddonRects);
 
         if (success && _depthRenderer.OutputSRV != null) {

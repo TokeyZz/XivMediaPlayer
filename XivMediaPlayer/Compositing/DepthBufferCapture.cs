@@ -46,6 +46,8 @@ namespace XivMediaPlayer.Compositing {
     public bool IsInitialized => _initialized;
     public int DepthWidth => _texWidth;
     public int DepthHeight => _texHeight;
+    public float RenderWidth { get; private set; }
+    public float RenderHeight { get; private set; }
 
     /// <summary>
     /// Returns the DSV of our captured depth copy, for use in depth-tested rendering.
@@ -170,6 +172,8 @@ namespace XivMediaPlayer.Compositing {
         var rtm = FFXIVClientStructs.FFXIV.Client.Graphics.Render.RenderTargetManager.Instance();
         if (rtm != null && rtm->DepthStencil != null && rtm->DepthStencil->D3D11Texture2D != null) {
           _gameDepthTexturePtr = (IntPtr)rtm->DepthStencil->D3D11Texture2D;
+          RenderWidth = rtm->Resolution_Width;
+          RenderHeight = rtm->Resolution_Height;
         } else {
           var ffxivDevice = Device.Instance();
           if (ffxivDevice != null && ffxivDevice->SwapChain != null && ffxivDevice->SwapChain->DepthStencil != null && ffxivDevice->SwapChain->DepthStencil->D3D11Texture2D != null) {
