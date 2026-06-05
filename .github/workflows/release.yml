@@ -57,7 +57,7 @@ jobs:
           rm -rf cef libvlc
           
           # Remove duplicate native CEF binaries from the root directory to save space
-          rm -f *.pak *.dat *.bin libcef.dll libGLESv2.dll libEGL.dll vk_swiftshader.dll vk_swiftshader_icd.json chrome_elf.dll d3dcompiler_47.dll dxcompiler.dll dxil.dll
+          rm -f *.pak *.dat *.bin libcef.dll libGLESv2.dll libEGL.dll vk_swiftshader.dll vk_swiftshader_icd.json chrome_elf.dll d3dcompiler_47.dll dxcompiler.dll dxil.dll latest.zip
           
           # Zip the lightweight managed plugin files
           7z a ../XivMediaPlayer.zip *
