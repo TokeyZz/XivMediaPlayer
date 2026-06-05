@@ -110,6 +110,7 @@ namespace XivMediaPlayer
 
         // Input tracking
         private bool _wasLeftMousePressed = false;
+        private DependencyManager _dependencyManager;
 
         public Plugin(
           IDalamudPluginInterface pluginInterface,
@@ -136,6 +137,15 @@ namespace XivMediaPlayer
             _objectTable = objectTable;
             _gameInterop = gameInterop;
 
+            // Initialize dependency manager to download large binaries (libvlc, cef)
+            string configDir = _pluginInterface.ConfigDirectory.FullName;
+            string pluginDir = System.IO.Path.GetDirectoryName(_pluginInterface.AssemblyLocation.FullName) ?? "";
+            string version = this.GetType().Assembly.GetName().Version?.ToString() ?? "0.0.0.0";
+            _dependencyManager = new DependencyManager(configDir, pluginDir, version, _pluginLog);
+
+            // Bypass Dalamud's assembly resolver for CefSharp natively (just in case)
+            AppDomain.CurrentDomain.AssemblyResolve += (sender, args) => { return null; };
+
             System.Runtime.Loader.AssemblyLoadContext.Default.Resolving += (context, assemblyName) =>
             {
                 if (assemblyName.Name != null && assemblyName.Name.StartsWith("CefSharp"))
@@ -156,7 +166,6 @@ namespace XivMediaPlayer
             _config.Initialize(_pluginInterface);
 
             // Initialize yt-dlp manager
-            string pluginDir = Path.GetDirectoryName(_pluginInterface.AssemblyLocation.FullName) ?? "";
             _ytDlpManager = new YtDlpManager(pluginDir, _config.PreferredQuality);
             _ytDlpManager.OnStatusUpdate += (s, msg) => _pluginLog.Info("[yt-dlp] " + msg);
             _ytDlpManager.OnError += (s, ex) => _pluginLog.Warning(ex, "[yt-dlp] " + ex.Message);
@@ -273,6 +282,15 @@ namespace XivMediaPlayer
 
             if (!_hasBeenInitialized && _clientState.IsLoggedIn)
             {
+                if (!_dependencyManager.IsReady)
+                {
+                    if (!_dependencyManager.IsDownloading && !_dependencyManager.HasError)
+                    {
+                        _ = _dependencyManager.DownloadDependenciesAsync();
+                    }
+                    return;
+                }
+
                 try
                 {
                     InitializeMediaManager();
@@ -390,7 +408,7 @@ namespace XivMediaPlayer
             _playerObject = new MediaGameObject(localPlayer);
             _camera = CameraManager.Instance()->GetActiveCamera();
             _playerCamera = new MediaCameraObject(_camera);
-            _mediaManager = new MediaManager(_playerObject, _playerCamera, Path.GetDirectoryName(_pluginInterface.AssemblyLocation.FullName));
+            _mediaManager = new MediaManager(_playerObject, _playerCamera, _dependencyManager.DependenciesDir);
             _mediaManager.OnErrorReceived += OnMediaError;
             _mediaManager.LiveStreamVolume = _config.LivestreamVolume;
             _videoWindow.MediaManager = _mediaManager;
@@ -699,8 +717,7 @@ namespace XivMediaPlayer
                         MediaPlayerCore.Resolvers.CefSharpResolverResult? cefResult = null;
                         try
                         {
-                            string pluginDir = System.IO.Path.GetDirectoryName(_pluginInterface.AssemblyLocation.FullName);
-                            MediaPlayerCore.Resolvers.CefSharpResolver.Initialize(pluginDir);
+                            MediaPlayerCore.Resolvers.CefSharpResolver.Initialize(_dependencyManager.DependenciesDir);
                             cefResult = await MediaPlayerCore.Resolvers.CefSharpResolver.ResolveStreamUrlAsync(url);
                         }
                         catch (Exception ex)
@@ -1349,6 +1366,30 @@ namespace XivMediaPlayer
         {
             // Reset per-frame depth capture flag
             _depthCapture?.BeginFrame();
+
+            if (!_dependencyManager.IsReady)
+            {
+                if (_dependencyManager.IsDownloading || _dependencyManager.HasError)
+                {
+                    ImGui.SetNextWindowPos(new System.Numerics.Vector2(ImGui.GetIO().DisplaySize.X / 2 - 200, ImGui.GetIO().DisplaySize.Y / 2 - 50));
+                    ImGui.SetNextWindowSize(new System.Numerics.Vector2(400, 100));
+                    if (ImGui.Begin("XivMediaPlayer - Initial Setup", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoMove))
+                    {
+                        ImGui.TextWrapped(_dependencyManager.Status);
+                        if (_dependencyManager.IsDownloading) {
+                            ImGui.ProgressBar(_dependencyManager.DownloadProgress, new System.Numerics.Vector2(-1, 0));
+                        }
+                        if (_dependencyManager.HasError) {
+                            ImGui.TextColored(new System.Numerics.Vector4(1, 0, 0, 1), _dependencyManager.ErrorMessage);
+                            if (ImGui.Button("Retry Download")) {
+                                _ = _dependencyManager.DownloadDependenciesAsync();
+                            }
+                        }
+                        ImGui.End();
+                    }
+                }
+                return;
+            }
 
             if (_uiCapture != null)
             {

@@ -159,20 +159,12 @@ namespace MediaPlayerCore {
 
               Core.Initialize(location);
               string userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-              if (httpHeaders != null && httpHeaders.TryGetValue("User-Agent", out string customUserAgent)) {
-                userAgent = customUserAgent;
-              }
 
               var vlcArgs = new List<string> {
                 "--vout=none", 
-                $"--http-user-agent={userAgent}",
                 "--http-reconnect",
                 "--network-caching=2000"
               };
-
-              if (httpHeaders != null && httpHeaders.TryGetValue("Referer", out string referer)) {
-                vlcArgs.Add($"--http-referrer={referer}");
-              }
 
               libVLC = new LibVLC(vlcArgs.ToArray());
 
@@ -189,6 +181,16 @@ namespace MediaPlayerCore {
               
               if (startTimeMs > 0) {
                   media.AddOption($":start-time={startTimeMs / 1000.0}");
+              }
+
+              if (httpHeaders != null && httpHeaders.TryGetValue("User-Agent", out string mediaUserAgent)) {
+                  media.AddOption($":http-user-agent={mediaUserAgent}");
+              } else {
+                  media.AddOption($":http-user-agent={userAgent}");
+              }
+
+              if (httpHeaders != null && httpHeaders.TryGetValue("Referer", out string mediaReferer)) {
+                  media.AddOption($":http-referrer={mediaReferer}");
               }
 
               Debug.WriteLine("[MediaObject] Parsing media...");
@@ -262,16 +264,22 @@ namespace MediaPlayerCore {
       Task.Run(async delegate {
         try {
           if (_vlcWasAbleToStart) {
-            if (httpHeaders != null && httpHeaders.TryGetValue("Referer", out string referer)) {
-                // Cannot change LibVLC arguments after instantiation.
-                // We'd have to recreate LibVLC. For now, just ignore.
-            }
-
             var media = new Media(libVLC, soundPath, soundPath.StartsWith("http") || soundPath.StartsWith("rtmp")
                      ? FromType.FromLocation : FromType.FromPath);
             
             if (startTimeMs > 0) {
                 media.AddOption($":start-time={startTimeMs / 1000.0}");
+            }
+
+            string userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+            if (httpHeaders != null && httpHeaders.TryGetValue("User-Agent", out string mediaUserAgent)) {
+                media.AddOption($":http-user-agent={mediaUserAgent}");
+            } else {
+                media.AddOption($":http-user-agent={userAgent}");
+            }
+
+            if (httpHeaders != null && httpHeaders.TryGetValue("Referer", out string mediaReferer)) {
+                media.AddOption($":http-referrer={mediaReferer}");
             }
 
             await media.Parse(soundPath.StartsWith("http") || soundPath.StartsWith("rtmp")
