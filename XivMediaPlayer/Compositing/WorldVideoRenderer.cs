@@ -75,6 +75,24 @@ namespace XivMediaPlayer.Compositing {
       Vector2? hoverUV = null, float progress = 0f, bool isPlaying = false, bool isLocked = true, float volume = 1f) {
       if (_disposed || !IsActive || textureWrap == null) return;
 
+      if (cameraPos.HasValue && cameraForward.HasValue) {
+        var (tl, tr, br, bl) = _transform.Corners;
+        float zTL = Vector3.Dot(tl - cameraPos.Value, -cameraForward.Value);
+        float zTR = Vector3.Dot(tr - cameraPos.Value, -cameraForward.Value);
+        float zBR = Vector3.Dot(br - cameraPos.Value, -cameraForward.Value);
+        float zBL = Vector3.Dot(bl - cameraPos.Value, -cameraForward.Value);
+        
+        // If ALL corners are behind the camera plane, do not render to avoid perspective wrap-around
+        if (zTL <= 0.1f && zTR <= 0.1f && zBR <= 0.1f && zBL <= 0.1f) {
+            return;
+        }
+
+        // If ANY corner is extremely far behind the camera, also cull to prevent massive polygon stretching
+        if (zTL <= -2f || zTR <= -2f || zBR <= -2f || zBL <= -2f) {
+            return;
+        }
+      }
+
       if (_useDepthOcclusion && depthCapture != null && cameraPos.HasValue && cameraForward.HasValue) {
         RenderWithOcclusion(textureWrap, depthCapture, cameraPos.Value,
           cameraForward.Value, uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, isLocked, volume);

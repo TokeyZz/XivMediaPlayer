@@ -30,9 +30,28 @@ namespace MediaPlayerCore.Resolvers
             {
                 if (_initialized) return;
 
-                // PRE-LOAD CefSharp.Core.Runtime.dll from disk so its Assembly.Location is populated!
-                // This prevents the CefSharp ModuleInitializer from throwing ArgumentNullException inside Dalamud.
                 string cefDir = Path.Combine(pluginDir, "cef");
+
+                // Disable CefSharp ModuleInitializer which crashes on Path.GetDirectoryName(Assembly.Location)
+                // when loaded dynamically by Dalamud (where Location is empty)
+                Environment.SetEnvironmentVariable("CefSharpDisableModuleInitializer", "1");
+                Environment.SetEnvironmentVariable("CEFSHARP_DISABLE_MODULE_INITIALIZER", "1");
+
+                // Explicitly resolve CefSharp assemblies from the cef/ folder since they are hidden from Dalamud
+                AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
+                {
+                    var name = new AssemblyName(args.Name).Name;
+                    if (name.StartsWith("CefSharp"))
+                    {
+                        string path = Path.Combine(cefDir, name + ".dll");
+                        if (File.Exists(path))
+                        {
+                            return Assembly.LoadFrom(path);
+                        }
+                    }
+                    return null;
+                };
+
                 try {
                     SetDllDirectory(cefDir);
                     
