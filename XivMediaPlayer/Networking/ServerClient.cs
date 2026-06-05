@@ -63,6 +63,24 @@ namespace XivMediaPlayer.Networking
             return null;
         }
 
+        public async Task<bool> DeleteTvAsync(string locationKey, string tvId, string ownerId, bool bypassLock)
+        {
+            try
+            {
+                var response = await _httpClient.DeleteAsync($"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/tvs/{Uri.EscapeDataString(tvId)}?ownerId={Uri.EscapeDataString(ownerId)}&bypassLock={bypassLock}");
+                if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    throw new UnauthorizedAccessException("Cannot delete TV: It is locked by its owner.");
+                }
+                return response.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, $"Failed to delete TV for room {locationKey}");
+                throw;
+            }
+        }
+
         public async Task<RoomMediaStateSync> GetMediaStateAsync(string locationKey)
         {
             try

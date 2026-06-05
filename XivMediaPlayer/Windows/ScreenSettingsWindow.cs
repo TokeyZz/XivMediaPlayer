@@ -85,6 +85,14 @@ namespace XivMediaPlayer.Windows {
       // Enable toggle 
       if (ImGui.Checkbox("Render in World", ref _enabled)) {
         _transform.Enabled = _enabled;
+        
+        // Auto-delete from server if turning off and we own it
+        string locKey = _plugin.LocationKey;
+        if (!_enabled && !string.IsNullOrEmpty(locKey) && locKey.StartsWith("house_") &&
+            _plugin.CurrentTvPlacement != null && _plugin.CurrentTvPlacement.OwnerId == _plugin.Config.OwnerId) {
+            DeleteTvAsync(locKey);
+        }
+        
         _onSave?.Invoke();
       }
 
@@ -260,6 +268,7 @@ namespace XivMediaPlayer.Windows {
       ImGui.Spacing();
       ImGui.Separator();
       ImGui.TextColored(new Vector4(0.7f, 0.9f, 1f, 1f), "Room Sync");
+      ImGui.TextWrapped("Saving above only saves locally. To make the TV visible to other players, you must sync it to the room.");
       
       string locationKey = _plugin.LocationKey;
       if (string.IsNullOrEmpty(locationKey) || !locationKey.StartsWith("house_")) {
@@ -279,6 +288,15 @@ namespace XivMediaPlayer.Windows {
                   }
                   RegisterTvAsync(locationKey);
               }
+              
+              ImGui.Spacing();
+              if (ImGui.Button("Sync Placements to Room")) {
+                  RegisterTvAsync(locationKey);
+              }
+              ImGui.SameLine();
+              if (ImGui.Button("Remove TV from Room")) {
+                  DeleteTvAsync(locationKey);
+              }
           } else {
               if (_plugin.IsHousingMenuOpen) {
                   if (ImGui.Button("Take Ownership of TV")) {
@@ -296,6 +314,35 @@ namespace XivMediaPlayer.Windows {
               ImGui.TextColored(_statusColor, _statusMessage);
           }
       }
+    }
+
+    public async void DeleteTvAsync(string locationKey) {
+        if (_plugin.CurrentTvPlacement == null) return;
+        
+        _statusMessage = "Deleting TV from server...";
+        _statusColor = new Vector4(1, 1, 1, 1);
+        
+        try {
+            bool success = await _plugin.ServerClient.DeleteTvAsync(locationKey, _plugin.CurrentTvPlacement.Id, _plugin.Config.OwnerId, _plugin.IsHousingMenuOpen);
+            if (success) {
+                _plugin.CurrentTvPlacement = null;
+                _statusMessage = "Successfully removed TV from the room!";
+                _statusColor = new Vector4(0.3f, 1f, 0.3f, 1);
+                _plugin.Chat.Print("[Media Player] " + _statusMessage);
+            } else {
+                _statusMessage = "Failed to remove TV.";
+                _statusColor = new Vector4(1, 0.3f, 0.3f, 1);
+                _plugin.Chat.PrintError("[Media Player] " + _statusMessage);
+            }
+        } catch (UnauthorizedAccessException) {
+            _statusMessage = "Cannot delete TV: It is locked by its owner.";
+            _statusColor = new Vector4(1, 0.3f, 0.3f, 1);
+            _plugin.Chat.PrintError("[Media Player] " + _statusMessage);
+        } catch (Exception) {
+            _statusMessage = "Network error while deleting TV.";
+            _statusColor = new Vector4(1, 0.3f, 0.3f, 1);
+            _plugin.Chat.PrintError("[Media Player] " + _statusMessage);
+        }
     }
 
     /// <summary>

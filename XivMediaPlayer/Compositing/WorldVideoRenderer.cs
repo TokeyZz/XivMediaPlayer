@@ -227,7 +227,8 @@ namespace XivMediaPlayer.Compositing {
           screenW, screenH,
           uiCapture?.BackBufferSRV,
           hoverUV, progress, isPlaying, isLocked,
-          minDepth, maxDepth, volume);
+          minDepth, maxDepth, volume,
+          uiCapture?.LastAddonRects);
 
         if (success && _depthRenderer.OutputSRV != null) {
           var outputPtr = _depthRenderer.OutputSRV.NativePointer;

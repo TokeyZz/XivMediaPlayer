@@ -67,11 +67,15 @@ namespace XivMediaPlayer.Server.Controllers
         }
 
         [HttpDelete("{locationKey}/tvs/{tvId}")]
-        public async Task<IActionResult> RemoveTv(string locationKey, string tvId)
+        public async Task<IActionResult> RemoveTv(string locationKey, string tvId, [FromQuery] string ownerId, [FromQuery] bool bypassLock = false)
         {
             var tv = await _db.TvPlacements.FirstOrDefaultAsync(t => t.LocationKey == locationKey && t.Id == tvId);
             if (tv != null)
             {
+                if (tv.OwnerId != ownerId && !bypassLock)
+                {
+                    return Forbid();
+                }
                 _db.TvPlacements.Remove(tv);
                 await _db.SaveChangesAsync();
                 return Ok();

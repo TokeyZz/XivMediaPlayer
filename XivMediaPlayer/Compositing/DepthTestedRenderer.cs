@@ -24,6 +24,7 @@ namespace XivMediaPlayer.Compositing {
 
     // Buffers
     private ID3D11Buffer _constantBuffer;
+    private ID3D11Buffer _uiRectBuffer;
 
     // Offscreen render target
     private ID3D11Texture2D _renderTarget;
@@ -60,6 +61,15 @@ namespace XivMediaPlayer.Compositing {
       public float _pad4;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private unsafe struct UIConstants {
+      public fixed float UIRects[256]; // 64 * 4 (x, y, w, h)
+      public int UIRectCount;
+      public float _pad0;
+      public float _pad1;
+      public float _pad2;
+    }
+
     private const string ShaderCode = @"
 cbuffer Constants : register(b0) {
   float2 CornerTL;
@@ -79,6 +89,12 @@ cbuffer Constants : register(b0) {
   float IsLockedTV;
   float Volume;
   float3 _padEnd;
+};
+
+cbuffer UIConsts : register(b1) {
+  float4 UIRects[64];
+  int UIRectCount;
+  float3 _uiPadEnd;
 };
 
 Texture2D VideoTexture : register(t0);
@@ -229,11 +245,24 @@ float4 PS(VS_OUT input) : SV_TARGET {
       }
   }
 
-  // Use the BackBuffer Alpha channel for perfect UI masking!
-  float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
+  // Check if this pixel is inside any UI bounding box
+  bool insideUI = false;
+  for (int i = 0; i < UIRectCount; i++) {
+      float4 r = UIRects[i];
+      if (pixelPos.x >= r.x && pixelPos.x <= r.x + r.z &&
+          pixelPos.y >= r.y && pixelPos.y <= r.y + r.w) {
+          insideUI = true;
+          break;
+      }
+  }
   
-  // Smoothly blend out the video behind UI drop shadows and gradients
-  color.a *= saturate(1.0 - bbAlpha);
+  if (insideUI) {
+      // Use the BackBuffer Alpha channel for perfect UI masking!
+      float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
+      
+      // Smoothly blend out the video behind UI drop shadows and gradients
+      color.a *= saturate(1.0 - bbAlpha);
+  }
   
   // Media Controls UI overlay
   if (isInside && !occluded && HoverUV.x >= 0.0 && HoverUV.y >= 0.0) {
@@ -382,6 +411,13 @@ float4 PS(VS_OUT input) : SV_TARGET {
           CPUAccessFlags = CpuAccessFlags.None,
         });
 
+        _uiRectBuffer = _device.CreateBuffer(new BufferDescription {
+          ByteWidth = Marshal.SizeOf<UIConstants>(),
+          Usage = ResourceUsage.Default,
+          BindFlags = BindFlags.ConstantBuffer,
+          CPUAccessFlags = CpuAccessFlags.None,
+        });
+
         // Blend state: write-through
         var blendDesc = new BlendDescription();
         blendDesc.RenderTarget[0] = new RenderTargetBlendDescription {
@@ -447,7 +483,8 @@ float4 PS(VS_OUT input) : SV_TARGET {
       int screenWidth, int screenHeight,
       ID3D11ShaderResourceView backBufferSRV,
       Vector2? hoverUV, float progress, bool isPlaying, bool isLocked,
-      float minDepth, float maxDepth, float volume) {
+      float minDepth, float maxDepth, float volume,
+      List<(int X, int Y, int W, int H, string Name)> uiRects) {
 
       if (!_initialized || _disposed || videoTextureSRV == IntPtr.Zero || depthSRV == null) return false;
 
@@ -479,6 +516,18 @@ float4 PS(VS_OUT input) : SV_TARGET {
         };
         _context.UpdateSubresource(constants, _constantBuffer);
 
+        var uiConsts = new UIConstants {
+            UIRectCount = Math.Min(64, uiRects?.Count ?? 0)
+        };
+        for (int i = 0; i < uiConsts.UIRectCount; i++) {
+            var r = uiRects[i];
+            uiConsts.UIRects[i * 4 + 0] = r.X;
+            uiConsts.UIRects[i * 4 + 1] = r.Y;
+            uiConsts.UIRects[i * 4 + 2] = r.W;
+            uiConsts.UIRects[i * 4 + 3] = r.H;
+        }
+        _context.UpdateSubresource(uiConsts, _uiRectBuffer);
+
         // Set pipeline
         _context.IASetInputLayout(null);
         _context.IASetPrimitiveTopology(Vortice.Direct3D.PrimitiveTopology.TriangleList);
@@ -488,6 +537,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
 
         _context.PSSetShader(_pixelShader);
         _context.PSSetConstantBuffer(0, _constantBuffer);
+        _context.PSSetConstantBuffer(1, _uiRectBuffer);
         var videoSRV = new ID3D11ShaderResourceView(videoTextureSRV);
         _context.PSSetShaderResource(0, videoSRV);
         _context.PSSetShaderResource(1, depthSRV);
@@ -524,6 +574,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
       _videoSampler?.Dispose();
       _blendState?.Dispose();
       _constantBuffer?.Dispose();
+      _uiRectBuffer?.Dispose();
       _pixelShader?.Dispose();
       _vertexShader?.Dispose();
     }
