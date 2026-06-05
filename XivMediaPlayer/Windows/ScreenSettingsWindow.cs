@@ -27,6 +27,8 @@ namespace XivMediaPlayer.Windows {
     private Vector2 _rotation; // yaw, pitch
     private Vector2 _scale;
     private bool _enabled;
+    private bool _wasShiftPressed;
+    private int _aspectRatio = 0; // 0 = 16:9, 1 = 4:3
 
     // Drag state for world-space interaction
     private bool _isDragging;
@@ -99,18 +101,39 @@ namespace XivMediaPlayer.Windows {
 
       ImGui.Separator();
 
+      // Shift quick-snap logic
+      bool isShiftPressed = ImGui.GetIO().KeyShift;
+      if (isShiftPressed && !_wasShiftPressed) {
+          unsafe {
+              var hm = FFXIVClientStructs.FFXIV.Client.Game.HousingManager.Instance();
+              if (hm != null && hm->IndoorTerritory != null) {
+                  var hover = hm->IndoorTerritory->HoveredHousingObject;
+                  var target = hm->IndoorTerritory->TargetedHousingObject;
+                  var objToSnap = hover != null ? hover : target;
+
+                  if (objToSnap != null) {
+                      _position = objToSnap->Position;
+                      _rotation.X = objToSnap->Rotation * (180f / (float)Math.PI);
+                      _rotation.Y = 0f;
+                      SyncToTransform();
+                      _onSave?.Invoke();
+                  }
+              }
+          }
+      }
+      _wasShiftPressed = isShiftPressed;
+
       // Quick actions 
       if (ImGui.Button("Place at Camera")) {
         _onPlaceAtCamera?.Invoke();
         SyncFromTransform();
         _onSave?.Invoke();
       }
-      ImGui.SameLine();
-      if (ImGui.Button("Snap to Closest Furnishing")) {
-          SnapToClosestFurnishing();
-          SyncToTransform();
-          _onSave?.Invoke();
-      }
+      
+      ImGui.Spacing();
+      ImGui.TextColored(new Vector4(0.7f, 1f, 0.7f, 1f), "Quick Snap:");
+      ImGui.TextWrapped("Hold SHIFT while hovering over or selecting a furnishing in Edit Mode to instantly snap the TV to it.");
+      ImGui.Spacing();
       
       if (ImGui.Button("Save")) {
         SyncToTransform();
@@ -192,26 +215,32 @@ namespace XivMediaPlayer.Windows {
       // Scale 
       ImGui.TextColored(new Vector4(0.7f, 0.9f, 1f, 1f), "Size (world units)");
 
+      bool aspectChanged = false;
+      aspectChanged |= ImGui.RadioButton("16:9", ref _aspectRatio, 0);
+      ImGui.SameLine();
+      aspectChanged |= ImGui.RadioButton("4:3", ref _aspectRatio, 1);
+      
       bool scaleChanged = false;
-      scaleChanged |= ImGui.DragFloat("Width##scale", ref _scale.X, 0.1f, 0.5f, 50f, "%.1f");
+      scaleChanged |= ImGui.DragFloat("Diagonal Size##scale", ref _scale.X, 0.1f, 0.5f, 50f, "%.1f");
       bool saveScale = ImGui.IsItemDeactivatedAfterEdit();
-      scaleChanged |= ImGui.DragFloat("Height##scale", ref _scale.Y, 0.1f, 0.3f, 30f, "%.1f");
-      saveScale |= ImGui.IsItemDeactivatedAfterEdit();
-      if (scaleChanged) {
+
+      if (aspectChanged || scaleChanged) {
+        float ratio = _aspectRatio == 0 ? (9f / 16f) : (3f / 4f);
+        _scale.Y = _scale.X * ratio;
         _transform.Scale = _scale;
       }
-      if (saveScale) {
+      if (saveScale || aspectChanged) {
         _onSave?.Invoke();
       }
 
       // Preset sizes
-      if (ImGui.Button("Small (2m)")) { _scale = new Vector2(2f, 1.125f); _transform.Scale = _scale; _onSave?.Invoke(); }
+      if (ImGui.Button("Small (2m)")) { _scale.X = 2f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
       ImGui.SameLine();
-      if (ImGui.Button("Medium (4m)")) { _scale = new Vector2(4f, 2.25f); _transform.Scale = _scale; _onSave?.Invoke(); }
+      if (ImGui.Button("Medium (4m)")) { _scale.X = 4f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
       ImGui.SameLine();
-      if (ImGui.Button("Large (8m)")) { _scale = new Vector2(8f, 4.5f); _transform.Scale = _scale; _onSave?.Invoke(); }
+      if (ImGui.Button("Large (8m)")) { _scale.X = 8f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
       ImGui.SameLine();
-      if (ImGui.Button("Cinema (12m)")) { _scale = new Vector2(12f, 6.75f); _transform.Scale = _scale; _onSave?.Invoke(); }
+      if (ImGui.Button("Cinema (12m)")) { _scale.X = 12f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
 
 
       ImGui.Spacing();
@@ -354,40 +383,7 @@ namespace XivMediaPlayer.Windows {
         _statusMessage = "Cannot move TV: It is locked by its owner.";
         _statusColor = new Vector4(1, 0.3f, 0.3f, 1);
       }
-      }
     }
 
-    private void SnapToClosestFurnishing() {
-        if (_plugin.ObjectTable == null) return;
-        var localPlayer = _plugin.ObjectTable[0];
-        if (localPlayer == null) return;
-
-        Dalamud.Game.ClientState.Objects.Types.IGameObject closestObj = null;
-        float minDistance = float.MaxValue;
-
-        foreach (var obj in _plugin.ObjectTable) {
-            // Check if it's a housing item or event object
-            if (obj.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Housing || 
-                obj.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventObj) {
-                
-                // Don't snap to ourselves
-                if (obj.Address == localPlayer.Address) continue;
-
-                float dist = Vector3.Distance(localPlayer.Position, obj.Position);
-                if (dist < minDistance) {
-                    minDistance = dist;
-                    closestObj = obj;
-                }
-            }
-        }
-
-        if (closestObj != null) {
-            _position = closestObj.Position;
-            // Dalamud IGameObject rotation is in radians (Yaw)
-            _rotation.X = closestObj.Rotation * (180f / (float)Math.PI);
-            _rotation.Y = 0f;
-            _rotation.Z = 0f;
-        }
-    }
   }
 }

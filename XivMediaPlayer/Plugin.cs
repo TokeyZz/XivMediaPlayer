@@ -80,6 +80,8 @@ namespace XivMediaPlayer
         public Configuration Config => _config;
         public bool IsHousingMenuOpen => _wasHousingMenuOpen;
         public Dalamud.Plugin.Services.IObjectTable ObjectTable => _objectTable;
+        public Dalamud.Plugin.Services.IPluginLog PluginLog => _pluginLog;
+        public Dalamud.Plugin.Services.IChatGui Chat => _chat;
 
         // Clipboard cookie watcher
         private DateTime _lastClipboardCheck = DateTime.MinValue;
