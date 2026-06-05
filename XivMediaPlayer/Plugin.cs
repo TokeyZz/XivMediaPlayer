@@ -305,13 +305,13 @@ namespace XivMediaPlayer
             {
                 bool isMediaOwner = _currentMediaOwnerId == _config.OwnerId;
                 
-                // The current DJ pushes every 5 seconds (only if playing media)
-                if (isMediaOwner && _mediaManager?.ActiveStream != null)
+                // The current DJ pushes every 5 seconds (only if playing media or currently loading one)
+                if (isMediaOwner && (_mediaManager?.ActiveStream != null || !string.IsNullOrEmpty(_lastStreamURL)))
                 {
                     if ((DateTime.UtcNow - _lastServerSyncPush).TotalSeconds >= 5)
                     {
                         _lastServerSyncPush = DateTime.UtcNow;
-                        _pluginLog.Information($"[Social] Executing PushMediaToServerAsync. ActiveStream Time: {_mediaManager.ActiveStream.Time}");
+                        _pluginLog.Information($"[Social] Executing PushMediaToServerAsync. ActiveStream Time: {_mediaManager?.ActiveStream?.Time ?? 0}");
                         _ = PushMediaToServerAsync();
                     }
                 }
@@ -619,6 +619,7 @@ namespace XivMediaPlayer
         }
 
         private bool _isResolvingMedia = false;
+        private bool _lastStreamIsLive = false;
 
         private void PlayViaYtDlp(string url, IMediaGameObject audioGameObject, int startTimeMs = 0, bool isAutoSync = false)
         {
@@ -628,6 +629,11 @@ namespace XivMediaPlayer
             {
                 _chat.PrintError("[Media Player] Cannot play: The TV in this room is locked by its owner.");
                 return;
+            }
+
+            if (!isAutoSync)
+            {
+                _currentMediaOwnerId = _config.OwnerId;
             }
 
             _isResolvingMedia = true;
@@ -667,7 +673,12 @@ namespace XivMediaPlayer
                     }
                     string title = metadata?.Title ?? "Unknown";
                     string uploader = metadata?.Uploader ?? "";
-                    bool isLive = metadata?.IsLive ?? false;
+                    
+                    // Twitch streams often don't explicitly return is_live=true, but they lack a duration!
+                    // Also explicitly check if it's a twitch channel URL (not a video)
+                    bool isTwitchLive = url.Contains("twitch.tv") && !url.Contains("/videos/");
+                    bool isLive = (metadata?.IsLive == true) || (metadata != null && metadata.Duration == null) || isTwitchLive;
+                    _lastStreamIsLive = isLive;
 
                     _lastStreamObject = audioGameObject;
                     _streamURLs = new string[] { streamUrl };
@@ -1011,14 +1022,16 @@ namespace XivMediaPlayer
             if (string.IsNullOrEmpty(key) || !key.StartsWith("house_")) return;
 
             var activeStream = _mediaManager?.ActiveStream;
-            if (activeStream == null || string.IsNullOrEmpty(activeStream.SoundPath)) return;
+
+            // Don't push if there's literally no stream URL and we aren't loading one
+            if (string.IsNullOrEmpty(_lastStreamURL) && (activeStream == null || string.IsNullOrEmpty(activeStream.SoundPath))) return;
 
             var sync = new Networking.Models.RoomMediaStateSync
             {
                 LocationKey = key,
-                CurrentUrl = !string.IsNullOrEmpty(_lastStreamURL) ? _lastStreamURL : activeStream.SoundPath,
-                TimecodeMs = activeStream.Time,
-                IsPlaying = activeStream.PlaybackState == NAudio.Wave.PlaybackState.Playing,
+                CurrentUrl = !string.IsNullOrEmpty(_lastStreamURL) ? _lastStreamURL : activeStream?.SoundPath ?? "",
+                TimecodeMs = activeStream?.Time ?? 0,
+                IsPlaying = activeStream?.PlaybackState == NAudio.Wave.PlaybackState.Playing,
                 OwnerId = _config.OwnerId,
                 PlaylistJson = System.Text.Json.JsonSerializer.Serialize(_mediaQueue.ToArray()),
                 BypassLock = IsHousingMenuOpen
@@ -1071,8 +1084,8 @@ namespace XivMediaPlayer
             // Actually play it if it's different or out of sync
             var activeStream = _mediaManager?.ActiveStream;
             bool isDifferentUrl = activeStream == null || (!string.IsNullOrEmpty(_lastStreamURL) && _lastStreamURL != sync.CurrentUrl);
-            // Only sync VODs. Live streams (Length == 0) cannot be reliably timecode-synced.
-            bool isOutofSync = activeStream != null && activeStream.Length > 0 && Math.Abs(activeStream.Time - targetTimeMs) > 5000;
+            // Only sync VODs. Live streams cannot be reliably timecode-synced.
+            bool isOutofSync = !_lastStreamIsLive && activeStream != null && activeStream.Length > 0 && Math.Abs(activeStream.Time - targetTimeMs) > 5000;
             bool localIsPlaying = activeStream != null && activeStream.PlaybackState == NAudio.Wave.PlaybackState.Playing;
 
             if (isDifferentUrl)
@@ -1097,15 +1110,20 @@ namespace XivMediaPlayer
                     activeStream.Time = (long)targetTimeMs;
                 }
 
-                if (sync.IsPlaying && !localIsPlaying)
+                // Do not sync play/pause state for livestreams, as pausing a livestream in VLC breaks it
+                // and the DJ's VLC might temporarily report IsPlaying=false while buffering!
+                if (!_lastStreamIsLive)
                 {
-                    _pluginLog.Information($"[Social] Server says play, but we are paused. Resuming!");
-                    activeStream.Resume(); 
-                }
-                else if (!sync.IsPlaying && localIsPlaying)
-                {
-                    _pluginLog.Information($"[Social] Server says paused, but we are playing. Pausing!");
-                    activeStream.Pause(); 
+                    if (sync.IsPlaying && !localIsPlaying)
+                    {
+                        _pluginLog.Information($"[Social] Server says play, but we are paused. Resuming!");
+                        activeStream.Resume(); 
+                    }
+                    else if (!sync.IsPlaying && localIsPlaying)
+                    {
+                        _pluginLog.Information($"[Social] Server says paused, but we are playing. Pausing!");
+                        activeStream.Pause(); 
+                    }
                 }
             }
         }
