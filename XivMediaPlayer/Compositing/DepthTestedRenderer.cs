@@ -192,14 +192,14 @@ float4 PS(VS_OUT input) : SV_TARGET {
           }
           prominentColor /= 144.0;
           
-          // Black pixels in the video should have zero influence. 
           // Brighter video pixels get more alpha.
           float luminance = dot(prominentColor, float3(0.299, 0.587, 0.114));
           float alpha = saturate(depthMask * luminance * 3.5); 
           
-          // We can afford a much higher opacity cap now that we are using Color Dodge,
-          // because it naturally preserves shadows without causing fog!
-          alpha = clamp(alpha, 0.0, 0.9); 
+          // We clamp the ceiling to prevent extreme blowout on bright pixels.
+          // alpha = 0.75 -> Scene / 0.25 = 4.0x brightness max.
+          // This keeps the light vibrant without reaching the 10x multiplier of alpha 0.9.
+          alpha = clamp(alpha, 0.0, 0.75); 
           
           // TRUE LIGHTING BLEND
           // Instead of using ImGui's standard alpha blend (which washes out the background like fog),
