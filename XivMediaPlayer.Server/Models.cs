@@ -41,6 +41,9 @@ namespace XivMediaPlayer.Server.Models
 
         [NotMapped]
         public bool BypassLock { get; set; } = false;
+
+        [NotMapped]
+        public double DataAgeMs { get; set; } = 0;
     }
 
     public class AppDbContext : Microsoft.EntityFrameworkCore.DbContext

@@ -1026,9 +1026,9 @@ namespace XivMediaPlayer
             var sync = await ServerClient.GetMediaStateAsync(key);
             if (sync == null || string.IsNullOrEmpty(sync.CurrentUrl)) return;
 
-            // Calculate precise timecode based on server UTC stamp, but ONLY if the video is currently playing!
-            var serverOffsetMs = (DateTime.UtcNow - sync.TimestampUtc).TotalMilliseconds;
-            var targetTimeMs = sync.IsPlaying ? sync.TimecodeMs + (long)serverOffsetMs : sync.TimecodeMs;
+            // Use the DataAgeMs calculated purely by the server to completely eliminate client clock drift issues!
+            // We ONLY add the age if the video is currently playing.
+            var targetTimeMs = sync.IsPlaying ? sync.TimecodeMs + (long)sync.DataAgeMs : sync.TimecodeMs;
 
             // Update local config
             var state = new RoomMediaState
@@ -1043,7 +1043,8 @@ namespace XivMediaPlayer
             // Actually play it if it's different or out of sync
             var activeStream = _mediaManager?.ActiveStream;
             bool isDifferentUrl = activeStream == null || (!string.IsNullOrEmpty(_lastStreamURL) && _lastStreamURL != sync.CurrentUrl);
-            bool isOutofSync = activeStream != null && Math.Abs(activeStream.Time - targetTimeMs) > 5000;
+            // Only sync VODs. Live streams (Length == 0) cannot be reliably timecode-synced.
+            bool isOutofSync = activeStream != null && activeStream.Length > 0 && Math.Abs(activeStream.Time - targetTimeMs) > 5000;
             bool localIsPlaying = activeStream != null && activeStream.PlaybackState == NAudio.Wave.PlaybackState.Playing;
 
             if (isDifferentUrl)
@@ -1071,12 +1072,12 @@ namespace XivMediaPlayer
                 if (sync.IsPlaying && !localIsPlaying)
                 {
                     _pluginLog.Information($"[Social] Server says play, but we are paused. Resuming!");
-                    activeStream.Pause(); // Pause() actually toggles play/pause in LibVLC
+                    activeStream.Resume(); 
                 }
                 else if (!sync.IsPlaying && localIsPlaying)
                 {
                     _pluginLog.Information($"[Social] Server says paused, but we are playing. Pausing!");
-                    activeStream.Pause(); // Pause() actually toggles play/pause in LibVLC
+                    activeStream.Pause(); 
                 }
             }
         }

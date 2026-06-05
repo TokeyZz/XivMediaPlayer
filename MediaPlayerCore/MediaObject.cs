@@ -127,6 +127,9 @@ namespace MediaPlayerCore {
     public void Pause() {
       _vlcPlayer?.Pause();
     }
+    public void Resume() {
+      _vlcPlayer?.Play();
+    }
     public SoundType SoundType { get => _soundType; set => _soundType = value; }
     public string SoundPath { get => _soundPath; set => _soundPath = value; }
     public IMediaGameObject Camera { get => _camera; set => _camera = value; }

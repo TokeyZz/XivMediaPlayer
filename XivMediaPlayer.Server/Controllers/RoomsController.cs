@@ -84,6 +84,11 @@ namespace XivMediaPlayer.Server.Controllers
         {
             var state = await _db.RoomMediaStates.FindAsync(locationKey);
             if (state == null) return NotFound();
+            
+            // Calculate exactly how many milliseconds have passed since the HOST pushed this data.
+            // By doing this on the server, we completely eliminate client clock drift issues!
+            state.DataAgeMs = (DateTime.UtcNow - state.TimestampUtc).TotalMilliseconds;
+            
             return Ok(state);
         }
 

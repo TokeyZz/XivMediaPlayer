@@ -36,5 +36,6 @@ namespace XivMediaPlayer.Networking.Models
         public string PlaylistJson { get; set; } = "[]";
         public string OwnerId { get; set; } = string.Empty;
         public bool BypassLock { get; set; } = false;
+        public double DataAgeMs { get; set; } = 0;
     }
 }
