@@ -57,7 +57,7 @@ jobs:
         uses: ncipollo/release-action@v1.12.0
         with:
           name: XivMediaPlayer ${{ github.ref_name }}
-          artifacts: "./XivMediaPlayer/bin/x64/Release/*.zip"
+          artifacts: "./XivMediaPlayer/bin/x64/*.zip"
           tag: ${{ github.ref_name }}
           body: "A build of the XivMediaPlayer plugin. Do not install this manually. Install via the dalamud repo link!"
           omitBodyDuringUpdate: true

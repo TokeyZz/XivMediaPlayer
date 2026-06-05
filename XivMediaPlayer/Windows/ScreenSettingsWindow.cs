@@ -216,7 +216,7 @@ namespace XivMediaPlayer.Windows {
       aspectChanged |= ImGui.RadioButton("4:3", ref _aspectRatio, 1);
       
       bool scaleChanged = false;
-      scaleChanged |= ImGui.DragFloat("Diagonal Size##scale", ref _scale.X, 0.1f, 0.5f, 50f, "%.1f");
+      scaleChanged |= ImGui.DragFloat("Diagonal Size##scale", ref _scale.X, 0.1f, 0.5f, 200f, "%.1f");
       bool saveScale = ImGui.IsItemDeactivatedAfterEdit();
 
       if (aspectChanged || scaleChanged) {
