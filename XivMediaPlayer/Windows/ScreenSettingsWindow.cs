@@ -74,12 +74,7 @@ namespace XivMediaPlayer.Windows {
 
     public override void Draw() {
       // Check if housing menu is open
-      bool hasHousingMenuOpen = false;
-      unsafe {
-          var housingGoods = _gameGui.GetAddonByName("HousingGoods", 1);
-          var housingMenu = _gameGui.GetAddonByName("HousingMenu", 1);
-          hasHousingMenuOpen = (housingGoods != IntPtr.Zero) || (housingMenu != IntPtr.Zero);
-      }
+      bool hasHousingMenuOpen = _plugin.IsHousingMenuOpen;
 
       if (!hasHousingMenuOpen) {
           ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), "Housing Menu Required");
@@ -342,12 +337,19 @@ namespace XivMediaPlayer.Windows {
       return false;
     }
 
+    private DateTime _lastRegistrationTime = DateTime.MinValue;
+
     public async void RegisterTvAsync(string locationKey) {
       if (!_enabled) {
         _statusMessage = "World screen is not enabled!";
         _statusColor = new Vector4(1, 0.3f, 0.3f, 1);
         return;
       }
+
+      if ((DateTime.UtcNow - _lastRegistrationTime).TotalSeconds < 2) {
+          return; // Debounce to prevent double-logs from FFXIV UI flickering
+      }
+      _lastRegistrationTime = DateTime.UtcNow;
 
       _statusMessage = "Syncing with server...";
       _statusColor = new Vector4(1, 1, 1, 1);
@@ -376,15 +378,18 @@ namespace XivMediaPlayer.Windows {
           _plugin.CurrentTvPlacement = placement;
           _statusMessage = "Successfully registered TV for all visitors!";
           _statusColor = new Vector4(0.3f, 1f, 0.3f, 1);
+          _plugin.Chat.Print("[Media Player] " + _statusMessage);
         } else {
           _statusMessage = "Saved locally, but failed to reach the sync server.";
           _statusColor = new Vector4(1, 0.6f, 0.2f, 1);
+          _plugin.Chat.PrintError("[Media Player] " + _statusMessage);
         }
       } 
       catch (UnauthorizedAccessException) 
       {
         _statusMessage = "Cannot move TV: It is locked by its owner.";
         _statusColor = new Vector4(1, 0.3f, 0.3f, 1);
+        _plugin.Chat.PrintError("[Media Player] " + _statusMessage);
       }
     }
 

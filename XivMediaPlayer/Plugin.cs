@@ -282,8 +282,7 @@ namespace XivMediaPlayer
             unsafe
             {
                 var housingGoods = _gameGui.GetAddonByName("HousingGoods", 1);
-                var housingMenu = _gameGui.GetAddonByName("HousingMenu", 1);
-                bool isHousingMenuOpen = (housingGoods != IntPtr.Zero) || (housingMenu != IntPtr.Zero);
+                bool isHousingMenuOpen = (housingGoods != IntPtr.Zero);
 
                 if (isHousingMenuOpen && !_wasHousingMenuOpen)
                 {
