@@ -144,21 +144,26 @@ namespace XivMediaPlayer.Windows {
     public void CheckWindowSize(bool triggerEvent) {
       if (_lastWindowSize != null) {
         if (_lastWindowSize.Value.X != Size.Value.X || _wasNotOpen) {
-          if (IsOpen) {
-            if (Size.Value.X < 360) {
-              FeedType = TwitchFeedType._160p;
-            }
-            if (Size.Value.X >= 360 || Size.Value.X < 480) {
-              FeedType = TwitchFeedType._360p;
-            }
-            if (Size.Value.X >= 480 || Size.Value.X < 720) {
-              FeedType = TwitchFeedType._480p;
-            }
-            if (Size.Value.X >= 720 || Size.Value.X < 1080) {
+          if (IsOpen || (_plugin.WorldRenderer?.Transform.Enabled ?? false)) {
+            if (IsOpen) {
+              if (Size.Value.X < 360) {
+                FeedType = TwitchFeedType._160p;
+              }
+              if (Size.Value.X >= 360 || Size.Value.X < 480) {
+                FeedType = TwitchFeedType._360p;
+              }
+              if (Size.Value.X >= 480 || Size.Value.X < 720) {
+                FeedType = TwitchFeedType._480p;
+              }
+              if (Size.Value.X >= 720 || Size.Value.X < 1080) {
+                FeedType = TwitchFeedType._720p;
+              }
+              if (Size.Value.X >= 1080) {
+                FeedType = TwitchFeedType._1080p;
+              }
+            } else {
+              // The 2D window is closed but the 3D TV is rendering. Default to 720p to save bandwidth but still look good on the TV.
               FeedType = TwitchFeedType._720p;
-            }
-            if (Size.Value.X >= 1080) {
-              FeedType = TwitchFeedType._1080p;
             }
           } else {
             FeedType = TwitchFeedType.Audio;

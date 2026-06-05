@@ -54,6 +54,7 @@ namespace XivMediaPlayer
         private readonly ScreenSettingsWindow _screenSettingsWindow;
         internal ScreenSettingsWindow ScreenSettingsWindow => _screenSettingsWindow;
         private WorldVideoRenderer _worldRenderer;
+        internal WorldVideoRenderer WorldRenderer => _worldRenderer;
         private DepthPreviewWindow _depthPreviewWindow;
         private DepthBufferCapture _depthCapture;
         private UILayerCapture _uiCapture;
