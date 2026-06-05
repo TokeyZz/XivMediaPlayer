@@ -1140,7 +1140,7 @@ namespace XivMediaPlayer
                               _objectTable[0]?.EntityId ?? 0);
                             if (localChar != null)
                             {
-                                worldId = localChar->HomeWorld;
+                                worldId = localChar->CurrentWorld;
                             }
                         }
                     } catch { }
