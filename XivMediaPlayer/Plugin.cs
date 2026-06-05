@@ -63,7 +63,8 @@ namespace XivMediaPlayer
 
         private MediaManager _mediaManager;
         internal MediaManager MediaManager => _mediaManager;
-        private readonly YtDlpManager _ytDlpManager;
+        private YtDlpManager _ytDlpManager;
+        private Task _ytDlpInitTask;
 
         private string _lastLocationKey = "";
         private IMediaGameObject? _playerObject;
@@ -147,7 +148,7 @@ namespace XivMediaPlayer
             _ytDlpManager.OnError += (s, ex) => _pluginLog.Warning(ex, "[yt-dlp] " + ex.Message);
 
             // Auto-download if missing, then always self-update
-            Task.Run(async () => await _ytDlpManager.EnsureAvailableAsync());
+            _ytDlpInitTask = Task.Run(async () => await _ytDlpManager.EnsureAvailableAsync());
 
             // Initialize world-space video renderer
             _worldRenderer = new WorldVideoRenderer(_config.WorldScreen, _gameGui);
@@ -281,7 +282,8 @@ namespace XivMediaPlayer
             unsafe
             {
                 var housingGoods = _gameGui.GetAddonByName("HousingGoods", 1);
-                bool isHousingMenuOpen = (housingGoods != IntPtr.Zero);
+                var housingMenu = _gameGui.GetAddonByName("HousingMenu", 1);
+                bool isHousingMenuOpen = (housingGoods != IntPtr.Zero) || (housingMenu != IntPtr.Zero);
 
                 if (isHousingMenuOpen && !_wasHousingMenuOpen)
                 {
@@ -475,7 +477,7 @@ namespace XivMediaPlayer
                          } else if (url.StartsWith("rtmp")) {
                            TuneIntoStream(url, _playerObject, true);
                          } else */
-                        if (YtDlpManager.IsUrlSupported(url) && _ytDlpManager.IsAvailable())
+                        if (YtDlpManager.IsUrlSupported(url))
                         {
                             // Resolve via yt-dlp then play
                             _chat.Print("[Media Player] Resolving URL via yt-dlp...");
@@ -633,6 +635,12 @@ namespace XivMediaPlayer
 
             Task.Run(async () =>
             {
+                if (_ytDlpInitTask != null && !_ytDlpInitTask.IsCompleted)
+                {
+                    _chat.Print("[Media Player] Waiting for yt-dlp download/update to finish...");
+                    await _ytDlpInitTask;
+                }
+
                 try
                 {
                     _lastStreamURL = url; // Save the original requested URL so PushMediaToServerAsync pushes it instead of the raw .m3u8

@@ -31,7 +31,7 @@ namespace XivMediaPlayer.Server.Controllers
             placement.LocationKey = locationKey;
             placement.LastUpdated = DateTime.UtcNow;
 
-            var existing = await _db.TvPlacements.FindAsync(locationKey);
+            var existing = await _db.TvPlacements.FirstOrDefaultAsync(t => t.LocationKey == locationKey);
             if (existing != null)
             {
                 if (existing.IsLocked && existing.OwnerId != placement.OwnerId && !placement.BypassLock)
