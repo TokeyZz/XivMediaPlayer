@@ -1,0 +1,6 @@
+@XivMediaPlayer.Server_HostAddress = http://localhost:5223
+
+GET {{XivMediaPlayer.Server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

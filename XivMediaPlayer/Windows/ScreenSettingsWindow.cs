@@ -4,6 +4,8 @@ using MediaPlayerCore.Compositing;
 using XivMediaPlayer.Compositing;
 using System;
 using System.Numerics;
+using Dalamud.Plugin.Services;
+using XivMediaPlayer.Networking.Models;
 
 namespace XivMediaPlayer.Windows {
   /// <summary>
@@ -15,6 +17,11 @@ namespace XivMediaPlayer.Windows {
     private readonly WorldVideoRenderer _renderer;
     private readonly Action _onSave;
     private readonly Action _onPlaceAtCamera;
+    private readonly Plugin _plugin;
+    private readonly IGameGui _gameGui;
+
+    private string _statusMessage = "";
+    private Vector4 _statusColor = new Vector4(1, 1, 1, 1);
 
     private Vector3 _position;
     private Vector2 _rotation; // yaw, pitch
@@ -27,6 +34,8 @@ namespace XivMediaPlayer.Windows {
     private Vector3 _dragStartPosition;
 
     public ScreenSettingsWindow(
+        Plugin plugin,
+        IGameGui gameGui,
         WorldScreenTransform transform,
         WorldVideoRenderer renderer,
         Action onSave,
@@ -34,6 +43,8 @@ namespace XivMediaPlayer.Windows {
       base("Screen Placement###ScreenPlacement",
         ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.AlwaysAutoResize,
         false) {
+      _plugin = plugin;
+      _gameGui = gameGui;
       _transform = transform;
       _renderer = renderer;
       _onSave = onSave;
@@ -60,6 +71,20 @@ namespace XivMediaPlayer.Windows {
     }
 
     public override void Draw() {
+      // Check if housing menu is open
+      bool hasHousingMenuOpen = false;
+      unsafe {
+          var housingGoods = _gameGui.GetAddonByName("HousingGoods", 1);
+          var housingMenu = _gameGui.GetAddonByName("HousingMenu", 1);
+          hasHousingMenuOpen = (housingGoods != IntPtr.Zero) || (housingMenu != IntPtr.Zero);
+      }
+
+      if (!hasHousingMenuOpen) {
+          ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), "Housing Menu Required");
+          ImGui.TextWrapped("To place or sync a screen, please open the 'Indoor Furnishings' menu in-game.");
+          return;
+      }
+
       // Enable toggle 
       if (ImGui.Checkbox("Render in World", ref _enabled)) {
         _transform.Enabled = _enabled;
@@ -81,6 +106,12 @@ namespace XivMediaPlayer.Windows {
         _onSave?.Invoke();
       }
       ImGui.SameLine();
+      if (ImGui.Button("Snap to Closest Furnishing")) {
+          SnapToClosestFurnishing();
+          SyncToTransform();
+          _onSave?.Invoke();
+      }
+      
       if (ImGui.Button("Save")) {
         SyncToTransform();
         _onSave?.Invoke();
@@ -201,6 +232,44 @@ namespace XivMediaPlayer.Windows {
       if (!string.IsNullOrEmpty(rendererError)) {
         ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), $"GPU Error: {rendererError}");
       }
+
+      ImGui.Spacing();
+      ImGui.Separator();
+      ImGui.TextColored(new Vector4(0.7f, 0.9f, 1f, 1f), "Room Sync");
+      
+      string locationKey = _plugin.LocationKey;
+      if (string.IsNullOrEmpty(locationKey) || !locationKey.StartsWith("house_")) {
+          ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), "You must be inside a housing area to sync TVs.");
+      } else {
+          ImGui.Text($"Location Key: {locationKey}");
+          if (_plugin.CurrentTvPlacement == null || _plugin.CurrentTvPlacement.OwnerId == _plugin.Config.OwnerId) {
+              if (ImGui.Button("Register TV to Room")) {
+                  RegisterTvAsync(locationKey);
+              }
+              bool isLocked = _plugin.CurrentTvPlacement?.IsLocked ?? false;
+              if (ImGui.Checkbox("Lock TV to Owner Only", ref isLocked)) {
+                  if (_plugin.CurrentTvPlacement != null) {
+                      _plugin.CurrentTvPlacement.IsLocked = isLocked;
+                      RegisterTvAsync(locationKey);
+                  }
+              }
+          } else {
+              if (_plugin.IsHousingMenuOpen) {
+                  if (ImGui.Button("Take Ownership of TV")) {
+                      RegisterTvAsync(locationKey);
+                  }
+                  ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "You can override this locked TV because you have housing privileges.");
+              } else {
+                  if (_plugin.CurrentTvPlacement.IsLocked) {
+                      ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), "This TV is locked by its owner.");
+                  }
+              }
+          }
+
+          if (!string.IsNullOrEmpty(_statusMessage)) {
+              ImGui.TextColored(_statusColor, _statusMessage);
+          }
+      }
     }
 
     /// <summary>
@@ -240,6 +309,85 @@ namespace XivMediaPlayer.Windows {
       }
 
       return false;
+    }
+
+    private async void RegisterTvAsync(string locationKey) {
+      if (!_enabled) {
+        _statusMessage = "World screen is not enabled!";
+        _statusColor = new Vector4(1, 0.3f, 0.3f, 1);
+        return;
+      }
+
+      _statusMessage = "Syncing with server...";
+      _statusColor = new Vector4(1, 1, 1, 1);
+
+      var placement = new TvPlacement {
+        PositionX = _position.X,
+        PositionY = _position.Y,
+        PositionZ = _position.Z,
+        RotationX = _transform.RotationDegrees.X,
+        RotationY = _transform.RotationDegrees.Y,
+        RotationZ = _transform.RotationDegrees.Z,
+        ScaleX = _scale.X,
+        ScaleY = _scale.Y,
+        OwnerId = _plugin.Config.OwnerId,
+        IsLocked = _plugin.CurrentTvPlacement?.IsLocked ?? false,
+        BypassLock = _plugin.IsHousingMenuOpen
+      };
+
+      SyncToTransform();
+      _onSave?.Invoke();
+
+      try 
+      {
+        var result = await _plugin.ServerClient.RegisterTvAsync(locationKey, placement);
+        if (result != null) {
+          _statusMessage = "Successfully registered TV for all visitors!";
+          _statusColor = new Vector4(0.3f, 1f, 0.3f, 1);
+        } else {
+          _statusMessage = "Saved locally, but failed to reach the sync server.";
+          _statusColor = new Vector4(1, 0.6f, 0.2f, 1);
+        }
+      } 
+      catch (UnauthorizedAccessException) 
+      {
+        _statusMessage = "Cannot move TV: It is locked by its owner.";
+        _statusColor = new Vector4(1, 0.3f, 0.3f, 1);
+      }
+      }
+    }
+
+    private void SnapToClosestFurnishing() {
+        if (_plugin.ObjectTable == null) return;
+        var localPlayer = _plugin.ObjectTable[0];
+        if (localPlayer == null) return;
+
+        Dalamud.Game.ClientState.Objects.Types.IGameObject closestObj = null;
+        float minDistance = float.MaxValue;
+
+        foreach (var obj in _plugin.ObjectTable) {
+            // Check if it's a housing item or event object
+            if (obj.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Housing || 
+                obj.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventObj) {
+                
+                // Don't snap to ourselves
+                if (obj.Address == localPlayer.Address) continue;
+
+                float dist = Vector3.Distance(localPlayer.Position, obj.Position);
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    closestObj = obj;
+                }
+            }
+        }
+
+        if (closestObj != null) {
+            _position = closestObj.Position;
+            // Dalamud IGameObject rotation is in radians (Yaw)
+            _rotation.X = closestObj.Rotation * (180f / (float)Math.PI);
+            _rotation.Y = 0f;
+            _rotation.Z = 0f;
+        }
     }
   }
 }

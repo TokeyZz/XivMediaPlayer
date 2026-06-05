@@ -41,6 +41,11 @@ namespace XivMediaPlayer {
 
     public Dictionary<string, RoomMediaState> RoomMediaStates { get; set; } = new Dictionary<string, RoomMediaState>();
 
+    public string ServerUrl { get; set; } = "http://24.77.70.65:5000";
+
+    // Unique identity for the local user to establish TV ownership
+    public string OwnerId { get; set; } = Guid.NewGuid().ToString();
+
     #endregion
 
     [NonSerialized]

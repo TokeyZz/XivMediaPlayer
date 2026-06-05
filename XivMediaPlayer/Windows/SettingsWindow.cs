@@ -81,6 +81,21 @@ namespace XivMediaPlayer.Windows {
 
       ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f),
         "yt-dlp is automatically downloaded and updated.");
+
+      ImGui.Spacing();
+      ImGui.Spacing();
+
+      // Server Sync
+      ImGui.TextColored(new Vector4(0.7f, 0.9f, 1.0f, 1.0f), "Server Sync");
+      ImGui.Separator();
+
+      string serverUrl = _config.ServerUrl;
+      if (ImGui.InputText("Server URL", ref serverUrl, 256)) {
+        _config.ServerUrl = serverUrl;
+        _config.Save();
+      }
+      ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f),
+        "URL of the backend server used to sync TVs.");
     }
   }
 }

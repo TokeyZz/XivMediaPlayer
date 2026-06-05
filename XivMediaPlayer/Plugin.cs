@@ -74,6 +74,12 @@ namespace XivMediaPlayer
         private bool _streamWasPlaying;
         private bool _disposed;
         private bool _bgmWasMutedByUs;
+        private bool _wasHousingMenuOpen = false;
+        
+        public Networking.ServerClient ServerClient { get; private set; }
+        public Configuration Config => _config;
+        public bool IsHousingMenuOpen => _wasHousingMenuOpen;
+        public Dalamud.Plugin.Services.IObjectTable ObjectTable => _objectTable;
 
         // Clipboard cookie watcher
         private DateTime _lastClipboardCheck = DateTime.MinValue;
@@ -84,6 +90,11 @@ namespace XivMediaPlayer
         private static extern short GetAsyncKeyState(int vKey);
 
         private Stopwatch _streamSetCooldown = new Stopwatch();
+
+        private string _statusMessage = string.Empty;
+
+        // Current room TV state
+        public Networking.Models.TvPlacement? CurrentTvPlacement { get; private set; }
 
         private bool _wasLeftMousePressed = false;
 
@@ -129,6 +140,12 @@ namespace XivMediaPlayer
             // Initialize world-space video renderer
             _worldRenderer = new WorldVideoRenderer(_config.WorldScreen, _gameGui);
 
+            ServerClient = new Networking.ServerClient(_config.ServerUrl, _pluginLog);
+            _config.OnConfigurationChanged += (s, e) => {
+                ServerClient?.Dispose();
+                ServerClient = new Networking.ServerClient(_config.ServerUrl, _pluginLog);
+            };
+
             _uiCapture = new UILayerCapture();
             _uiCapture.Initialize();
 
@@ -138,14 +155,14 @@ namespace XivMediaPlayer
             _settingsWindow = new SettingsWindow(_config, FixWindowsVolume);
             _browserWindow = new MediaBrowserWindow();
             _screenSettingsWindow = new ScreenSettingsWindow(
+              this,
+              _gameGui,
               _config.WorldScreen,
               _worldRenderer,
               onSave: () =>
               {
-                  _config.WorldScreen = _worldRenderer.Transform.Clone();
-                  SaveScreenForCurrentLocation();
                   _config.Save();
-                  _chat.Print("[Media Player] Screen placement saved.");
+                  SaveScreenForCurrentLocation();
               },
               onPlaceAtCamera: () => PlaceScreenAtCamera()
             );
@@ -241,6 +258,23 @@ namespace XivMediaPlayer
                 }
             }
 
+            // Auto-open/close screen placement menu based on Housing Menu state
+            unsafe
+            {
+                var housingGoods = _gameGui.GetAddonByName("HousingGoods", 1);
+                bool isHousingMenuOpen = (housingGoods != IntPtr.Zero);
+
+                if (isHousingMenuOpen && !_wasHousingMenuOpen)
+                {
+                    _screenSettingsWindow.IsOpen = true;
+                }
+                else if (!isHousingMenuOpen && _wasHousingMenuOpen)
+                {
+                    _screenSettingsWindow.IsOpen = false;
+                }
+                _wasHousingMenuOpen = isHousingMenuOpen;
+            }
+
             // Clipboard cookie watcher — check every 5 seconds
             CheckClipboardForCookies();
         }
@@ -322,7 +356,7 @@ namespace XivMediaPlayer
             string[] splitArgs = args.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (splitArgs.Length == 0)
             {
-                _settingsWindow.Toggle();
+                _settingsWindow.IsOpen = true;
                 return;
             }
 
@@ -432,12 +466,12 @@ namespace XivMediaPlayer
                     break;
 
                 case "video":
-                    _videoWindow.Toggle();
+                    _videoWindow.IsOpen = !_videoWindow.IsOpen;
+                    break;
+                case "browse":
+                    _browserWindow.IsOpen = true;
                     break;
 
-                case "browse":
-                    _browserWindow.Toggle();
-                    break;
 
                 case "listen":
                     if (!string.IsNullOrEmpty(_potentialStream) && _playerObject != null)
@@ -447,6 +481,12 @@ namespace XivMediaPlayer
                     break;
 
                 case "screen":
+                    if (!IsHousingMenuOpen)
+                    {
+                        _chat.PrintError("[Media Player] The screen settings menu can only be accessed while the 'Edit Furnishings' housing menu is open.");
+                        break;
+                    }
+
                     if (splitArgs.Length < 2)
                     {
                         // No subcommand: toggle the settings window
@@ -482,9 +522,15 @@ namespace XivMediaPlayer
 
         #region Stream Management
 
-        private void TuneIntoStream(string url, MediaPlayerCore.IMediaGameObject audioGameObject, int startTimeMs = 0, Dictionary<string, string>? httpHeaders = null)
+        private void TuneIntoStream(string url, MediaPlayerCore.IMediaGameObject audioGameObject, int startTimeMs = 0, Dictionary<string, string>? httpHeaders = null, bool isAutoSync = false)
         {
-            Task.Run(async () =>
+            if (!isAutoSync && CurrentTvPlacement?.IsLocked == true && CurrentTvPlacement?.OwnerId != _config.OwnerId && !IsHousingMenuOpen)
+            {
+                _chat.PrintError("[Media Player] Cannot play stream: The TV in this room is locked by its owner.");
+                return;
+            }
+
+            Task.Run(() =>
             {
                 string cleanedURL = RemoveSpecialSymbols(url);
                 _streamURLs = new string[] { url };
@@ -497,6 +543,11 @@ namespace XivMediaPlayer
                         _chat.Print(@"[Media Player] Playing stream!" +
                           "\r\nUse \"/media video\" to toggle the video feed." +
                           "\r\nUse \"/media stop\" to stop the stream.");
+                }
+
+                if (!isAutoSync)
+                {
+                    _ = PushMediaToServerAsync();
                 }
             });
             _streamWasPlaying = true;
@@ -512,8 +563,14 @@ namespace XivMediaPlayer
             _streamSetCooldown.Start();
         }
 
-        private void PlayViaYtDlp(string url, IMediaGameObject audioGameObject, int startTimeMs = 0)
+        private void PlayViaYtDlp(string url, IMediaGameObject audioGameObject, int startTimeMs = 0, bool isAutoSync = false)
         {
+            if (!isAutoSync && CurrentTvPlacement?.IsLocked == true && CurrentTvPlacement?.OwnerId != _config.OwnerId && !IsHousingMenuOpen)
+            {
+                _chat.PrintError("[Media Player] Cannot play: The TV in this room is locked by its owner.");
+                return;
+            }
+
             Task.Run(async () =>
             {
                 try
@@ -571,10 +628,14 @@ namespace XivMediaPlayer
                     _streamSetCooldown.Stop();
                     _streamSetCooldown.Reset();
                     _streamSetCooldown.Start();
-                } catch (Exception e)
+
+                    if (!isAutoSync)
+                    {
+                        _ = PushMediaToServerAsync();
+                    }
+                } catch (Exception ex)
                 {
-                    _pluginLog.Warning(e, "[yt-dlp] " + e.Message);
-                    _chat.PrintError("[Media Player] yt-dlp error: " + e.Message);
+                    _pluginLog.Error(ex, "Playback failed");
                 }
             });
         }
@@ -737,6 +798,35 @@ namespace XivMediaPlayer
                 await Task.Delay(3000); // Wait for housing data to be available
                 RestoreScreenForCurrentLocation();
                 RestoreMediaForCurrentLocation();
+                
+                // Fetch public TVs from the server
+                string locationKey = GetLocationKey();
+                if (!string.IsNullOrEmpty(locationKey) && locationKey.StartsWith("house_"))
+                {
+                    var tvs = await ServerClient.GetTvsForRoomAsync(locationKey);
+                    if (tvs.Count > 0)
+                    {
+                        var tv = tvs[0];
+                        CurrentTvPlacement = tv;
+                        _config.WorldScreen.Enabled = true;
+                        _config.WorldScreen.Position = new System.Numerics.Vector3(tv.PositionX, tv.PositionY, tv.PositionZ);
+                        _config.WorldScreen.RotationDegrees = new System.Numerics.Vector3(tv.RotationX, tv.RotationY, tv.RotationZ);
+                        _config.WorldScreen.Scale = new System.Numerics.Vector2(tv.ScaleX, tv.ScaleY);
+
+                        // Automatically cache what we pulled from the server into local storage
+                        _config.ScreenPlacements[locationKey] = _config.WorldScreen.Clone();
+                        _config.Save();
+
+                        _pluginLog.Info($"[Social] Loaded public TV placement for room {locationKey}.");
+                    }
+                    else 
+                    {
+                        CurrentTvPlacement = null;
+                    }
+                    
+                    // Automatically sync the media playback from the server upon entering the room
+                    await FetchMediaFromServerAsync();
+                }
             });
         }
 
@@ -835,12 +925,87 @@ namespace XivMediaPlayer
             _lastLocationKey = key;
         }
 
+        public async Task PushMediaToServerAsync()
+        {
+            var key = GetLocationKey();
+            if (string.IsNullOrEmpty(key) || !key.StartsWith("house_")) return;
+
+            var activeStream = _mediaManager?.ActiveStream;
+            if (activeStream == null || string.IsNullOrEmpty(activeStream.SoundPath)) return;
+
+            var sync = new Networking.Models.RoomMediaStateSync
+            {
+                LocationKey = key,
+                CurrentUrl = !string.IsNullOrEmpty(_lastStreamURL) ? _lastStreamURL : activeStream.SoundPath,
+                TimecodeMs = activeStream.Time,
+                OwnerId = _config.OwnerId,
+                PlaylistJson = System.Text.Json.JsonSerializer.Serialize(_mediaQueue.ToArray()),
+                BypassLock = IsHousingMenuOpen
+            };
+
+            try 
+            {
+                await ServerClient.UpdateMediaStateAsync(key, sync);
+            } 
+            catch (UnauthorizedAccessException) 
+            {
+                _chat.PrintError("[Media Player] Cannot change video: The TV in this room is locked by its owner.");
+                // Immediately snap back to the host's synced video
+                await FetchMediaFromServerAsync();
+            }
+        }
+
+        public async Task FetchMediaFromServerAsync()
+        {
+            var key = GetLocationKey();
+            if (string.IsNullOrEmpty(key) || !key.StartsWith("house_")) return;
+
+            var sync = await ServerClient.GetMediaStateAsync(key);
+            if (sync == null || string.IsNullOrEmpty(sync.CurrentUrl)) return;
+
+            // Calculate precise timecode based on server UTC stamp
+            var serverOffsetMs = (DateTime.UtcNow - sync.TimestampUtc).TotalMilliseconds;
+            var targetTimeMs = sync.TimecodeMs + (long)serverOffsetMs;
+
+            // Update local config
+            var state = new RoomMediaState
+            {
+                CurrentUrl = sync.CurrentUrl,
+                TimecodeMs = targetTimeMs,
+                Playlist = new List<string>(System.Text.Json.JsonSerializer.Deserialize<string[]>(sync.PlaylistJson) ?? Array.Empty<string>())
+            };
+            _config.RoomMediaStates[key] = state;
+            _config.Save();
+
+            // Actually play it if it's different or out of sync
+            var activeStream = _mediaManager?.ActiveStream;
+            bool isDifferentUrl = activeStream == null || (!string.IsNullOrEmpty(_lastStreamURL) && _lastStreamURL != sync.CurrentUrl);
+            bool isOutofSync = activeStream != null && Math.Abs(activeStream.Time - targetTimeMs) > 5000;
+
+            if (isDifferentUrl || isOutofSync)
+            {
+                _pluginLog.Information($"[Social] Syncing media from server: {sync.CurrentUrl} at {targetTimeMs}ms");
+                
+                _mediaQueue.Clear();
+                foreach (var url in state.Playlist) _mediaQueue.Enqueue(url);
+
+                if (_playerObject != null)
+                {
+                    PlayViaYtDlp(state.CurrentUrl, _playerObject, (int)targetTimeMs, isAutoSync: true);
+                }
+            }
+        }
+
         /// <summary>
         /// Generates a unique key for the current location.
+        public string LocationKey => GetLocationKey();
+
+        /// <summary>
+        /// Generates a unique string identifier for the current in-game location.
         /// Regular zones: "zone_{territoryId}"
         /// Housing: "house_{worldId}_{territoryId}_{ward}_{plot}_{room}"
         /// </summary>
-        private unsafe string GetLocationKey()
+        public unsafe string GetLocationKey()
         {
             try
             {
@@ -1284,10 +1449,11 @@ namespace XivMediaPlayer
 
             _commandManager.RemoveHandler("/media");
 
+            _uiCapture?.Dispose();
             _worldRenderer?.Dispose();
             _depthCapture?.Dispose();
-            _uiCapture?.Dispose();
             _depthPreviewWindow?.Dispose();
+            ServerClient?.Dispose();
             _mediaManager?.Dispose();
             _ytDlpManager?.Dispose();
             _windowSystem?.RemoveAllWindows();
