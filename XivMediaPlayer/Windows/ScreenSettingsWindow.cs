@@ -326,6 +326,8 @@ namespace XivMediaPlayer.Windows {
             bool success = await _plugin.ServerClient.DeleteTvAsync(locationKey, _plugin.CurrentTvPlacement.Id, _plugin.Config.OwnerId, _plugin.IsHousingMenuOpen);
             if (success) {
                 _plugin.CurrentTvPlacement = null;
+                _plugin.Config.ScreenPlacements.Remove(locationKey);
+                _plugin.Config.Save();
                 _statusMessage = "Successfully removed TV from the room!";
                 _statusColor = new Vector4(0.3f, 1f, 0.3f, 1);
                 _plugin.Chat.Print("[Media Player] " + _statusMessage);

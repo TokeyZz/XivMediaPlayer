@@ -1004,6 +1004,31 @@ namespace XivMediaPlayer
                 else 
                 {
                     CurrentTvPlacement = null;
+                    
+                    // Auto-restore local TV configuration to the server if one exists
+                    if (_config.ScreenPlacements.TryGetValue(locationKey, out var saved))
+                    {
+                        var tvToUpload = new Networking.Models.TvPlacement
+                        {
+                            LocationKey = locationKey,
+                            PositionX = saved.Position.X,
+                            PositionY = saved.Position.Y,
+                            PositionZ = saved.Position.Z,
+                            RotationX = saved.RotationDegrees.X,
+                            RotationY = saved.RotationDegrees.Y,
+                            RotationZ = saved.RotationDegrees.Z,
+                            ScaleX = saved.Scale.X,
+                            ScaleY = saved.Scale.Y,
+                            OwnerId = _config.OwnerId,
+                            IsLocked = false
+                        };
+                        
+                        CurrentTvPlacement = await ServerClient.RegisterTvAsync(locationKey, tvToUpload);
+                        if (CurrentTvPlacement != null)
+                        {
+                            _pluginLog.Info($"[Social] Restored local TV placement to server for room {locationKey}.");
+                        }
+                    }
                 }
                 
                 // Automatically sync the media playback from the server upon entering the room
