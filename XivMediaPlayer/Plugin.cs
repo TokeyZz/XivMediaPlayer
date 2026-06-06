@@ -77,7 +77,8 @@ namespace XivMediaPlayer
         private string[] _streamURLs;
         private string _lastStreamURL;
         private double? _currentMediaDurationMs;
-        private string _currentStreamer;
+        private string _currentStreamer = "";
+        private string _currentMediaTitle = "";
         private string _potentialStream;
         private bool _streamWasPlaying;
         private bool _disposed;
@@ -702,6 +703,7 @@ namespace XivMediaPlayer
                 
                 _currentMediaDurationMs = null;
                 _currentStreamer = "Direct Stream";
+                _currentMediaTitle = "Direct Stream";
                 
                 _chat.Print($"[Media Player] Playing direct stream!\r\nUse \"/media video\" to toggle the video feed.\r\nUse \"/media stop\" to stop.");
                 
@@ -830,6 +832,7 @@ namespace XivMediaPlayer
                     _lastStreamURL = url;
                     _currentMediaDurationMs = metadata?.Duration * 1000.0;
                     _currentStreamer = !string.IsNullOrEmpty(uploader) ? uploader : title;
+                    _currentMediaTitle = title;
 
                     string statusMsg = isLive ? "LIVE" : (metadata?.Duration.HasValue == true
                       ? TimeSpan.FromSeconds(metadata.Duration.Value).ToString(@"mm\:ss") : "");
@@ -939,6 +942,7 @@ namespace XivMediaPlayer
                 _lastStreamURL = "";
                 _currentMediaDurationMs = null;
                 _currentStreamer = "";
+                _currentMediaTitle = "";
                 _streamSetCooldown.Stop();
                 _streamSetCooldown.Reset();
             });
@@ -1405,22 +1409,25 @@ namespace XivMediaPlayer
             
             // Auto-retry VLC playback if it crashes shortly after starting (e.g. dropped TLS connection)
             // Ensure we ONLY retry if VLC actually threw a FATAL error, completely ignoring internal VLC logger spam
-            if (e.Exception?.Message?.StartsWith("VLC [") == true) return;
+            if (e.Exception?.Message?.Contains("Failed to create demuxer") == true) return;
 
             if (!string.IsNullOrEmpty(_lastStreamURL) && _lastStreamObject != null)
             {
                 if ((DateTime.UtcNow - _lastUrlLoadTime).TotalSeconds < 10)
                 {
-                    if (_mediaErrorCount < 2)
+                    if (_mediaErrorCount < 5)
                     {
                         _mediaErrorCount++;
-                        _chat.Print($"[Media Player] VLC encountered an error. Retrying playback... (Attempt {_mediaErrorCount}/2)");
-                        PlayViaYtDlp(_lastStreamURL, _lastStreamObject, (int)(_mediaManager?.ActiveStream?.Time ?? 0), isAutoSync: true);
-                    }
-                    else
-                    {
-                        _chat.PrintError("[Media Player] VLC failed to play the media after multiple attempts. The format might be unsupported or the server is dropping the connection.");
-                    }
+                        _chat.Print($"[Media Player] VLC encountered an error. Retrying playback... (Attempt {_mediaErrorCount}/5)");
+                        Task.Run(() =>
+                        {
+                            Thread.Sleep(1000);
+                            PlayViaYtDlp(_lastStreamURL, _lastStreamObject, (int)(_mediaManager?.ActiveStream?.Time ?? 0), isAutoSync: true);
+                        });
+                } else
+                {
+                    _chat.PrintError("[Media Player] VLC failed to play the media after multiple attempts. The format might be unsupported or the server is dropping the connection.");
+                }
                 }
             }
         }
@@ -1683,8 +1690,20 @@ namespace XivMediaPlayer
                                 }
                             }
                         }
-
-
+                        
+                        // Draw a floating title card above the physical TV screen in the game world
+                        if (!string.IsNullOrEmpty(_currentMediaTitle)) {
+                            var drawList = ImGui.GetForegroundDrawList();
+                            string titleText = _currentMediaTitle;
+                            if (!string.IsNullOrEmpty(_currentStreamer) && _currentStreamer != _currentMediaTitle) {
+                                titleText += $" - {_currentStreamer}";
+                            }
+                            var textSize = ImGui.CalcTextSize(titleText);
+                            var topCenter = (sTL + sTR) * 0.5f; // Find the exact top-center of the 3D TV screen
+                            var textPos = new System.Numerics.Vector2(topCenter.X - textSize.X * 0.5f, topCenter.Y - textSize.Y - 15f); // Float 15px above it
+                            drawList.AddRectFilled(new System.Numerics.Vector2(textPos.X - 8, textPos.Y - 4), new System.Numerics.Vector2(textPos.X + textSize.X + 8, textPos.Y + textSize.Y + 4), 0xAA000000, 4f);
+                            drawList.AddText(textPos, 0xFFFFFFFF, titleText);
+                        }
                     bool isLocked = CurrentTvPlacement?.IsLocked ?? true;
                     float volume = _mediaManager != null ? _mediaManager.LiveStreamVolume : 1f;
                     _worldRenderer.Render(textureWrap, _depthCapture, cameraPos, cameraForward, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, isLocked, volume);
