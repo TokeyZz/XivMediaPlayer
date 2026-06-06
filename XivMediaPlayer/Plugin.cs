@@ -1005,8 +1005,8 @@ namespace XivMediaPlayer
                 {
                     CurrentTvPlacement = null;
                     
-                    // Auto-restore local TV configuration to the server if one exists
-                    if (_config.ScreenPlacements.TryGetValue(locationKey, out var saved))
+                    // Auto-restore local TV configuration to the server if one exists and is enabled locally
+                    if (_config.ScreenPlacements.TryGetValue(locationKey, out var saved) && saved.Enabled)
                     {
                         var tvToUpload = new Networking.Models.TvPlacement
                         {
