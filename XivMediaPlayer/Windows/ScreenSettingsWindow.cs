@@ -58,7 +58,7 @@ namespace XivMediaPlayer.Windows {
       SyncFromTransform();
     }
 
-    private void SyncFromTransform() {
+    public void SyncFromTransform() {
       _position = _transform.Position;
       _rotation = new Vector2(_transform.RotationDegrees.Y, _transform.RotationDegrees.X); // yaw, pitch
       _scale = _transform.Scale;

@@ -323,10 +323,20 @@ namespace XivMediaPlayer
 
                 if (isHousingMenuOpen && !_wasHousingMenuOpen)
                 {
+                    _wasHousingMenuOpen = isHousingMenuOpen;
                     _screenSettingsWindow.IsOpen = true;
+                    _screenSettingsWindow.SyncFromTransform();
+
+                    if (CurrentTvPlacement != null && CurrentTvPlacement.OwnerId != _config.OwnerId && !string.IsNullOrEmpty(LocationKey))
+                    {
+                        CurrentTvPlacement.OwnerId = _config.OwnerId;
+                        _pluginLog.Info($"[Social] Automatically restoring TV ownership for {LocationKey} because housing menu was opened.");
+                        _screenSettingsWindow.RegisterTvAsync(LocationKey);
+                    }
                 }
                 else if (!isHousingMenuOpen && _wasHousingMenuOpen)
                 {
+                    _wasHousingMenuOpen = isHousingMenuOpen;
                     _screenSettingsWindow.IsOpen = false;
                     
                     // Auto-save and register TV when closing the menu
@@ -334,7 +344,10 @@ namespace XivMediaPlayer
                         _screenSettingsWindow.RegisterTvAsync(LocationKey);
                     }
                 }
-                _wasHousingMenuOpen = isHousingMenuOpen;
+                else
+                {
+                    _wasHousingMenuOpen = isHousingMenuOpen;
+                }
             }
 
             // Sync Polling Loop
@@ -1103,10 +1116,12 @@ namespace XivMediaPlayer
         /// </summary>
         private void SaveScreenForCurrentLocation()
         {
-            if (_worldRenderer?.Transform == null || !_worldRenderer.Transform.Enabled) return;
+            if (_worldRenderer?.Transform == null) return;
             var key = _lastLocationKey;
             if (string.IsNullOrEmpty(key)) return;
-            _config.ScreenPlacements[key] = _worldRenderer.Transform.Clone();
+            var transform = _worldRenderer.Transform.Clone();
+            transform.Enabled = _worldRenderer.Transform.Enabled;
+            _config.ScreenPlacements[key] = transform;
             _config.Save();
         }
 
