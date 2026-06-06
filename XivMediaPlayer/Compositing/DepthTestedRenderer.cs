@@ -185,7 +185,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
       color = VideoTexture.Sample(VideoSampler, uv);
       
       // Blend title texture perfectly flush onto the TV frame!
-      if (HasTitleTexture > 0.5) {
+      if (HasTitleTexture > 0.5 && HoverUV.x >= 0.0 && HoverUV.y >= 0.0) {
           float4 titleColor = TitleTexture.Sample(VideoSampler, uv);
           // Standard alpha blend
           color.rgb = lerp(color.rgb, titleColor.rgb, titleColor.a);

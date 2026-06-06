@@ -85,7 +85,7 @@ namespace XivMediaPlayer
         private bool _disposed;
         private bool _bgmWasMutedByUs;
         private bool _wasHousingMenuOpen = false;
-        
+
         public Networking.ServerClient ServerClient { get; private set; }
         public Configuration Config => _config;
         public bool IsHousingMenuOpen => _wasHousingMenuOpen;
@@ -181,10 +181,12 @@ namespace XivMediaPlayer
             _worldRenderer = new WorldVideoRenderer(_config.WorldScreen, _gameGui);
 
             ServerClient = new Networking.ServerClient(_config.ServerUrl, _pluginLog);
-            _config.OnConfigurationChanged += (s, e) => {
+            _config.OnConfigurationChanged += (s, e) =>
+            {
                 // Only recreate ServerClient if the ServerUrl actually changed!
                 // Otherwise we constantly dispose the HttpClient while requests are in flight!
-                if (ServerClient.BaseUrl != _config.ServerUrl) {
+                if (ServerClient.BaseUrl != _config.ServerUrl)
+                {
                     ServerClient?.Dispose();
                     ServerClient = new Networking.ServerClient(_config.ServerUrl, _pluginLog);
                 }
@@ -193,7 +195,7 @@ namespace XivMediaPlayer
             _uiCapture = new UILayerCapture();
             _uiCapture.Initialize();
             _titleTextureManager = new Compositing.TitleTextureManager(_textureProvider);
-            
+
             // Create windows
             _windowSystem = new WindowSystem("XivMediaPlayer");
             _videoWindow = new VideoWindow(this, _pluginInterface, _textureProvider, _pluginLog);
@@ -305,11 +307,12 @@ namespace XivMediaPlayer
                     {
                         // Restore saved screen placement for current location on plugin load
                         RestoreScreenForCurrentLocation();
-                        
+
                         // Automatically fetch TV placement and media state from the server if already in a house
                         _ = FetchServerDataForCurrentLocationAsync();
                     }
-                } catch (Exception e)
+                }
+                catch (Exception e)
                 {
                     _pluginLog.Error(e, "Failed to initialize media manager");
                 }
@@ -338,9 +341,10 @@ namespace XivMediaPlayer
                 {
                     _wasHousingMenuOpen = isHousingMenuOpen;
                     _screenSettingsWindow.IsOpen = false;
-                    
+
                     // Auto-save and register TV when closing the menu
-                    if (!string.IsNullOrEmpty(LocationKey) && LocationKey.StartsWith("house_")) {
+                    if (!string.IsNullOrEmpty(LocationKey) && LocationKey.StartsWith("house_"))
+                    {
                         _screenSettingsWindow.RegisterTvAsync(LocationKey);
                     }
                 }
@@ -354,7 +358,7 @@ namespace XivMediaPlayer
             if (!string.IsNullOrEmpty(LocationKey) && LocationKey.StartsWith("house_"))
             {
                 bool isMediaOwner = _isLocalDj;
-                
+
                 // The current DJ pushes every 5 seconds (only if playing media or currently loading one)
                 // If they intentionally paused, they stop pushing so the DataAgeMs can grow!
                 if (isMediaOwner && ((_mediaManager?.ActiveStream != null && !_isIntentionallyPaused) || !string.IsNullOrEmpty(_lastStreamURL)))
@@ -406,7 +410,8 @@ namespace XivMediaPlayer
                         _pluginLog.Info("[yt-dlp] Auto-detected YouTube cookies from clipboard.");
                     }
                 }
-            } catch
+            }
+            catch
             {
                 // Clipboard access can throw — silently ignore
             }
@@ -446,7 +451,8 @@ namespace XivMediaPlayer
                     _pluginLog.Debug($"[Media Player] Found LocalPlayer from ObjectTable: {player.Name}");
                 }
                 return player;
-            } catch (Exception e)
+            }
+            catch (Exception e)
             {
                 _pluginLog.Warning(e, "[Media Player] Failed to get LocalPlayer from ObjectTable");
             }
@@ -478,7 +484,8 @@ namespace XivMediaPlayer
                             _lastStreamObject = _playerObject;
                             PlayViaYtDlp(splitArgs[1], _playerObject, 0);
                         }
-                    } else
+                    }
+                    else
                     {
                         // Open twitch chat for current streamer
                         if (!string.IsNullOrEmpty(_currentStreamer))
@@ -491,11 +498,13 @@ namespace XivMediaPlayer
                                     UseShellExecute = true,
                                     Verb = "OPEN"
                                 });
-                            } catch (Exception e)
+                            }
+                            catch (Exception e)
                             {
                                 _pluginLog.Warning(e, e.Message);
                             }
-                        } else
+                        }
+                        else
                         {
                             _chat.PrintError("[Media Player] No active stream. Use: /media twitch <url>");
                         }
@@ -534,12 +543,14 @@ namespace XivMediaPlayer
                             // Resolve via yt-dlp then play
                             _chat.Print("[Media Player] Resolving URL via yt-dlp...");
                             PlayViaYtDlp(url, _playerObject);
-                        } else
+                        }
+                        else
                         {
                             // Fallback — direct URL to VLC
                             TuneIntoStream(url, _playerObject, 0);
                         }
-                    } else
+                    }
+                    else
                     {
                         _chat.PrintError("[Media Player] Usage: /media play <url>");
                     }
@@ -554,7 +565,8 @@ namespace XivMediaPlayer
                             bool success = await _ytDlpManager.SelfUpdate();
                             _chat.Print(success ? "[Media Player] yt-dlp updated." : "[Media Player] yt-dlp update failed.");
                         });
-                    } else
+                    }
+                    else
                     {
                         _chat.PrintError("[Media Player] yt-dlp not found. Set the path in /media settings.");
                     }
@@ -599,7 +611,8 @@ namespace XivMediaPlayer
                     {
                         // No subcommand: toggle the settings window
                         _screenSettingsWindow.Toggle();
-                    } else
+                    }
+                    else
                     {
                         HandleScreenCommand(splitArgs);
                     }
@@ -647,10 +660,10 @@ namespace XivMediaPlayer
                 {
                     _mediaManager.PlayStream(audioGameObject, _streamURLs[(int)_videoWindow.FeedType], startTimeMs, httpHeaders);
                     _lastStreamURL = cleanedURL;
-                        _currentStreamer = "Stream";
-                        _chat.Print(@"[Media Player] Playing stream!" +
-                          "\r\nUse \"/media video\" to toggle the video feed." +
-                          "\r\nUse \"/media stop\" to stop the stream.");
+                    _currentStreamer = "Stream";
+                    _chat.Print(@"[Media Player] Playing stream!" +
+                      "\r\nUse \"/media video\" to toggle the video feed." +
+                      "\r\nUse \"/media stop\" to stop the stream.");
                 }
 
                 if (!isAutoSync)
@@ -662,7 +675,8 @@ namespace XivMediaPlayer
             try
             {
                 MuteBgm();
-            } catch (Exception e)
+            }
+            catch (Exception e)
             {
                 _pluginLog.Warning(e, e.Message);
             }
@@ -681,9 +695,9 @@ namespace XivMediaPlayer
         {
             _isIntentionallyPaused = false;
             _lastUrlLoadTime = DateTime.UtcNow;
-            
+
             if (url != _lastStreamURL) _mediaErrorCount = 0;
-            
+
             // If it's an auto-sync and we're already resolving something, ignore it to prevent spam.
             // But if it's a manual play, we ALLOW it to interrupt the current resolution!
             if (isAutoSync && _isResolvingMedia) return;
@@ -705,23 +719,23 @@ namespace XivMediaPlayer
 
             // Direct playback for raw feeds (ignore query strings)
             string urlWithoutQuery = url.Split('?')[0];
-            if (urlWithoutQuery.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase) || 
-                urlWithoutQuery.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)) 
+            if (urlWithoutQuery.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase) ||
+                urlWithoutQuery.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase))
             {
                 _lastStreamURL = url;
                 _lastStreamIsLive = urlWithoutQuery.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase);
                 _lastStreamObject = audioGameObject;
                 _streamURLs = new string[] { url };
                 _videoWindow.IsOpen = _config.DefaultVideoOpen == 0;
-                
+
                 _mediaManager.PlayStream(audioGameObject, url, startTimeMs, null);
-                
+
                 _currentMediaDurationMs = null;
                 _currentStreamer = "Direct Stream";
                 _currentMediaTitle = "Direct Stream";
-                
+
                 _chat.Print($"[Media Player] Playing direct stream!\r\nUse \"/media video\" to toggle the video feed.\r\nUse \"/media stop\" to stop.");
-                
+
                 if (!isAutoSync) _ = PushMediaToServerAsync(isBackgroundSync: false);
                 _streamWasPlaying = true;
                 try { MuteBgm(); } catch (Exception e) { _pluginLog.Warning(e, e.Message); }
@@ -753,7 +767,8 @@ namespace XivMediaPlayer
                     {
                         streamUrl = await resolveTask;
                         if (resolutionId != _currentResolutionId) return;
-                    } catch (Exception resolveEx)
+                    }
+                    catch (Exception resolveEx)
                     {
                         _pluginLog.Warning(resolveEx, "[yt-dlp] Failed to resolve stream URL.");
                     }
@@ -762,7 +777,8 @@ namespace XivMediaPlayer
                     try
                     {
                         metadata = await metadataTask;
-                    } catch (Exception metadataEx)
+                    }
+                    catch (Exception metadataEx)
                     {
                         _pluginLog.Warning(metadataEx, "[yt-dlp] Failed to get metadata.");
                     }
@@ -771,7 +787,7 @@ namespace XivMediaPlayer
                     {
                         // Fallback to CefSharp for heavily protected sites
                         _chat.Print("[Media Player] yt-dlp failed. Falling back to embedded browser resolver...");
-                        
+
                         MediaPlayerCore.Resolvers.CefSharpResolverResult? cefResult = null;
                         try
                         {
@@ -788,10 +804,6 @@ namespace XivMediaPlayer
                             streamUrl = cefResult.Url;
                             metadata = new MediaPlayerCore.YtDlp.YtDlpMetadata { HttpHeaders = cefResult.Headers };
 
-                            // Self-Healing Fallback: If we are a guest and successfully resolved a raw Cef URL,
-                            // push the direct .m3u8 feed back to the server so the host (whose CefSharp is broken) can watch it!
-                            // IMPORTANT: Only rescue the host if the server's timecode is near 0ms (meaning the host is actually stuck loading). 
-                            // If the timecode is already progressing (e.g. 5+ seconds), the host is happily playing the video and we shouldn't ruin their playback by pushing 0ms!
                             if (!_isLocalDj && url != streamUrl && startTimeMs < 5000)
                             {
                                 _pluginLog.Information("[Social] Guest successfully resolved a raw Cef URL to a direct stream. Rescuing the host by pushing the .m3u8 back to the server!");
@@ -801,7 +813,7 @@ namespace XivMediaPlayer
                             }
 
                             _chat.Print("[Media Player] Embedded browser successfully found stream URL.");
-                            
+
                             // Merge headers
                             if (metadata == null) metadata = new MediaPlayerCore.YtDlp.YtDlpMetadata();
                             if (metadata.HttpHeaders == null) metadata.HttpHeaders = new Dictionary<string, string>();
@@ -830,7 +842,7 @@ namespace XivMediaPlayer
                     }
                     string title = metadata?.Title ?? "Unknown";
                     string uploader = metadata?.Uploader ?? "";
-                    
+
                     // Twitch streams often don't explicitly return is_live=true, but they lack a duration!
                     // Also explicitly check if it's a twitch channel URL (not a video)
                     bool isTwitchLive = url.Contains("twitch.tv") && !url.Contains("/videos/");
@@ -867,7 +879,8 @@ namespace XivMediaPlayer
                     try
                     {
                         MuteBgm();
-                    } catch (Exception e)
+                    }
+                    catch (Exception e)
                     {
                         _pluginLog.Warning(e, e.Message);
                     }
@@ -897,7 +910,8 @@ namespace XivMediaPlayer
                                 try
                                 {
                                     _mediaManager.ChangeStream(_lastStreamObject, _streamURLs[(int)_videoWindow.FeedType], _videoWindow.Size.Value.X);
-                                } catch (Exception e)
+                                }
+                                catch (Exception e)
                                 {
                                     _pluginLog.Warning(e, e.Message);
                                 }
@@ -940,7 +954,7 @@ namespace XivMediaPlayer
             _currentStreamer = "";
             _currentMediaTitle = "";
             _videoWindow.IsOpen = false;
-            
+
             bool wasPlaying = _streamWasPlaying;
             _streamWasPlaying = false;
             _streamSetCooldown.Stop();
@@ -958,7 +972,8 @@ namespace XivMediaPlayer
                     try
                     {
                         RestoreBgm();
-                    } catch (Exception e)
+                    }
+                    catch (Exception e)
                     {
                         _pluginLog.Warning(e, e.Message);
                     }
@@ -1008,7 +1023,8 @@ namespace XivMediaPlayer
                         }
                     }
                 }
-            } else if (_config.TuneIntoTwitchStreamPrompt)
+            }
+            else if (_config.TuneIntoTwitchStreamPrompt)
             {
                 var strings = messageText.Split(' ');
                 foreach (string value in strings)
@@ -1047,7 +1063,7 @@ namespace XivMediaPlayer
                 await Task.Delay(3000); // Wait for housing data to be available
                 RestoreScreenForCurrentLocation();
                 RestoreMediaForCurrentLocation();
-                
+
                 await FetchServerDataForCurrentLocationAsync();
             });
         }
@@ -1065,7 +1081,8 @@ namespace XivMediaPlayer
                     CurrentTvPlacement = tv;
 
                     // Apply to the ACTIVE renderer transform ONLY if we aren't actively editing it
-                    if (_worldRenderer != null && !IsHousingMenuOpen) {
+                    if (_worldRenderer != null && !IsHousingMenuOpen)
+                    {
                         _worldRenderer.Transform.Enabled = true;
                         _worldRenderer.Transform.Position = new System.Numerics.Vector3(tv.PositionX, tv.PositionY, tv.PositionZ);
                         _worldRenderer.Transform.RotationDegrees = new System.Numerics.Vector3(tv.RotationX, tv.RotationY, tv.RotationZ);
@@ -1079,10 +1096,10 @@ namespace XivMediaPlayer
 
                     _pluginLog.Info($"[Social] Loaded public TV placement for room {locationKey}.");
                 }
-                else 
+                else
                 {
                     CurrentTvPlacement = null;
-                    
+
                     // Auto-restore local TV configuration to the server if one exists and is enabled locally
                     if (_config.ScreenPlacements.TryGetValue(locationKey, out var saved) && saved.Enabled)
                     {
@@ -1100,7 +1117,7 @@ namespace XivMediaPlayer
                             OwnerId = _config.OwnerId,
                             IsLocked = false
                         };
-                        
+
                         CurrentTvPlacement = await ServerClient.RegisterTvAsync(locationKey, tvToUpload);
                         if (CurrentTvPlacement != null)
                         {
@@ -1108,7 +1125,7 @@ namespace XivMediaPlayer
                         }
                     }
                 }
-                
+
                 // Automatically sync the media playback from the server upon entering the room
                 await FetchMediaFromServerAsync();
             }
@@ -1141,7 +1158,8 @@ namespace XivMediaPlayer
                 _worldRenderer.Transform.RotationDegrees = saved.RotationDegrees;
                 _worldRenderer.Transform.Scale = saved.Scale;
                 _worldRenderer.Transform.Enabled = saved.Enabled;
-            } else
+            }
+            else
             {
                 _worldRenderer.Transform.Enabled = false; // Turn off 3D screen in new zones by default
             }
@@ -1156,7 +1174,7 @@ namespace XivMediaPlayer
             if (string.IsNullOrEmpty(key)) return;
 
             var state = new RoomMediaState();
-            
+
             var activeStream = _mediaManager?.ActiveStream;
             if (activeStream != null && !string.IsNullOrEmpty(activeStream.SoundPath))
             {
@@ -1184,7 +1202,7 @@ namespace XivMediaPlayer
             if (_config.RoomMediaStates.TryGetValue(key, out var state))
             {
                 _pluginLog.Information($"Restoring media state for {key}");
-                
+
                 // Restore queue
                 _mediaQueue.Clear();
                 if (state.Playlist != null)
@@ -1202,13 +1220,14 @@ namespace XivMediaPlayer
                     _lastStreamObject = _playerObject;
                     PlayViaYtDlp(state.CurrentUrl, _playerObject, (int)state.TimecodeMs, isAutoSync: true);
                 }
-            } else 
+            }
+            else
             {
                 // If there's no state, still ensure we track the key so saving works later!
                 _lastLocationKey = key;
                 return;
             }
-            
+
             _lastLocationKey = key;
         }
 
@@ -1237,11 +1256,11 @@ namespace XivMediaPlayer
                 IsBackgroundSync = isBackgroundSync
             };
 
-            try 
+            try
             {
                 await ServerClient.UpdateMediaStateAsync(key, sync);
                 _currentMediaOwnerId = _config.OwnerId;
-                
+
                 // If we successfully pushed a foreground sync, we are definitely the DJ now.
                 if (!isBackgroundSync)
                 {
@@ -1272,18 +1291,38 @@ namespace XivMediaPlayer
 
             var sync = await ServerClient.GetMediaStateAsync(key);
             if (sync == null || string.IsNullOrEmpty(sync.CurrentUrl)) return;
-            
+
             _currentMediaOwnerId = sync.OwnerId;
 
-            // If we are still the media owner, do NOT override our local playback state with the server's state!
-            // We dictate the server's state, not the other way around. 
-            // If we override our local state, any local unpause we did in the last 5 seconds will be instantly overridden by our own older server state!
             if (_isLocalDj) return;
 
+            int realPlayerCount = 0;
+            foreach (var obj in _objectTable)
+            {
+                if (obj is Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter)
+                {
+                    string name = obj.Name.TextValue.ToLowerInvariant();
+                    if (!name.Contains("reborn") && !name.Contains("cnpc"))
+                    {
+                        realPlayerCount++;
+                    }
+                }
+            }
+            bool isRoomEmpty = realPlayerCount <= 1; // 1 means only we are here
+
+            _pluginLog.Information($"[Social] Reclaim Check: RealPlayers={realPlayerCount}, isRoomEmpty={isRoomEmpty}, Owner={sync.OwnerId}=={_config.OwnerId}, LocalStateFound={_config.RoomMediaStates.TryGetValue(key, out var localState)}, CurrentUrl={localState?.CurrentUrl}=={sync.CurrentUrl}");
+
+            if (isRoomEmpty && sync.OwnerId == _config.OwnerId && localState != null && localState.CurrentUrl == sync.CurrentUrl)
+            {
+                _pluginLog.Information("[Social] Reclaiming DJ status and trusting local timecode over server state. The room was empty.");
+                _isLocalDj = true;
+                return;
+            }
+
             // Use the DataAgeMs calculated purely by the server to completely eliminate client clock drift issues!
-            // We ONLY add the age if the video is currently playing.
+            // We only add the age if the video is currently playing.
             var targetTimeMs = sync.IsPlaying ? sync.TimecodeMs + (long)sync.DataAgeMs : sync.TimecodeMs;
-            
+
             _pluginLog.Information($"[Social] Fetched media sync: Server TimecodeMs={sync.TimecodeMs}, DataAgeMs={sync.DataAgeMs}. Calculated TargetTimeMs={targetTimeMs}.");
 
             // Update local config
@@ -1307,7 +1346,7 @@ namespace XivMediaPlayer
             if (isDifferentUrl)
             {
                 _pluginLog.Information($"[Social] Syncing NEW media from server: {sync.CurrentUrl} at {targetTimeMs}ms (Playing: {sync.IsPlaying})");
-                
+
                 _mediaQueue.Clear();
                 foreach (var url in state.Playlist) _mediaQueue.Enqueue(url);
 
@@ -1317,41 +1356,42 @@ namespace XivMediaPlayer
                     // But yt-dlp might take a while, so we just let it start and the next poll will pause it.
                     PlayViaYtDlp(state.CurrentUrl, _playerObject, (int)targetTimeMs, isAutoSync: true);
                 }
-            } 
+            }
             else if (activeStream != null)
             {
                 if (isOutofSync)
                 {
                     // If the server is paused, and the data is old, ignore timecode sync!
-                    if (!sync.IsPlaying && sync.DataAgeMs >= 15000 && localIsPlaying) {
+                    if (!sync.IsPlaying && sync.DataAgeMs >= 15000 && localIsPlaying)
+                    {
                         _pluginLog.Information("[Social] Ignoring timecode sync because server is paused and data is stale.");
-                    } else {
+                    }
+                    else
+                    {
                         _pluginLog.Information($"[Social] Adjusting timecode to sync with server. Local Time: {activeStream.Time}ms | Target Time: {targetTimeMs}ms");
                         activeStream.Time = (long)targetTimeMs;
                     }
                 }
 
-                // Do not sync play/pause state for livestreams, as pausing a livestream in VLC breaks it
-                // and the DJ's VLC might temporarily report IsPlaying=false while buffering!
                 if (!_lastStreamIsLive)
                 {
                     if (sync.IsPlaying && !localIsPlaying)
                     {
                         _pluginLog.Information($"[Social] Server says play, but we are paused. Resuming!");
-                        activeStream.Resume(); 
+                        activeStream.Resume();
                     }
                     else if (!sync.IsPlaying && localIsPlaying)
                     {
-                        // "If a pause state didn't happen withing a certain time frame, we no longer care."
-                        // However, if we just entered the room (loaded the URL less than 20 seconds ago), we MUST respect the pause
-                        // even if the DJ paused it 5 minutes ago!
                         bool isNewlyLoaded = (DateTime.UtcNow - _lastUrlLoadTime).TotalSeconds < 20;
 
                         // Only force pause if the pause command was pushed less than 15 seconds ago OR we just loaded the stream.
-                        if (sync.DataAgeMs < 15000 || isNewlyLoaded) {
+                        if (sync.DataAgeMs < 15000 || isNewlyLoaded)
+                        {
                             _pluginLog.Information($"[Social] Server says paused (NewlyLoaded: {isNewlyLoaded}). Pausing!");
-                            activeStream.Pause(); 
-                        } else {
+                            activeStream.Pause();
+                        }
+                        else
+                        {
                             _pluginLog.Information($"[Social] Server says paused, but it is {sync.DataAgeMs}ms old. Ignoring!");
                         }
                     }
@@ -1392,7 +1432,8 @@ namespace XivMediaPlayer
                                 worldId = localChar->CurrentWorld;
                             }
                         }
-                    } catch { }
+                    }
+                    catch { }
 
                     short ward = housingMgr->GetCurrentWard();
                     short plot = housingMgr->GetCurrentPlot();
@@ -1401,7 +1442,8 @@ namespace XivMediaPlayer
                 }
 
                 return $"zone_{territoryId}";
-            } catch
+            }
+            catch
             {
                 return $"zone_{_clientState.TerritoryType}";
             }
@@ -1426,7 +1468,7 @@ namespace XivMediaPlayer
         private void OnMediaError(object sender, MediaError e)
         {
             _pluginLog.Warning(e.Exception, e.Exception?.Message);
-            
+
             // Auto-retry VLC playback if it crashes shortly after starting (e.g. dropped TLS connection)
             // Ensure we ONLY retry if VLC actually threw a FATAL error, completely ignoring internal VLC logger spam
             if (!e.Exception?.Message?.Contains("Failed to create demuxer") == true) return;
@@ -1448,10 +1490,11 @@ namespace XivMediaPlayer
                             Thread.Sleep(1000);
                             PlayViaYtDlp(_lastStreamURL, _lastStreamObject, (int)(_mediaManager?.ActiveStream?.Time ?? 0), isAutoSync: true);
                         });
-                } else
-                {
-                    _chat.PrintError("[Media Player] VLC failed to play the media after multiple attempts. The format might be unsupported or the server is dropping the connection.");
-                }
+                    }
+                    else
+                    {
+                        _chat.PrintError("[Media Player] VLC failed to play the media after multiple attempts. The format might be unsupported or the server is dropping the connection.");
+                    }
                 }
             }
         }
@@ -1469,7 +1512,8 @@ namespace XivMediaPlayer
                     _bgmWasMutedByUs = true;
                     _gameConfig.Set(SystemConfigOption.IsSndBgm, true);
                 }
-            } catch (Exception e)
+            }
+            catch (Exception e)
             {
                 _pluginLog.Warning(e, "[Media Player] Failed to mute BGM");
             }
@@ -1487,7 +1531,8 @@ namespace XivMediaPlayer
                     _bgmWasMutedByUs = false;
                     _gameConfig.Set(SystemConfigOption.IsSndBgm, false);
                 }
-            } catch (Exception e)
+            }
+            catch (Exception e)
             {
                 _pluginLog.Warning(e, "[Media Player] Failed to restore BGM");
             }
@@ -1511,7 +1556,8 @@ namespace XivMediaPlayer
                 {
                     tempPlayer.Volume = 1;
                 }
-            } catch (Exception e)
+            }
+            catch (Exception e)
             {
                 _pluginLog.Warning(e, "[Media Player] Failed to fix Windows volume");
             }
@@ -1535,12 +1581,15 @@ namespace XivMediaPlayer
                     if (ImGui.Begin("XivMediaPlayer - Initial Setup", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoMove))
                     {
                         ImGui.TextWrapped(_dependencyManager.Status);
-                        if (_dependencyManager.IsDownloading) {
+                        if (_dependencyManager.IsDownloading)
+                        {
                             ImGui.ProgressBar(_dependencyManager.DownloadProgress, new System.Numerics.Vector2(-1, 0));
                         }
-                        if (_dependencyManager.HasError) {
+                        if (_dependencyManager.HasError)
+                        {
                             ImGui.TextColored(new System.Numerics.Vector4(1, 0, 0, 1), _dependencyManager.ErrorMessage);
-                            if (ImGui.Button("Retry Download")) {
+                            if (ImGui.Button("Retry Download"))
+                            {
                                 _ = _dependencyManager.DownloadDependenciesAsync();
                             }
                         }
@@ -1593,7 +1642,8 @@ namespace XivMediaPlayer
                               System.Numerics.Matrix4x4>(ref rawView);
                             cameraForward = System.Numerics.Vector3.Normalize(
                               new System.Numerics.Vector3(view.M13, view.M23, view.M33));
-                        } catch { }
+                        }
+                        catch { }
                     }
 
                     System.Numerics.Vector2? hoverUV = null;
@@ -1605,7 +1655,7 @@ namespace XivMediaPlayer
                     {
                         if (activeStream.Length > 0)
                             progress = activeStream.Time / (float)activeStream.Length;
-                        
+
                         isPlaying = activeStream.PlaybackState == NAudio.Wave.PlaybackState.Playing;
                     }
 
@@ -1630,12 +1680,15 @@ namespace XivMediaPlayer
                     {
                         hoverUV = uv;
 
-                        if (isMouseClicked) {
+                        if (isMouseClicked)
+                        {
                             _pluginLog.Information($"Media Control Clicked at UV: {uv.X:F2}, {uv.Y:F2}");
-                            
+
                             // Handle Volume Slider Click
-                            if (uv.Y > 0.95f && uv.Y < 0.97f && uv.X > 0.15f && uv.X < 0.72f) {
-                                if (_mediaManager != null) {
+                            if (uv.Y > 0.95f && uv.Y < 0.97f && uv.X > 0.15f && uv.X < 0.72f)
+                            {
+                                if (_mediaManager != null)
+                                {
                                     float volProgress = (uv.X - 0.15f) / 0.57f;
                                     _mediaManager.LiveStreamVolume = Math.Clamp(volProgress * 3f, 0f, 3f);
                                     _config.LivestreamVolume = _mediaManager.LiveStreamVolume;
@@ -1643,82 +1696,108 @@ namespace XivMediaPlayer
                                 }
                             }
                             // Handle Play/Pause
-                            else if (uv.Y > 0.85f && uv.Y < 0.95f) {
-                                    // Slightly widened hitboxes for better UX
-                                    if (uv.X >= 0.04f && uv.X <= 0.11f && uv.Y >= 0.88f && uv.Y <= 0.94f) {
-                                        if (activeStream != null) {
-                                            _pluginLog.Information("Toggling Play/Pause!");
-                                            _isIntentionallyPaused = !_isIntentionallyPaused;
-                                            if (_isIntentionallyPaused) activeStream.Pause(); 
-                                            else activeStream.Resume();
-                                            // Force an immediate push. If the TV is locked, the server will reject it and automatically snap them back!
-                                            _isLocalDj = true;
-                                            _ = PushMediaToServerAsync(isBackgroundSync: false);
-                                        }
-                                    } else if (uv.Y >= 0.88f && uv.Y <= 0.94f && uv.X >= 0.14f && uv.X <= 0.73f) {
-                                        if (activeStream != null) {
-                                            float seekProgress = (uv.X - 0.15f) / 0.57f;
-                                            _pluginLog.Information($"Seeking to {seekProgress * 100}%");
-                                            activeStream.Time = (long)(seekProgress * activeStream.Length);
-                                            _isLocalDj = true;
-                                            _ = PushMediaToServerAsync(isBackgroundSync: false);
-                                        }
-                                     } else if (uv.X >= 0.73f && uv.X <= 0.81f && uv.Y >= 0.88f && uv.Y <= 0.94f) {
-                                        // Lock/Unlock toggle
-                                        if (CurrentTvPlacement != null && CurrentTvPlacement.OwnerId == _config.OwnerId) {
-                                            CurrentTvPlacement.IsLocked = !CurrentTvPlacement.IsLocked;
-                                            _pluginLog.Information($"Toggled TV lock to: {CurrentTvPlacement.IsLocked}");
-                                            if (!string.IsNullOrEmpty(LocationKey) && LocationKey.StartsWith("house_")) {
-                                                _screenSettingsWindow.RegisterTvAsync(LocationKey);
-                                                _chat.Print($"[Media Player] TV is now {(CurrentTvPlacement.IsLocked ? "Locked to Owner" : "Unlocked")}.");
-                                            }
-                                        } else if (CurrentTvPlacement != null) {
-                                            _chat.Print("[Media Player] You do not own this TV.");
-                                        } else {
-                                            // Create dummy placement and register
-                                            CurrentTvPlacement = new Networking.Models.TvPlacement {
-                                                OwnerId = _config.OwnerId,
-                                                IsLocked = false // Default true, so toggle unlocks it
-                                            };
+                            else if (uv.Y > 0.85f && uv.Y < 0.95f)
+                            {
+                                // Slightly widened hitboxes for better UX
+                                if (uv.X >= 0.04f && uv.X <= 0.11f && uv.Y >= 0.88f && uv.Y <= 0.94f)
+                                {
+                                    if (activeStream != null)
+                                    {
+                                        _pluginLog.Information("Toggling Play/Pause!");
+                                        _isIntentionallyPaused = !_isIntentionallyPaused;
+                                        if (_isIntentionallyPaused) activeStream.Pause();
+                                        else activeStream.Resume();
+                                        // Force an immediate push. If the TV is locked, the server will reject it and automatically snap them back!
+                                        _isLocalDj = true;
+                                        _ = PushMediaToServerAsync(isBackgroundSync: false);
+                                    }
+                                }
+                                else if (uv.Y >= 0.88f && uv.Y <= 0.94f && uv.X >= 0.14f && uv.X <= 0.73f)
+                                {
+                                    if (activeStream != null)
+                                    {
+                                        float seekProgress = (uv.X - 0.15f) / 0.57f;
+                                        _pluginLog.Information($"Seeking to {seekProgress * 100}%");
+                                        activeStream.Time = (long)(seekProgress * activeStream.Length);
+                                        _isLocalDj = true;
+                                        _ = PushMediaToServerAsync(isBackgroundSync: false);
+                                    }
+                                }
+                                else if (uv.X >= 0.73f && uv.X <= 0.81f && uv.Y >= 0.88f && uv.Y <= 0.94f)
+                                {
+                                    // Lock/Unlock toggle
+                                    if (CurrentTvPlacement != null && CurrentTvPlacement.OwnerId == _config.OwnerId)
+                                    {
+                                        CurrentTvPlacement.IsLocked = !CurrentTvPlacement.IsLocked;
+                                        _pluginLog.Information($"Toggled TV lock to: {CurrentTvPlacement.IsLocked}");
+                                        if (!string.IsNullOrEmpty(LocationKey) && LocationKey.StartsWith("house_"))
+                                        {
                                             _screenSettingsWindow.RegisterTvAsync(LocationKey);
-                                            _chat.Print("[Media Player] TV registered and Unlocked.");
+                                            _chat.Print($"[Media Player] TV is now {(CurrentTvPlacement.IsLocked ? "Locked to Owner" : "Unlocked")}.");
                                         }
-                                    } else if (uv.X >= 0.81f && uv.X <= 0.89f && uv.Y >= 0.88f && uv.Y <= 0.94f) {
-                                        // Paste and Play instantly
-                                        string clipboardText = ImGui.GetClipboardText();
-                                        if (!string.IsNullOrEmpty(clipboardText) && _playerObject != null) {
-                                            _pluginLog.Information("Pasted and Playing: " + clipboardText);
-                                            _chat.Print("[Media Player] Loading URL from clipboard...");
-                                            PlayViaYtDlp(clipboardText, _playerObject);
-                                        }
-                                    } else if (uv.X >= 0.89f && uv.X <= 0.97f && uv.Y >= 0.88f && uv.Y <= 0.94f) {
-                                        // Paste to Queue
-                                        string clipboardText = ImGui.GetClipboardText();
-                                        if (!string.IsNullOrEmpty(clipboardText)) {
-                                            _pluginLog.Information("Queued URL: " + clipboardText);
-                                            _mediaQueue.Enqueue(clipboardText);
-                                            _chat.Print($"[Media Player] Added to Queue ({_mediaQueue.Count} items): {clipboardText}");
-                                            
-                                            // If nothing is playing, start it immediately
-                                            if (activeStream == null || activeStream.PlaybackState == NAudio.Wave.PlaybackState.Stopped) {
-                                                if (_playerObject != null) {
-                                                    string nextUrl = _mediaQueue.Dequeue();
-                                                    PlayViaYtDlp(nextUrl, _playerObject);
-                                                }
-                                            } else {
-                                                // Sync the updated queue state to the server!
-                                                _ = PushMediaToServerAsync(isBackgroundSync: false);
+                                    }
+                                    else if (CurrentTvPlacement != null)
+                                    {
+                                        _chat.Print("[Media Player] You do not own this TV.");
+                                    }
+                                    else
+                                    {
+                                        // Create dummy placement and register
+                                        CurrentTvPlacement = new Networking.Models.TvPlacement
+                                        {
+                                            OwnerId = _config.OwnerId,
+                                            IsLocked = false // Default true, so toggle unlocks it
+                                        };
+                                        _screenSettingsWindow.RegisterTvAsync(LocationKey);
+                                        _chat.Print("[Media Player] TV registered and Unlocked.");
+                                    }
+                                }
+                                else if (uv.X >= 0.81f && uv.X <= 0.89f && uv.Y >= 0.88f && uv.Y <= 0.94f)
+                                {
+                                    // Paste and Play instantly
+                                    string clipboardText = ImGui.GetClipboardText();
+                                    if (!string.IsNullOrEmpty(clipboardText) && _playerObject != null)
+                                    {
+                                        _pluginLog.Information("Pasted and Playing: " + clipboardText);
+                                        _chat.Print("[Media Player] Loading URL from clipboard...");
+                                        PlayViaYtDlp(clipboardText, _playerObject);
+                                    }
+                                }
+                                else if (uv.X >= 0.89f && uv.X <= 0.97f && uv.Y >= 0.88f && uv.Y <= 0.94f)
+                                {
+                                    // Paste to Queue
+                                    string clipboardText = ImGui.GetClipboardText();
+                                    if (!string.IsNullOrEmpty(clipboardText))
+                                    {
+                                        _pluginLog.Information("Queued URL: " + clipboardText);
+                                        _mediaQueue.Enqueue(clipboardText);
+                                        _chat.Print($"[Media Player] Added to Queue ({_mediaQueue.Count} items): {clipboardText}");
+
+                                        // If nothing is playing, start it immediately
+                                        if (activeStream == null || activeStream.PlaybackState == NAudio.Wave.PlaybackState.Stopped)
+                                        {
+                                            if (_playerObject != null)
+                                            {
+                                                string nextUrl = _mediaQueue.Dequeue();
+                                                PlayViaYtDlp(nextUrl, _playerObject);
                                             }
+                                        }
+                                        else
+                                        {
+                                            // Sync the updated queue state to the server!
+                                            _ = PushMediaToServerAsync(isBackgroundSync: false);
                                         }
                                     }
                                 }
                             }
                         }
-                        
-                        // Update dynamic 3D text texture
-                        if (_titleTextureManager != null) {
-                            _titleTextureManager.UpdateText(_currentMediaTitle, _currentStreamer);
-                        }
+                    }
+
+                    // Update dynamic 3D text texture
+                    if (_titleTextureManager != null)
+                    {
+                        _titleTextureManager.UpdateText(_currentMediaTitle, _currentStreamer);
+                    }
 
                     bool isLocked = CurrentTvPlacement?.IsLocked ?? true;
                     float volume = _mediaManager != null ? _mediaManager.LiveStreamVolume : 1f;
@@ -1773,14 +1852,16 @@ namespace XivMediaPlayer
 
                     // Stabilize the combined ViewProjection matrix to filter out both
                     // camera float drift AND TAA/DLSS/FSR projection sub-pixel jitter.
-                    if (diff < 0.1f) {
+                    if (diff < 0.1f)
+                    {
                         vp = _lastStabilizedVP.Value;
                     }
                 }
                 _lastStabilizedVP = vp;
 
                 return vp;
-            } catch
+            }
+            catch
             {
                 return null;
             }
@@ -1806,7 +1887,8 @@ namespace XivMediaPlayer
             if (YtDlpManager.IsUrlSupported(item.Url) && _ytDlpManager.IsAvailable())
             {
                 PlayViaYtDlp(item.Url, _playerObject, 0);
-            } else
+            }
+            else
             {
                 TuneIntoStream(item.Url, _playerObject, 0);
             }
@@ -1854,7 +1936,8 @@ namespace XivMediaPlayer
                         _worldRenderer.MoveBy(new System.Numerics.Vector3(mx, my, mz));
                         var pos = _worldRenderer.Transform.Position;
                         _chat.Print($"[Media Player] Screen moved to ({pos.X:F1}, {pos.Y:F1}, {pos.Z:F1})");
-                    } else
+                    }
+                    else
                     {
                         _chat.PrintError("[Media Player] Usage: /media screen move <x> <y> <z>");
                     }
@@ -1866,7 +1949,8 @@ namespace XivMediaPlayer
                         float pitch = args.Length >= 4 && float.TryParse(args[3], out float p) ? p : 0;
                         _worldRenderer.SetRotation(yaw, pitch);
                         _chat.Print($"[Media Player] Screen rotation: yaw={yaw:F0}° pitch={pitch:F0}°");
-                    } else
+                    }
+                    else
                     {
                         _chat.PrintError("[Media Player] Usage: /media screen rotate <yaw> [pitch]");
                     }
@@ -1879,7 +1963,8 @@ namespace XivMediaPlayer
                     {
                         _worldRenderer.SetScale(sw, sh);
                         _chat.Print($"[Media Player] Screen size: {sw:F1} x {sh:F1} world units");
-                    } else
+                    }
+                    else
                     {
                         _chat.PrintError("[Media Player] Usage: /media screen scale <width> <height>");
                     }
@@ -1920,7 +2005,8 @@ namespace XivMediaPlayer
                 var screenPos = camPos - forward * 5.0f;
                 _worldRenderer.PlaceAt(screenPos, camPos);
                 _chat.Print($"[Media Player] Screen placed at ({screenPos.X:F1}, {screenPos.Y:F1}, {screenPos.Z:F1})");
-            } else
+            }
+            else
             {
                 _chat.PrintError("[Media Player] Camera not available.");
             }

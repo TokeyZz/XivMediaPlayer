@@ -48,6 +48,9 @@ namespace XivMediaPlayer.Server.Models
         [NotMapped]
         public double DataAgeMs { get; set; } = 0;
 
+        [NotMapped]
+        public double IdleTimeMs { get; set; } = 0;
+
         public double? DurationMs { get; set; } = null;
     }
 

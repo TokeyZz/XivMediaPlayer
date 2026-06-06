@@ -9,6 +9,7 @@ namespace XivMediaPlayer.Server.Controllers
     public class RoomsController : ControllerBase
     {
         private readonly AppDbContext _db;
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _lastFetchTimes = new();
 
         public RoomsController(AppDbContext db)
         {
@@ -92,6 +93,11 @@ namespace XivMediaPlayer.Server.Controllers
             // Calculate exactly how many milliseconds have passed since the HOST pushed this data.
             // By doing this on the server, we completely eliminate client clock drift issues!
             state.DataAgeMs = (DateTime.UtcNow - state.TimestampUtc).TotalMilliseconds;
+
+            // Fetch LastFetchUtc before updating it, so the client knows if someone else fetched BEFORE them!
+            var lastFetch = _lastFetchTimes.TryGetValue(locationKey, out var lf) ? lf : DateTime.MinValue;
+            state.IdleTimeMs = lastFetch == DateTime.MinValue ? double.MaxValue : (DateTime.UtcNow - lastFetch).TotalMilliseconds;
+            _lastFetchTimes[locationKey] = DateTime.UtcNow;
 
             // AUTO ADVANCE QUEUE
             if (state.IsPlaying && state.DurationMs.HasValue && (state.DataAgeMs + state.TimecodeMs) >= state.DurationMs.Value)

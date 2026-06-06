@@ -39,5 +39,6 @@ namespace XivMediaPlayer.Networking.Models
         public bool IsBackgroundSync { get; set; } = false;
         public double DataAgeMs { get; set; } = 0;
         public double? DurationMs { get; set; } = null;
+        public double IdleTimeMs { get; set; } = 0;
     }
 }
