@@ -24,6 +24,15 @@
           "Microsoft.AspNetCore.SignalR.Client.Core": "10.0.8"
         }
       },
+      "System.Drawing.Common": {
+        "type": "Direct",
+        "requested": "[8.0.0, )",
+        "resolved": "8.0.0",
+        "contentHash": "JkbHJjtI/dWc5dfmEdJlbe3VwgZqCkZRtfuWFh5GOv0f+gGCfBtzMpIVkmdkj2AObO9y+oiOi81UGwH3aBYuqA==",
+        "dependencies": {
+          "Microsoft.Win32.SystemEvents": "8.0.0"
+        }
+      },
       "Vortice.D3DCompiler": {
         "type": "Direct",
         "requested": "[3.5.0, )",
@@ -174,6 +183,11 @@
         "resolved": "10.0.8",
         "contentHash": "OBPo4nYhMyIbtueoC10CBm6AGAbo/A9IV8QQ/6ryZS7VvmqpGT7hunazeHLxFawRzn3oLOq4jhqhpBX4tfswWQ=="
       },
+      "Microsoft.Win32.SystemEvents": {
+        "type": "Transitive",
+        "resolved": "8.0.0",
+        "contentHash": "9opKRyOKMCi2xJ7Bj7kxtZ1r9vbzosMvRrdEhVhDz8j8MoBGgB+WmC94yH839NPH+BclAjtQ/pyagvi/8gDLkw=="
+      },
       "NAudio": {
         "type": "Transitive",
         "resolved": "2.2.1",
@@ -192,7 +206,6 @@
         "resolved": "2.2.1",
         "contentHash": "hQglyOT5iT3XuGpBP8ZG0+aoqwRfidHjTNehpoWwX0g6KJEgtH2VaqM2nuJ2mheKZa/IBqB4YQTZVvrIapzfOA==",
         "dependencies": {
-          "Microsoft.Win32.Registry": "4.7.0",
           "NAudio.Core": "2.2.1"
         }
       },
@@ -230,7 +243,6 @@
         "resolved": "2.2.1",
         "contentHash": "xFHRFwH4x6aq3IxRbewvO33ugJRvZFEOfO62i7uQJRUNW2cnu6BeBTHUS0JD5KBucZbHZaYqxQG8dwZ47ezQuQ==",
         "dependencies": {
-          "Microsoft.Win32.Registry": "4.7.0",
           "NAudio.Core": "2.2.1"
         }
       },
@@ -322,6 +334,11 @@
         "type": "Transitive",
         "resolved": "148.0.9",
         "contentHash": "LB4O7yKJs3FFjs+8ILSzB4wT72gbE1Xi8bj8aFay3Fjfqxqpkt/25h3usq8D9buZm5x/c/p6n9Zhh82V7Lld/w=="
+      },
+      "Microsoft.Win32.SystemEvents": {
+        "type": "Transitive",
+        "resolved": "8.0.0",
+        "contentHash": "9opKRyOKMCi2xJ7Bj7kxtZ1r9vbzosMvRrdEhVhDz8j8MoBGgB+WmC94yH839NPH+BclAjtQ/pyagvi/8gDLkw=="
       }
     }
   }

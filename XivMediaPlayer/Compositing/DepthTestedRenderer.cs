@@ -57,7 +57,7 @@ namespace XivMediaPlayer.Compositing {
       public float IsLockedTV;
       public float Volume;
       public Vector2 RenderResolution;
-      public float _pad4;
+      public float HasTitleTexture;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -88,7 +88,7 @@ cbuffer Constants : register(b0) {
   float IsLockedTV;
   float Volume;
   float2 RenderResolution;
-  float _padEnd;
+  float HasTitleTexture;
 };
 
 cbuffer UIConsts : register(b1) {
@@ -100,6 +100,7 @@ cbuffer UIConsts : register(b1) {
 Texture2D VideoTexture : register(t0);
 Texture2D DepthTexture : register(t1);
 Texture2D BackBufferTexture : register(t2);
+Texture2D TitleTexture : register(t3);
 SamplerState VideoSampler : register(s0);
 SamplerState DepthSampler : register(s1);
 
@@ -182,6 +183,13 @@ float4 PS(VS_OUT input) : SV_TARGET {
   if (isInside && !occluded) {
       // Draw unoccluded TV
       color = VideoTexture.Sample(VideoSampler, uv);
+      
+      // Blend title texture perfectly flush onto the TV frame!
+      if (HasTitleTexture > 0.5) {
+          float4 titleColor = TitleTexture.Sample(VideoSampler, uv);
+          // Standard alpha blend
+          color.rgb = lerp(color.rgb, titleColor.rgb, titleColor.a);
+      }
   } else {
       float depthMask = 1.0;
       if (gameDepth < 0.0001) depthMask = 0; // Ignore skybox
@@ -485,17 +493,17 @@ float4 PS(VS_OUT input) : SV_TARGET {
 
     public unsafe bool Render(
       (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl) screenCorners,
-      IntPtr videoTextureSRV,
-      ID3D11ShaderResourceView depthSRV,
+      IntPtr videoSrvPtr,
+      ID3D11ShaderResourceView depthSrv,
       Vector4 cornerDepths,
       int screenWidth, int screenHeight,
-      ID3D11ShaderResourceView backBufferSRV,
+      ID3D11ShaderResourceView uiLayerSrv,
       Vector2? hoverUV, float progress, bool isPlaying, bool isLocked,
       float minDepth, float maxDepth, float volume,
       float renderWidth, float renderHeight,
-      List<(int X, int Y, int W, int H, string Name)> uiRects) {
+      List<(int X, int Y, int W, int H, string Name)> uiRects, IntPtr titleSrvPtr = default) {
 
-      if (!_initialized || _disposed || videoTextureSRV == IntPtr.Zero || depthSRV == null) return false;
+      if (!_initialized || _disposed || videoSrvPtr == IntPtr.Zero || depthSrv == null) return false;
 
       EnsureRenderTarget(screenWidth, screenHeight);
 
@@ -519,10 +527,11 @@ float4 PS(VS_OUT input) : SV_TARGET {
           IsPlaying = isPlaying ? 1.0f : 0.0f,
           DynamicMinDepth = minDepth,
           DynamicMaxDepth = maxDepth,
-          HasBackBuffer = backBufferSRV != null ? 1.0f : 0.0f,
+          HasBackBuffer = uiLayerSrv != null ? 1.0f : 0.0f,
           IsLockedTV = isLocked ? 1.0f : 0.0f,
           Volume = volume,
           RenderResolution = new Vector2(renderWidth, renderHeight),
+          HasTitleTexture = titleSrvPtr != IntPtr.Zero ? 1.0f : 0.0f
         };
         _context.UpdateSubresource(constants, _constantBuffer);
 
@@ -548,10 +557,13 @@ float4 PS(VS_OUT input) : SV_TARGET {
         _context.PSSetShader(_pixelShader);
         _context.PSSetConstantBuffer(0, _constantBuffer);
         _context.PSSetConstantBuffer(1, _uiRectBuffer);
-        var videoSRV = new ID3D11ShaderResourceView(videoTextureSRV);
-        _context.PSSetShaderResource(0, videoSRV);
-        _context.PSSetShaderResource(1, depthSRV);
-        _context.PSSetShaderResource(2, backBufferSRV);
+        var srvs = new ID3D11ShaderResourceView[4];
+        srvs[0] = new ID3D11ShaderResourceView(videoSrvPtr);
+        srvs[1] = depthSrv;
+        srvs[2] = uiLayerSrv;
+        srvs[3] = titleSrvPtr != IntPtr.Zero ? new ID3D11ShaderResourceView(titleSrvPtr) : null;
+        
+        _context.PSSetShaderResources(0, 4, srvs);
         _context.PSSetSampler(0, _videoSampler);
         _context.PSSetSampler(1, _depthSampler);
 

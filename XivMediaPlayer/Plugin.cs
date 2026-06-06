@@ -61,6 +61,7 @@ namespace XivMediaPlayer
         private bool _isLocalDj = false;
         private DepthBufferCapture _depthCapture;
         private UILayerCapture _uiCapture;
+        private Compositing.TitleTextureManager _titleTextureManager;
 
         private MediaManager _mediaManager;
         internal MediaManager MediaManager => _mediaManager;
@@ -191,7 +192,8 @@ namespace XivMediaPlayer
 
             _uiCapture = new UILayerCapture();
             _uiCapture.Initialize();
-
+            _titleTextureManager = new Compositing.TitleTextureManager(_textureProvider);
+            
             // Create windows
             _windowSystem = new WindowSystem("XivMediaPlayer");
             _videoWindow = new VideoWindow(this, _pluginInterface, _textureProvider, _pluginLog);
@@ -1695,22 +1697,14 @@ namespace XivMediaPlayer
                             }
                         }
                         
-                        // Draw a floating title card above the physical TV screen in the game world
-                        if (!string.IsNullOrEmpty(_currentMediaTitle)) {
-                            var drawList = ImGui.GetForegroundDrawList();
-                            string titleText = _currentMediaTitle;
-                            if (!string.IsNullOrEmpty(_currentStreamer) && _currentStreamer != _currentMediaTitle) {
-                                titleText += $" - {_currentStreamer}";
-                            }
-                            var textSize = ImGui.CalcTextSize(titleText);
-                            var topCenter = (sTL + sTR) * 0.5f; // Find the exact top-center of the 3D TV screen
-                            var textPos = new System.Numerics.Vector2(topCenter.X - textSize.X * 0.5f, topCenter.Y - textSize.Y - 15f); // Float 15px above it
-                            drawList.AddRectFilled(new System.Numerics.Vector2(textPos.X - 8, textPos.Y - 4), new System.Numerics.Vector2(textPos.X + textSize.X + 8, textPos.Y + textSize.Y + 4), 0xAA000000, 4f);
-                            drawList.AddText(textPos, 0xFFFFFFFF, titleText);
+                        // Update dynamic 3D text texture
+                        if (_titleTextureManager != null) {
+                            _titleTextureManager.UpdateText(_currentMediaTitle, _currentStreamer);
                         }
+
                     bool isLocked = CurrentTvPlacement?.IsLocked ?? true;
                     float volume = _mediaManager != null ? _mediaManager.LiveStreamVolume : 1f;
-                    _worldRenderer.Render(textureWrap, _depthCapture, cameraPos, cameraForward, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, isLocked, volume);
+                    _worldRenderer.Render(textureWrap, _depthCapture, cameraPos, cameraForward, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, isLocked, volume, _titleTextureManager?.TextureHandle ?? IntPtr.Zero);
                 }
             }
         }
@@ -1936,6 +1930,7 @@ namespace XivMediaPlayer
             _commandManager.RemoveHandler("/media");
 
             _uiCapture?.Dispose();
+            _titleTextureManager?.Dispose();
             _worldRenderer?.Dispose();
             _depthCapture?.Dispose();
             _depthPreviewWindow?.Dispose();
