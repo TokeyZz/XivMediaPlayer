@@ -70,6 +70,9 @@ namespace XivMediaPlayer.Compositing {
       DepthBufferCapture depthCapture = null,
       Vector3? cameraPos = null,
       Vector3? cameraForward = null,
+      Vector3? cameraRight = null,
+      Vector3? cameraUp = null,
+      float fovY = 0.785f, float aspectRatio = 1.0f,
       UILayerCapture uiCapture = null,
       float nearPlane = 0.1f, float farPlane = 10000f,
       Vector2? hoverUV = null, float progress = 0f, bool isPlaying = false, bool isLocked = true, float volume = 1f, IntPtr titleSrvPtr = default,
@@ -94,9 +97,9 @@ namespace XivMediaPlayer.Compositing {
         }
       }
 
-      if (_useDepthOcclusion && depthCapture != null && cameraPos.HasValue && cameraForward.HasValue) {
+      if (_useDepthOcclusion && depthCapture != null && cameraPos.HasValue && cameraForward.HasValue && cameraRight.HasValue && cameraUp.HasValue) {
         RenderWithOcclusion(textureWrap, depthCapture, cameraPos.Value,
-          cameraForward.Value, uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, isLocked, volume, titleSrvPtr, isLooping, isShuffle, time, showScreensaver);
+          cameraForward.Value, cameraRight.Value, cameraUp.Value, fovY, aspectRatio, uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, isLocked, volume, titleSrvPtr, isLooping, isShuffle, time, showScreensaver);
       } else {
         RenderScreenSpace(textureWrap);
       }
@@ -131,7 +134,7 @@ namespace XivMediaPlayer.Compositing {
     /// and view-space Z (dot with camera forward) for depth thresholds.
     /// </summary>
     private void RenderWithOcclusion(IDalamudTextureWrap textureWrap, DepthBufferCapture depthCapture,
-      Vector3 cameraPos, Vector3 cameraForward, UILayerCapture uiCapture,
+      Vector3 cameraPos, Vector3 cameraForward, Vector3 cameraRight, Vector3 cameraUp, float fovY, float aspectRatio, UILayerCapture uiCapture,
       float nearPlane, float farPlane, Vector2? hoverUV, float progress, bool isPlaying, bool isLocked, float volume, IntPtr titleSrvPtr, bool isLooping, bool isShuffle, float time, float showScreensaver) {
       var (tl, tr, br, bl) = _transform.Corners;
 
@@ -222,6 +225,9 @@ namespace XivMediaPlayer.Compositing {
         // Per-corner depths interpolated in shader for correct angled-view occlusion
         bool success = _depthRenderer.Render(
           (localTL, localTR, localBR, localBL),
+          (tl, tr, br, bl),
+          cameraPos,
+          cameraForward, cameraRight, cameraUp, fovY, aspectRatio,
           videoSrvPtr,
           depthCapture.CapturedSRV,
           cornerDepths,
@@ -231,6 +237,8 @@ namespace XivMediaPlayer.Compositing {
           minDepth, maxDepth, volume,
           depthCapture.RenderWidth, depthCapture.RenderHeight,
           uiCapture?.LastAddonRects, titleSrvPtr, isLooping, isShuffle, time, showScreensaver);
+
+        DepthDebugInfo = $"Cam: {cameraPos:F1}\nFwd: {cameraForward:F2}\nFov: {fovY:F3}\nAspect: {aspectRatio:F3}";
 
         if (success && _depthRenderer.OutputSRV != null) {
           var outputPtr = _depthRenderer.OutputSRV.NativePointer;

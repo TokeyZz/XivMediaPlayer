@@ -46,6 +46,22 @@ namespace XivMediaPlayer.Compositing {
       public float _pad0;
       public float _pad1;
       public Vector4 CornerDepths; // TL, TR, BR, BL depths
+
+      public Vector3 CameraPos;
+      public float FovY;
+      public Vector3 CameraForward;
+      public float AspectRatio;
+      public Vector3 CameraRight;
+      public float _pad2;
+      public Vector3 CameraUp;
+      public float _pad3;
+
+      public Vector3 CornerTL3D;
+      public float _pad4;
+      public Vector3 CornerTR3D;
+      public float _pad5;
+      public Vector3 CornerBL3D;
+      public float _pad6;
       
       // New fields appended at the end
       public Vector2 HoverUV;
@@ -83,6 +99,23 @@ cbuffer Constants : register(b0) {
   float _pad0;
   float _pad1;
   float4 CornerDepths; // x=TL, y=TR, z=BR, w=BL
+
+  float3 CameraPos;
+  float FovY;
+  float3 CameraForward;
+  float AspectRatio;
+  float3 CameraRight;
+  float _pad2;
+  float3 CameraUp;
+  float _pad3;
+
+  float3 CornerTL3D;
+  float _pad4;
+  float3 CornerTR3D;
+  float _pad5;
+  float3 CornerBL3D;
+  float _pad6;
+
   float2 HoverUV;
   float Progress;
   float IsPlaying;
@@ -124,49 +157,39 @@ VS_OUT VS(uint id : SV_VertexID) {
   return o;
 }
 
-float cross2d(float2 a, float2 b) {
-  return a.x * b.y - a.y * b.x;
-}
 
-float2 InverseBilinear(float2 p, float2 a, float2 b, float2 c, float2 d) {
-  float2 e = b - a;
-  float2 f = d - a;
-  float2 g = a - b + c - d;
-  float2 h = p - a;
-
-  float k2 = cross2d(g, f);
-  float k1 = cross2d(e, f) + cross2d(h, g);
-  float k0 = cross2d(h, e);
-
-  float v;
-  if (abs(k2) < 0.0001) {
-    v = -k0 / k1;
-  } else {
-    float disc = k1 * k1 - 4.0 * k0 * k2;
-    if (disc < 0) return float2(-1, -1);
-    disc = sqrt(disc);
-    float v0 = (-k1 - disc) / (2.0 * k2);
-    float v1 = (-k1 + disc) / (2.0 * k2);
-    v = (v0 >= -0.001 && v0 <= 1.001) ? v0 : v1;
-  }
-
-  float2 denom = e + v * g;
-  float u;
-  if (abs(denom.x) > abs(denom.y)) {
-    u = (h.x - v * f.x) / denom.x;
-  } else {
-    u = (h.y - v * f.y) / denom.y;
-  }
-
-  return float2(u, v);
-}
 
 float4 PS(VS_OUT input) : SV_TARGET {
   float2 pixelPos = input.pos.xy;
-  float2 uv = InverseBilinear(pixelPos, CornerTL, CornerTR, CornerBR, CornerBL);
-
-  bool isInside = (uv.x >= 0 && uv.x <= 1 && uv.y >= 0 && uv.y <= 1);
   float2 screenUV = pixelPos / ScreenSize;
+
+  float2 ndc = screenUV * 2.0 - 1.0;
+  ndc.y = -ndc.y;
+
+  float fovDist = 1.0 / tan(FovY * 0.5);
+  float3 rayOrigin = CameraPos;
+  // FFXIV uses a coordinate system where CameraForward (3rd column) points backwards from the camera.
+  // We must negate it to point the ray towards the screen.
+  float3 rayDir = normalize(ndc.x * AspectRatio * CameraRight + ndc.y * CameraUp - fovDist * CameraForward);
+
+  float3 tvRight = CornerTR3D - CornerTL3D;
+  float3 tvDown = CornerBL3D - CornerTL3D;
+  float3 tvNormal = normalize(cross(tvRight, tvDown));
+
+  float denom = dot(tvNormal, rayDir);
+  bool isInside = false;
+  float2 uv = float2(-1, -1);
+
+  if (abs(denom) > 1e-6) {
+      float t = dot(CornerTL3D - rayOrigin, tvNormal) / denom;
+      float3 hitPoint = rayOrigin + rayDir * t;
+      float3 d = hitPoint - CornerTL3D;
+      float u = dot(d, tvRight) / dot(tvRight, tvRight);
+      float v = dot(d, tvDown) / dot(tvDown, tvDown);
+      
+      uv = float2(u, v);
+      isInside = (u >= 0.0 && u <= 1.0 && v >= 0.0 && v <= 1.0);
+  }
   
   // Dynamic Resolution scaling: the depth buffer texture size might be larger than the actual rendered area
   float2 renderScale = float2(1.0, 1.0);
@@ -665,6 +688,9 @@ float4 PS(VS_OUT input) : SV_TARGET {
 
     public unsafe bool Render(
       (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl) screenCorners,
+      (Vector3 tl, Vector3 tr, Vector3 br, Vector3 bl) worldCorners,
+      Vector3 cameraPos,
+      Vector3 cameraForward, Vector3 cameraRight, Vector3 cameraUp, float fovY, float aspectRatio,
       IntPtr videoSrvPtr,
       ID3D11ShaderResourceView depthSrv,
       Vector4 cornerDepths,
@@ -696,6 +722,18 @@ float4 PS(VS_OUT input) : SV_TARGET {
           ScreenSize = new Vector2(screenWidth, screenHeight),
           HoverUV = hoverUV ?? new Vector2(-1, -1),
           CornerDepths = cornerDepths,
+
+          CameraPos = cameraPos,
+          FovY = fovY,
+          CameraForward = cameraForward,
+          AspectRatio = aspectRatio,
+          CameraRight = cameraRight,
+          CameraUp = cameraUp,
+
+          CornerTL3D = worldCorners.tl,
+          CornerTR3D = worldCorners.tr,
+          CornerBL3D = worldCorners.bl,
+
           Progress = progress,
           IsPlaying = isPlaying ? 1.0f : 0.0f,
           DynamicMinDepth = minDepth,

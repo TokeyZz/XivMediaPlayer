@@ -1678,24 +1678,39 @@ namespace XivMediaPlayer
                     System.Numerics.Vector3? cameraPos = null;
                     System.Numerics.Vector3? cameraForward = null;
                     float nearPlane = 0.1f, farPlane = 10000f;
+                    float fovY = 0.785f;
+                    float aspectRatio = 1.0f;
+                    System.Numerics.Vector3 cameraRight = System.Numerics.Vector3.UnitX;
+                    System.Numerics.Vector3 cameraUp = System.Numerics.Vector3.UnitY;
 
                     if (_worldRenderer.UseDepthOcclusion && _camera != null)
                     {
                         try
                         {
                             var sceneCamera = _camera->CameraBase.SceneCamera;
-                            var camPos = sceneCamera.Object.Position;
-                            cameraPos = new System.Numerics.Vector3(camPos.X, camPos.Y, camPos.Z);
-                            nearPlane = sceneCamera.RenderCamera->NearPlane;
-                            farPlane = sceneCamera.RenderCamera->FarPlane;
-
-                            // Extract camera forward from view matrix (3rd column = forward in view space)
                             var rawView = sceneCamera.ViewMatrix;
                             var view = System.Runtime.CompilerServices.Unsafe.As<
                               FFXIVClientStructs.FFXIV.Common.Math.Matrix4x4,
                               System.Numerics.Matrix4x4>(ref rawView);
-                            cameraForward = System.Numerics.Vector3.Normalize(
-                              new System.Numerics.Vector3(view.M13, view.M23, view.M33));
+
+                            // FFXIV matrices often leave the 4th column uninitialized or zeroed.
+                            // We MUST set M44 = 1.0 to make it an affine transformation matrix so Invert() works!
+                            view.M14 = 0f;
+                            view.M24 = 0f;
+                            view.M34 = 0f;
+                            view.M44 = 1f;
+
+                            System.Numerics.Matrix4x4.Invert(view, out var invView);
+                            
+                            cameraPos = invView.Translation;
+                            cameraRight = System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(invView.M11, invView.M12, invView.M13));
+                            cameraUp = System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(invView.M21, invView.M22, invView.M23));
+                            cameraForward = System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(invView.M31, invView.M32, invView.M33));
+                            
+                            fovY = sceneCamera.RenderCamera->FoV;
+                            aspectRatio = sceneCamera.RenderCamera->AspectRatio;
+                            nearPlane = sceneCamera.RenderCamera->NearPlane;
+                            farPlane = sceneCamera.RenderCamera->FarPlane;
                         }
                         catch { }
                     }
@@ -1877,7 +1892,7 @@ namespace XivMediaPlayer
 
                     bool isLocked = CurrentTvPlacement?.IsLocked ?? true;
                     float volume = _mediaManager != null ? _mediaManager.LiveStreamVolume : 1f;
-                    _worldRenderer.Render(textureWrap, _depthCapture, cameraPos, cameraForward, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, isLocked, volume, _titleTextureManager?.TextureHandle ?? IntPtr.Zero, _config.LoopEnabled, _config.ShuffleEnabled, timeSeconds, showScreensaver);
+                    _worldRenderer.Render(textureWrap, _depthCapture, cameraPos, cameraForward, cameraRight, cameraUp, fovY, aspectRatio, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, isLocked, volume, _titleTextureManager?.TextureHandle ?? IntPtr.Zero, _config.LoopEnabled, _config.ShuffleEnabled, timeSeconds, showScreensaver);
                 }
             }
         }
