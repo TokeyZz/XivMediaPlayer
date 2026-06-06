@@ -44,6 +44,8 @@ namespace XivMediaPlayer.Server.Models
 
         [NotMapped]
         public double DataAgeMs { get; set; } = 0;
+
+        public double? DurationMs { get; set; } = null;
     }
 
     public class AppDbContext : Microsoft.EntityFrameworkCore.DbContext

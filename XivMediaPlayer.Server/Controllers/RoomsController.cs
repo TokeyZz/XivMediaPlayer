@@ -92,7 +92,37 @@ namespace XivMediaPlayer.Server.Controllers
             // Calculate exactly how many milliseconds have passed since the HOST pushed this data.
             // By doing this on the server, we completely eliminate client clock drift issues!
             state.DataAgeMs = (DateTime.UtcNow - state.TimestampUtc).TotalMilliseconds;
-            
+
+            // AUTO ADVANCE QUEUE
+            if (state.IsPlaying && state.DurationMs.HasValue && (state.DataAgeMs + state.TimecodeMs) >= state.DurationMs.Value)
+            {
+                var playlist = System.Text.Json.JsonSerializer.Deserialize<List<string>>(state.PlaylistJson);
+                if (playlist != null && playlist.Count > 0)
+                {
+                    state.CurrentUrl = playlist[0];
+                    playlist.RemoveAt(0);
+                    state.PlaylistJson = System.Text.Json.JsonSerializer.Serialize(playlist);
+                    
+                    // Reset timings for the new video
+                    state.TimecodeMs = 0;
+                    state.TimestampUtc = DateTime.UtcNow;
+                    state.DataAgeMs = 0;
+                    state.DurationMs = null; // We don't know the duration of the new video yet!
+                    
+                    _db.RoomMediaStates.Update(state);
+                    await _db.SaveChangesAsync();
+                }
+                else
+                {
+                    // No queue left, stop playing
+                    state.IsPlaying = false;
+                    state.TimecodeMs = (long)state.DurationMs.Value;
+                    
+                    _db.RoomMediaStates.Update(state);
+                    await _db.SaveChangesAsync();
+                }
+            }
+
             return Ok(state);
         }
 
@@ -120,6 +150,7 @@ namespace XivMediaPlayer.Server.Controllers
                 existing.TimestampUtc = state.TimestampUtc;
                 existing.PlaylistJson = state.PlaylistJson;
                 existing.OwnerId = state.OwnerId;
+                existing.DurationMs = state.DurationMs;
                 _db.RoomMediaStates.Update(existing);
             }
             else

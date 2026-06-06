@@ -94,7 +94,17 @@ namespace MediaPlayerCore {
       set {
         if (_vlcPlayer != null) {
           try {
-            int newValue = (int)(value * 100f);
+            float clampedValue = Math.Max(0f, value);
+            float scale = clampedValue;
+            if (clampedValue <= 1.0f) {
+                // Apply a cubic curve below 100% to simulate logarithmic human hearing perception
+                scale = (float)Math.Pow(clampedValue, 3);
+            } else {
+                // Keep linear scaling above 100% (volume boost) to prevent exponential speaker blowouts
+                scale = 1.0f + (clampedValue - 1.0f);
+            }
+
+            int newValue = (int)(scale * 100f);
             if (newValue != _vlcPlayer.Volume) {
               _baseVolume = newValue;
               _vlcPlayer.Volume = (int)((float)newValue * volumePercentage);

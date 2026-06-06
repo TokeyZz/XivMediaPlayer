@@ -75,6 +75,7 @@ namespace XivMediaPlayer
 
         private string[] _streamURLs;
         private string _lastStreamURL;
+        private double? _currentMediaDurationMs;
         private string _currentStreamer;
         private string _potentialStream;
         private bool _streamWasPlaying;
@@ -773,6 +774,7 @@ namespace XivMediaPlayer
 
                     _mediaManager.PlayStream(audioGameObject, streamUrl, startTimeMs, metadata?.HttpHeaders);
                     _lastStreamURL = url;
+                    _currentMediaDurationMs = metadata?.Duration * 1000.0;
                     _currentStreamer = !string.IsNullOrEmpty(uploader) ? uploader : title;
 
                     string statusMsg = isLive ? "LIVE" : (metadata?.Duration.HasValue == true
@@ -879,6 +881,7 @@ namespace XivMediaPlayer
                 }
                 _potentialStream = "";
                 _lastStreamURL = "";
+                _currentMediaDurationMs = null;
                 _currentStreamer = "";
                 _streamSetCooldown.Stop();
                 _streamSetCooldown.Reset();
@@ -1123,7 +1126,8 @@ namespace XivMediaPlayer
                 IsPlaying = !_isIntentionallyPaused,
                 OwnerId = _config.OwnerId,
                 PlaylistJson = System.Text.Json.JsonSerializer.Serialize(_mediaQueue.ToArray()),
-                BypassLock = IsHousingMenuOpen
+                BypassLock = IsHousingMenuOpen,
+                DurationMs = _currentMediaDurationMs
             };
 
             try 

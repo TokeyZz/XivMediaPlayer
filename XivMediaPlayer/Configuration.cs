@@ -15,7 +15,7 @@ namespace XivMediaPlayer {
   public class Configuration : IPluginConfiguration {
     public event EventHandler OnConfigurationChanged;
 
-    private float _livestreamVolume = 1;
+    private float _livestreamVolume = 0.5f;
     private bool _tuneIntoTwitchStreams = true;
     private bool _tuneIntoTwitchStreamPrompt = true;
     private int _defaultVideoOpen = 1; // 0 = open, 1 = closed
