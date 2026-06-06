@@ -666,6 +666,8 @@ namespace XivMediaPlayer
             _isIntentionallyPaused = false;
             _lastUrlLoadTime = DateTime.UtcNow;
             
+            if (url != _lastStreamURL) _mediaErrorCount = 0;
+            
             // If it's an auto-sync and we're already resolving something, ignore it to prevent spam.
             // But if it's a manual play, we ALLOW it to interrupt the current resolution!
             if (isAutoSync && _isResolvingMedia) return;
@@ -1269,7 +1271,8 @@ namespace XivMediaPlayer
 
             // Actually play it if it's different or out of sync
             var activeStream = _mediaManager?.ActiveStream;
-            bool isDifferentUrl = activeStream == null || (!string.IsNullOrEmpty(_lastStreamURL) && _lastStreamURL != sync.CurrentUrl);
+            bool isLocalEnded = activeStream != null && activeStream.VlcState == LibVLCSharp.Shared.VLCState.Ended;
+            bool isDifferentUrl = activeStream == null || (!string.IsNullOrEmpty(_lastStreamURL) && _lastStreamURL != sync.CurrentUrl) || (isLocalEnded && sync.IsPlaying);
             // Only sync VODs. Live streams cannot be reliably timecode-synced.
             bool isOutofSync = !_lastStreamIsLive && activeStream != null && activeStream.Length > 0 && Math.Abs(activeStream.Time - targetTimeMs) > 5000;
             bool localIsPlaying = activeStream != null && activeStream.PlaybackState == NAudio.Wave.PlaybackState.Playing;
@@ -1391,9 +1394,29 @@ namespace XivMediaPlayer
             ResetStreamValues();
         }
 
+        private int _mediaErrorCount = 0;
+
         private void OnMediaError(object sender, MediaError e)
         {
             _pluginLog.Warning(e.Exception, e.Exception?.Message);
+            
+            // Auto-retry VLC playback if it crashes shortly after starting (e.g. dropped TLS connection)
+            if (!string.IsNullOrEmpty(_lastStreamURL) && _lastStreamObject != null)
+            {
+                if ((DateTime.UtcNow - _lastUrlLoadTime).TotalSeconds < 10)
+                {
+                    if (_mediaErrorCount < 2)
+                    {
+                        _mediaErrorCount++;
+                        _chat.Print($"[Media Player] VLC encountered an error. Retrying playback... (Attempt {_mediaErrorCount}/2)");
+                        PlayViaYtDlp(_lastStreamURL, _lastStreamObject, (int)(_mediaManager?.ActiveStream?.Time ?? 0), isAutoSync: true);
+                    }
+                    else
+                    {
+                        _chat.PrintError("[Media Player] VLC failed to play the media after multiple attempts. The format might be unsupported or the server is dropping the connection.");
+                    }
+                }
+            }
         }
 
         /// <summary>

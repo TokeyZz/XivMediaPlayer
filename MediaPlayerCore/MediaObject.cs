@@ -127,6 +127,8 @@ namespace MediaPlayerCore {
       }
     }
     
+    public LibVLCSharp.Shared.VLCState VlcState => _vlcPlayer?.State ?? LibVLCSharp.Shared.VLCState.Stopped;
+    
     public long Time {
       get => _vlcPlayer?.Time ?? 0;
       set { if (_vlcPlayer != null) _vlcPlayer.Time = value; }
