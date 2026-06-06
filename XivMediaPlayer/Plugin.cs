@@ -1767,6 +1767,25 @@ namespace XivMediaPlayer
                                         _ = PushMediaToServerAsync(isBackgroundSync: false);
                                     }
                                 }
+                                // Loop (0.62 - 0.66)
+                                else if (uv.X >= 0.62f && uv.X <= 0.66f)
+                                {
+                                    _config.LoopEnabled = !_config.LoopEnabled;
+                                    _config.Save();
+                                    _chat.Print($"[Media Player] Loop: {(_config.LoopEnabled ? "ON" : "OFF")}");
+                                }
+                                // Shuffle (0.68 - 0.72)
+                                else if (uv.X >= 0.68f && uv.X <= 0.72f)
+                                {
+                                    _config.ShuffleEnabled = !_config.ShuffleEnabled;
+                                    _config.Save();
+                                    _chat.Print($"[Media Player] Shuffle: {(_config.ShuffleEnabled ? "ON" : "OFF")}");
+                                }
+                                // Refresh (0.74 - 0.78)
+                                else if (uv.X >= 0.74f && uv.X <= 0.78f)
+                                {
+                                    RefreshCurrentMedia();
+                                }
                                 // Lock (0.80 - 0.84)
                                 else if (uv.X >= 0.80f && uv.X <= 0.84f)
                                 {
@@ -1827,7 +1846,7 @@ namespace XivMediaPlayer
 
                     bool isLocked = CurrentTvPlacement?.IsLocked ?? true;
                     float volume = _mediaManager != null ? _mediaManager.LiveStreamVolume : 1f;
-                    _worldRenderer.Render(textureWrap, _depthCapture, cameraPos, cameraForward, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, isLocked, volume, _titleTextureManager?.TextureHandle ?? IntPtr.Zero);
+                    _worldRenderer.Render(textureWrap, _depthCapture, cameraPos, cameraForward, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, isLocked, volume, _titleTextureManager?.TextureHandle ?? IntPtr.Zero, _config.LoopEnabled, _config.ShuffleEnabled);
                 }
             }
         }

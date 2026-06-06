@@ -58,6 +58,10 @@ namespace XivMediaPlayer.Compositing {
       public float Volume;
       public Vector2 RenderResolution;
       public float HasTitleTexture;
+      public float IsLooping;
+      public float IsShuffle;
+      public float _pad2;
+      public float _pad3;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -89,6 +93,10 @@ cbuffer Constants : register(b0) {
   float Volume;
   float2 RenderResolution;
   float HasTitleTexture;
+  float IsLooping;
+  float IsShuffle;
+  float _pad2;
+  float _pad3;
 };
 
 cbuffer UIConsts : register(b1) {
@@ -342,6 +350,73 @@ float4 PS(VS_OUT input) : SV_TARGET {
          else color.rgb = float3(0.3, 0.3, 0.3); // Grey track
       }
       
+      // Loop (0.62 - 0.66)
+      if (uv.x > 0.62 && uv.x < 0.66 && uv.y > 0.88 && uv.y < 0.94) {
+         float px = (uv.x - 0.62) / 0.04;
+         float py = (uv.y - 0.88) / 0.06;
+         bool draw = false;
+         if (px < 0.4 && py < 0.6 && abs(distance(float2(px, py), float2(0.4, 0.5)) - 0.25) < 0.05) draw = true;
+         if (px >= 0.4 && px <= 0.6 && abs(py - 0.25) < 0.05) draw = true;
+         if (px >= 0.6 && px <= 0.8 && py >= 0.1 && py <= 0.4) {
+             float lx = (px - 0.6) * 5.0;
+             float ly = (py - 0.1) * 3.333;
+             if (lx < 1.0 - abs(ly - 0.5) * 2.0) draw = true;
+         }
+         if (px > 0.6 && py > 0.4 && abs(distance(float2(px, py), float2(0.6, 0.5)) - 0.25) < 0.05) draw = true;
+         if (px >= 0.4 && px <= 0.6 && abs(py - 0.75) < 0.05) draw = true;
+         if (px >= 0.2 && px <= 0.4 && py >= 0.6 && py <= 0.9) {
+             float lx = (px - 0.2) * 5.0;
+             float ly = (py - 0.6) * 3.333;
+             if (lx > abs(ly - 0.5) * 2.0) draw = true;
+         }
+         if (draw) {
+             if (IsLooping > 0.5) color.rgb = float3(0.2, 0.8, 0.3);
+             else color.rgb = float3(1, 1, 1);
+         }
+      }
+
+      // Shuffle (0.68 - 0.72)
+      if (uv.x > 0.68 && uv.x < 0.72 && uv.y > 0.88 && uv.y < 0.94) {
+         float px = (uv.x - 0.68) / 0.04;
+         float py = (uv.y - 0.88) / 0.06;
+         bool draw = false;
+         float sy1 = lerp(0.25, 0.75, smoothstep(0.35, 0.65, px));
+         float sy2 = lerp(0.75, 0.25, smoothstep(0.35, 0.65, px));
+         if (px > 0.15 && px < 0.65 && abs(py - sy1) < 0.05) draw = true;
+         if (px > 0.15 && px < 0.65 && abs(py - sy2) < 0.05 && abs(px - 0.5) > 0.06) draw = true;
+         if (px >= 0.65 && px <= 0.85 && py >= 0.6 && py <= 0.9) {
+             float lx = (px - 0.65) * 5.0;
+             float ly = (py - 0.6) * 3.333;
+             if (lx < 1.0 - abs(ly - 0.5) * 2.0) draw = true;
+         }
+         if (px >= 0.65 && px <= 0.85 && py >= 0.1 && py <= 0.4) {
+             float lx = (px - 0.65) * 5.0;
+             float ly = (py - 0.1) * 3.333;
+             if (lx < 1.0 - abs(ly - 0.5) * 2.0) draw = true;
+         }
+         if (draw) {
+             if (IsShuffle > 0.5) color.rgb = float3(0.2, 0.8, 0.3);
+             else color.rgb = float3(1, 1, 1);
+         }
+      }
+
+      // Refresh (0.74 - 0.78)
+      if (uv.x > 0.74 && uv.x < 0.78 && uv.y > 0.88 && uv.y < 0.94) {
+         float px = (uv.x - 0.74) / 0.04;
+         float py = (uv.y - 0.88) / 0.06;
+         bool draw = false;
+         float dist = distance(float2(px, py), float2(0.5, 0.5));
+         if (abs(dist - 0.25) < 0.05) {
+             if (!(px > 0.5 && py < 0.4)) draw = true;
+         }
+         if (px >= 0.4 && px <= 0.6 && py >= 0.1 && py <= 0.4) {
+             float lx = (px - 0.4) * 5.0;
+             float ly = (py - 0.1) * 3.333;
+             if (lx < 1.0 - abs(ly - 0.5) * 2.0) draw = true;
+         }
+         if (draw) color.rgb = float3(1, 1, 1);
+      }
+      
       // Lock Icon (0.80 - 0.84)
       if (uv.x > 0.80 && uv.x < 0.84 && uv.y > 0.88 && uv.y < 0.94) {
          float px = (uv.x - 0.80) / 0.04;
@@ -505,7 +580,8 @@ float4 PS(VS_OUT input) : SV_TARGET {
       Vector2? hoverUV, float progress, bool isPlaying, bool isLocked,
       float minDepth, float maxDepth, float volume,
       float renderWidth, float renderHeight,
-      List<(int X, int Y, int W, int H, string Name)> uiRects, IntPtr titleSrvPtr = default) {
+      List<(int X, int Y, int W, int H, string Name)> uiRects, IntPtr titleSrvPtr = default,
+      bool isLooping = false, bool isShuffle = false) {
 
       if (!_initialized || _disposed || videoSrvPtr == IntPtr.Zero || depthSrv == null) return false;
 
@@ -535,7 +611,9 @@ float4 PS(VS_OUT input) : SV_TARGET {
           IsLockedTV = isLocked ? 1.0f : 0.0f,
           Volume = volume,
           RenderResolution = new Vector2(renderWidth, renderHeight),
-          HasTitleTexture = titleSrvPtr != IntPtr.Zero ? 1.0f : 0.0f
+          HasTitleTexture = titleSrvPtr != IntPtr.Zero ? 1.0f : 0.0f,
+          IsLooping = isLooping ? 1.0f : 0.0f,
+          IsShuffle = isShuffle ? 1.0f : 0.0f
         };
         _context.UpdateSubresource(constants, _constantBuffer);
 
