@@ -932,19 +932,29 @@ namespace XivMediaPlayer
 
         private unsafe void ResetStreamValues()
         {
-            Task.Run(async () =>
+            _lastStreamObject = null;
+            _streamURLs = null;
+            _potentialStream = "";
+            _lastStreamURL = "";
+            _currentMediaDurationMs = null;
+            _currentStreamer = "";
+            _currentMediaTitle = "";
+            _videoWindow.IsOpen = false;
+            
+            bool wasPlaying = _streamWasPlaying;
+            _streamWasPlaying = false;
+            _streamSetCooldown.Stop();
+            _streamSetCooldown.Reset();
+
+            if (wasPlaying)
             {
-                Thread.Sleep(1000);
-                while (Conditions.Instance()->BetweenAreas)
+                Task.Run(async () =>
                 {
-                    Thread.Sleep(500);
-                }
-                _lastStreamObject = null;
-                _streamURLs = null;
-                if (_streamWasPlaying)
-                {
-                    _streamWasPlaying = false;
-                    _videoWindow.IsOpen = false;
+                    Thread.Sleep(1000);
+                    while (Conditions.Instance()->BetweenAreas)
+                    {
+                        Thread.Sleep(500);
+                    }
                     try
                     {
                         RestoreBgm();
@@ -952,15 +962,8 @@ namespace XivMediaPlayer
                     {
                         _pluginLog.Warning(e, e.Message);
                     }
-                }
-                _potentialStream = "";
-                _lastStreamURL = "";
-                _currentMediaDurationMs = null;
-                _currentStreamer = "";
-                _currentMediaTitle = "";
-                _streamSetCooldown.Stop();
-                _streamSetCooldown.Reset();
-            });
+                });
+            }
         }
 
         #endregion
