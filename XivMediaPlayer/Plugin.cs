@@ -306,7 +306,7 @@ namespace XivMediaPlayer
                 try
                 {
                     InitializeMediaManager();
-                    // Only mark done if we actually succeeded
+                    // Validate initialization success
                     _hasBeenInitialized = _playerObject != null;
                     if (_hasBeenInitialized)
                     {
@@ -364,8 +364,8 @@ namespace XivMediaPlayer
             {
                 bool isMediaOwner = _isLocalDj;
 
-                // The current DJ pushes every 5 seconds (only if playing media or currently loading one)
-                // If they intentionally paused, they stop pushing so the DataAgeMs can grow!
+                // Only push if actively playing or loading.
+                // Paused media halts pushing to allow DataAgeMs to increment.
                 if (isMediaOwner && ((_mediaManager?.ActiveStream != null && !_isIntentionallyPaused) || !string.IsNullOrEmpty(_lastStreamURL)))
                 {
                     if ((DateTime.UtcNow - _lastServerSyncPush).TotalSeconds >= 5)
@@ -381,8 +381,8 @@ namespace XivMediaPlayer
                     _pluginLog.Information($"[Social] Skipping Push. isMediaOwner={isMediaOwner} ({_currentMediaOwnerId} vs {_config.OwnerId}), ActiveStream={_mediaManager?.ActiveStream != null}");
                 }
 
-                // EVERYONE fetches every 10 seconds. 
-                // This allows the DJ handoff to occur if someone else changes the video.
+                // Polling interval.
+                // Facilitates DJ handoff on media change.
                 if ((DateTime.UtcNow - _lastServerSyncFetch).TotalSeconds >= 10)
                 {
                     _lastServerSyncFetch = DateTime.UtcNow;
@@ -545,7 +545,7 @@ namespace XivMediaPlayer
                          } else */
                         if (YtDlpManager.IsUrlSupported(url))
                         {
-                            // Resolve via yt-dlp then play
+                            // Invoke yt-dlp resolution
                             _chat.Print("[Media Player] Resolving URL via yt-dlp...");
                             PlayViaYtDlp(url, _playerObject);
                         }
@@ -941,7 +941,7 @@ namespace XivMediaPlayer
         {
             if (!_isLocalDj) return;
 
-            // Loop: replay the same track from the beginning
+            // Replay current track
             if (_config.LoopEnabled && !string.IsNullOrEmpty(_lastStreamURL) && _playerObject != null)
             {
                 _chat.Print("[Media Player] Looping current track...");
@@ -952,7 +952,7 @@ namespace XivMediaPlayer
             // Advance queue (with shuffle support)
             if (_mediaQueue.Count > 0 && _playerObject != null)
             {
-                // Push current to history
+                // Record history
                 if (!string.IsNullOrEmpty(_lastStreamURL))
                 {
                     _mediaHistory.Push(_lastStreamURL);
@@ -1256,7 +1256,7 @@ namespace XivMediaPlayer
             }
             else
             {
-                // If there's no state, still ensure we track the key so saving works later!
+                // Track location for future saving
                 _lastLocationKey = key;
                 return;
             }
@@ -1417,7 +1417,7 @@ namespace XivMediaPlayer
                     {
                         bool isNewlyLoaded = (DateTime.UtcNow - _lastUrlLoadTime).TotalSeconds < 20;
 
-                        // Only force pause if the pause command was pushed less than 15 seconds ago OR we just loaded the stream.
+                        // Check sync staleness or new stream status
                         if (sync.DataAgeMs < 15000 || isNewlyLoaded)
                         {
                             _pluginLog.Information($"[Social] Server says paused (NewlyLoaded: {isNewlyLoaded}). Pausing!");
@@ -2114,7 +2114,7 @@ namespace XivMediaPlayer
         {
             if (_mediaQueue.Count == 0 || _playerObject == null) return;
 
-            // Push current URL to history before advancing
+            // Record history
             if (!string.IsNullOrEmpty(_lastStreamURL))
             {
                 _mediaHistory.Push(_lastStreamURL);
@@ -2123,7 +2123,7 @@ namespace XivMediaPlayer
             string nextUrl;
             if (_config.ShuffleEnabled && _mediaQueue.Count > 1)
             {
-                // Convert to list, pick random, reconstruct queue without that item
+                // Shuffle queue logic
                 var list = _mediaQueue.ToList();
                 int idx = _shuffleRandom.Next(list.Count);
                 nextUrl = list[idx];
@@ -2147,7 +2147,7 @@ namespace XivMediaPlayer
         {
             if (_mediaHistory.Count == 0 || _playerObject == null) return;
 
-            // Push current URL back to front of queue
+            // Requeue current media
             if (!string.IsNullOrEmpty(_lastStreamURL))
             {
                 var list = _mediaQueue.ToList();

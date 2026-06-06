@@ -291,10 +291,10 @@ float4 PS(VS_OUT input) : SV_TARGET {
   // Media Controls UI overlay
   if (isInside && !occluded && HoverUV.x >= 0.0 && HoverUV.y >= 0.0) {
     if (uv.y > 0.85) {
-      // Draw bottom bar background (semi-transparent black)
+      // Background
       color.rgb = lerp(color.rgb, float3(0.05, 0.05, 0.05), 0.7);
       
-      // Prev (0.02 - 0.06) - Vertical line + Left triangle
+      // Prev (0.02 - 0.06)
       if (uv.x > 0.02 && uv.x < 0.06 && uv.y > 0.88 && uv.y < 0.94) {
          float px = (uv.x - 0.02) / 0.04;
          float py = (uv.y - 0.88) / 0.06;
@@ -302,11 +302,11 @@ float4 PS(VS_OUT input) : SV_TARGET {
          else if (px > 0.3 && px > abs(py - 0.5) * 2.0) color.rgb = float3(1, 1, 1);
       }
       
-      // Rewind (0.07 - 0.11) - Two left triangles
+      // Rewind (0.07 - 0.11)
       if (uv.x > 0.07 && uv.x < 0.11 && uv.y > 0.88 && uv.y < 0.94) {
          float px = (uv.x - 0.07) / 0.04;
          float py = (uv.y - 0.88) / 0.06;
-         float px1 = frac(px * 2.0); // splits into two halves (0 to 1 twice)
+         float px1 = frac(px * 2.0);
          if (px1 > abs(py - 0.5) * 2.0) color.rgb = float3(1, 1, 1);
       }
 
@@ -322,7 +322,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
          }
       }
 
-      // Fast Forward (0.17 - 0.21) - Two right triangles
+      // Fast Forward (0.17 - 0.21)
       if (uv.x > 0.17 && uv.x < 0.21 && uv.y > 0.88 && uv.y < 0.94) {
          float px = (uv.x - 0.17) / 0.04;
          float py = (uv.y - 0.88) / 0.06;
@@ -330,7 +330,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
          if (px1 < 1.0 - abs(py - 0.5) * 2.0) color.rgb = float3(1, 1, 1);
       }
       
-      // Next (0.22 - 0.26) - Right triangle + Vertical line
+      // Next (0.22 - 0.26)
       if (uv.x > 0.22 && uv.x < 0.26 && uv.y > 0.88 && uv.y < 0.94) {
          float px = (uv.x - 0.22) / 0.04;
          float py = (uv.y - 0.88) / 0.06;
@@ -338,16 +338,16 @@ float4 PS(VS_OUT input) : SV_TARGET {
          else if (px < 0.7 && px < 1.0 - abs(py - 0.5) * 2.0) color.rgb = float3(1, 1, 1);
       }
       
-      // Seek Bar & Volume Track Backgrounds
+      // Seek Bar & Volume Track
       if (uv.y > 0.90 && uv.y < 0.92 && uv.x > 0.28 && uv.x < 0.58) {
          float barProgress = (uv.x - 0.28) / 0.30;
-         if (barProgress < Progress) color.rgb = float3(0.8, 0.2, 0.2); // Red progress
-         else color.rgb = float3(0.3, 0.3, 0.3); // Grey track
+         if (barProgress < Progress) color.rgb = float3(0.8, 0.2, 0.2);
+         else color.rgb = float3(0.3, 0.3, 0.3);
       }
       if (uv.y > 0.95 && uv.y < 0.97 && uv.x > 0.28 && uv.x < 0.58) {
          float volProgress = (uv.x - 0.28) / 0.30;
-         if (volProgress < Volume / 3.0) color.rgb = float3(0.2, 0.6, 0.8); // Blue volume bar
-         else color.rgb = float3(0.3, 0.3, 0.3); // Grey track
+         if (volProgress < Volume / 3.0) color.rgb = float3(0.2, 0.6, 0.8);
+         else color.rgb = float3(0.3, 0.3, 0.3);
       }
       
       // Loop (0.62 - 0.66)
@@ -453,11 +453,11 @@ float4 PS(VS_OUT input) : SV_TARGET {
          if ((px > 0.4 && px < 0.6 && py > 0.2 && py < 0.8) || (py > 0.4 && py < 0.6 && px > 0.2 && px < 0.8)) color.rgb = float3(0.2, 0.8, 0.3);
       }
       
-      // Kill Icon (0.95 - 0.99) - Red X
+      // Kill Icon (0.95 - 0.99)
       if (uv.x > 0.95 && uv.x < 0.99 && uv.y > 0.88 && uv.y < 0.94) {
          float px = (uv.x - 0.95) / 0.04;
          float py = (uv.y - 0.88) / 0.06;
-         // Draw X by checking distance to diagonals
+         // Draw X
          float d1 = abs(px - py);
          float d2 = abs(px - (1.0 - py));
          if (d1 < 0.15 || d2 < 0.15) {

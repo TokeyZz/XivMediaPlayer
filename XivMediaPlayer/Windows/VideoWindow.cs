@@ -119,7 +119,7 @@ namespace XivMediaPlayer.Windows {
         betweenAreas = !Conditions.Instance()->BetweenAreas;
       }
       if (IsOpen && betweenAreas && !_disposed) {
-        float uiHeight = ImGui.GetTextLineHeightWithSpacing() * 3 + 24; // Extra room for controls
+        float uiHeight = ImGui.GetTextLineHeightWithSpacing() * 3 + 24; // Allocate space for controls
         Size = new Vector2(ImGui.GetWindowSize().X, ImGui.GetWindowSize().X * 0.5625f + uiHeight);
         SizeConstraints = new WindowSizeConstraints() { MaximumSize = ImGui.GetMainViewport().Size, MinimumSize = new Vector2(360, 480) };
         
@@ -288,7 +288,7 @@ namespace XivMediaPlayer.Windows {
                 FeedType = TwitchFeedType._1080p;
               }
             } else {
-              // The 2D window is closed but the 3D TV is rendering. Default to 720p to save bandwidth but still look good on the TV.
+              // Fallback to 720p when 2D window is hidden but 3D is active.
               FeedType = TwitchFeedType._720p;
             }
           } else {
