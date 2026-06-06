@@ -1401,8 +1401,12 @@ namespace XivMediaPlayer
             _pluginLog.Warning(e.Exception, e.Exception?.Message);
             
             // Auto-retry VLC playback if it crashes shortly after starting (e.g. dropped TLS connection)
+            // Ensure we ONLY retry if VLC actually died (State == Error or Stopped), not for harmless mid-playback warnings!
             if (!string.IsNullOrEmpty(_lastStreamURL) && _lastStreamObject != null)
             {
+                var state = ((MediaPlayerCore.MediaObject)_lastStreamObject).VlcState;
+                if (state == LibVLCSharp.Shared.VLCState.Playing) return;
+
                 if ((DateTime.UtcNow - _lastUrlLoadTime).TotalSeconds < 10)
                 {
                     if (_mediaErrorCount < 2)
