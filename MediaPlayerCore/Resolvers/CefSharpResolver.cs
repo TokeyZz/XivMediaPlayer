@@ -83,6 +83,8 @@ namespace MediaPlayerCore.Resolvers
             if (!settings.CefCommandLineArgs.ContainsKey("disable-software-rasterizer")) settings.CefCommandLineArgs.Add("disable-software-rasterizer", "1");
             if (!settings.CefCommandLineArgs.ContainsKey("mute-audio")) settings.CefCommandLineArgs.Add("mute-audio", "1");
             if (!settings.CefCommandLineArgs.ContainsKey("no-sandbox")) settings.CefCommandLineArgs.Add("no-sandbox", "1");
+            if (!settings.CefCommandLineArgs.ContainsKey("disable-web-security")) settings.CefCommandLineArgs.Add("disable-web-security", "1");
+            if (!settings.CefCommandLineArgs.ContainsKey("allow-running-insecure-content")) settings.CefCommandLineArgs.Add("allow-running-insecure-content", "1");
             
             string cefDir = Path.Combine(pluginDir, "cef");
             settings.BrowserSubprocessPath = Path.Combine(cefDir, "CefSharp.BrowserSubprocess.exe");
