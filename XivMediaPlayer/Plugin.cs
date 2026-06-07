@@ -1351,6 +1351,14 @@ namespace XivMediaPlayer
             }
             else
             {
+                // Track location for future saving
+                _lastLocationKey = key;
+                return;
+            }
+
+            _lastLocationKey = key;
+        }
+
         private async Task PushMediaToServerAsync(bool isBackgroundSync = false)
         {
             var key = _lastLocationKey;
