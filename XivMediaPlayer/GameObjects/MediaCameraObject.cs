@@ -7,40 +7,34 @@ namespace XivMediaPlayer.GameObjects {
   public class MediaCameraObject : IMediaGameObject {
     private unsafe Camera* _camera;
 
+    private string _name = "Camera";
+    private Vector3 _position;
+    private Vector3 _rotation;
+    private Vector3 _forward;
+    private Vector3 _top;
+    private string _focusedPlayerObject = "";
+
+    public string Name => _name;
+    public Vector3 Position => _position;
+    public Vector3 Rotation => _rotation;
+    public Vector3 Forward => _forward;
+    public Vector3 Top => _top;
+    public string FocusedPlayerObject => _focusedPlayerObject;
+
     public unsafe MediaCameraObject(Camera* camera) {
       this._camera = camera;
+      Update();
     }
 
-    public string Name => "Camera";
-
-    unsafe public Vector3 Position {
-      get {
-        return _camera->CameraBase.SceneCamera.Object.Position;
-      }
-    }
-
-    unsafe public Vector3 Rotation {
-      get {
-        return Q2E(Quaternion.CreateFromRotationMatrix(_camera->CameraBase.SceneCamera.ViewMatrix));
-      }
-    }
-
-    unsafe public Vector3 Forward {
-      get {
-        var cameraViewMatrix = _camera->CameraBase.SceneCamera.ViewMatrix;
-        return new Vector3(cameraViewMatrix.M13, cameraViewMatrix.M23, cameraViewMatrix.M33);
-      }
-    }
-
-    unsafe public Vector3 Top {
-      get {
-        return _camera->CameraBase.SceneCamera.Vector_1; ;
-      }
-    }
-
-    public string FocusedPlayerObject {
-      get {
-        return "";
+    public unsafe void Update() {
+      if (_camera != null) {
+        try {
+          _position = _camera->CameraBase.SceneCamera.Object.Position;
+          var cameraViewMatrix = _camera->CameraBase.SceneCamera.ViewMatrix;
+          _rotation = Q2E(Quaternion.CreateFromRotationMatrix(cameraViewMatrix));
+          _forward = new Vector3(cameraViewMatrix.M13, cameraViewMatrix.M23, cameraViewMatrix.M33);
+          _top = _camera->CameraBase.SceneCamera.Vector_1;
+        } catch {}
       }
     }
 

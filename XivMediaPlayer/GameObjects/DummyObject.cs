@@ -21,5 +21,7 @@ namespace XivMediaPlayer.GameObjects {
     public string FocusedPlayerObject => "";
 
     bool IMediaGameObject.Invalid => false;
+
+    public void Update() { }
   }
 }

@@ -300,6 +300,9 @@ namespace XivMediaPlayer
         {
             if (_disposed) return;
 
+            _playerObject?.Update();
+            _playerCamera?.Update();
+
             // Cache real player count safely on the main thread for background sync tasks
             int realPlayerCount = 0;
             foreach (var obj in _objectTable)

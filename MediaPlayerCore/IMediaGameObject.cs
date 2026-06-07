@@ -9,5 +9,6 @@ namespace MediaPlayerCore {
     public Vector3 Top { get; }
     public string FocusedPlayerObject { get; }
     bool Invalid { get; }
+    void Update();
   }
 }
