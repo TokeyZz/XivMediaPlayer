@@ -9,11 +9,13 @@ namespace XivMediaPlayer.Server.Controllers
     public class RoomsController : ControllerBase
     {
         private readonly AppDbContext _db;
+        private readonly ILogger<RoomsController> _logger;
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _lastFetchTimes = new();
 
-        public RoomsController(AppDbContext db)
+        public RoomsController(AppDbContext db, ILogger<RoomsController> logger)
         {
             _db = db;
+            _logger = logger;
         }
 
         [HttpGet("{locationKey}/tvs")]
@@ -190,6 +192,11 @@ namespace XivMediaPlayer.Server.Controllers
             }
 
             await _db.SaveChangesAsync();
+            
+            if (!state.IsBackgroundSync)
+            {
+                _logger.LogInformation("MEDIA UPDATE: Room '{LocationKey}' is now playing '{CurrentUrl}' (DJ: {OwnerId})", locationKey, state.CurrentUrl, state.OwnerId);
+            }
             return Ok(state);
         }
         [HttpPost("batch/tvs")]

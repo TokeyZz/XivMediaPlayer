@@ -107,6 +107,7 @@ namespace XivMediaPlayer
         private string _lastGridLocationKey = string.Empty;
         private long _serverTimeOffsetMs = 0;
         private bool _hasFetchedServerTime = false;
+        private int _cachedRealPlayerCount = 0;
 
         private int _lastCookieHash;
         private bool _hasBeenInitialized;
@@ -297,6 +298,21 @@ namespace XivMediaPlayer
         private unsafe void OnFrameworkUpdate(IFramework framework)
         {
             if (_disposed) return;
+
+            // Cache real player count safely on the main thread for background sync tasks
+            int realPlayerCount = 0;
+            foreach (var obj in _objectTable)
+            {
+                if (obj is Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter)
+                {
+                    string name = obj.Name.TextValue.ToLowerInvariant();
+                    if (!name.Contains("reborn") && !name.Contains("cnpc"))
+                    {
+                        realPlayerCount++;
+                    }
+                }
+            }
+            _cachedRealPlayerCount = realPlayerCount;
 
             if (_deferredTerritoryChangeTime.HasValue && DateTime.UtcNow >= _deferredTerritoryChangeTime.Value)
             {
@@ -1447,18 +1463,7 @@ namespace XivMediaPlayer
 
             if (_isLocalDj) return;
 
-            int realPlayerCount = 0;
-            foreach (var obj in _objectTable)
-            {
-                if (obj is Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter)
-                {
-                    string name = obj.Name.TextValue.ToLowerInvariant();
-                    if (!name.Contains("reborn") && !name.Contains("cnpc"))
-                    {
-                        realPlayerCount++;
-                    }
-                }
-            }
+            int realPlayerCount = _cachedRealPlayerCount;
             bool isRoomEmpty = realPlayerCount <= 1; // 1 means only we are here
 
             _pluginLog.Information($"[Social] Reclaim Check: RealPlayers={realPlayerCount}, isRoomEmpty={isRoomEmpty}, Owner={sync.OwnerId}=={_config.OwnerId}, LocalStateFound={_config.RoomMediaStates.TryGetValue(key, out var localState)}, CurrentUrl={localState?.CurrentUrl}=={sync.CurrentUrl}");
