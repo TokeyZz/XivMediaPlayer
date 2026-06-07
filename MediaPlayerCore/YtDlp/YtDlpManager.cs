@@ -2,6 +2,7 @@ using Newtonsoft.Json;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 
@@ -50,7 +51,7 @@ namespace MediaPlayerCore.YtDlp
         private string? _cookiesPath;
         private int _preferredMaxHeight;
         private readonly object _lock = new object();
-        private HttpListener? _cookieListener;
+        private TcpListener? _cookieListener;
         private Thread? _cookieListenerThread;
         private bool _isListeningForCookies;
 
@@ -88,9 +89,7 @@ namespace MediaPlayerCore.YtDlp
         {
             try
             {
-                _cookieListener = new HttpListener();
-                _cookieListener.Prefixes.Add("http://127.0.0.1:9696/api/youtube-cookies/");
-                _cookieListener.Prefixes.Add("http://127.0.0.1:9696/");
+                _cookieListener = new TcpListener(IPAddress.Loopback, 9696);
                 _cookieListener.Start();
 
                 _isListeningForCookies = true;
@@ -113,44 +112,58 @@ namespace MediaPlayerCore.YtDlp
             {
                 try
                 {
-                    var context = _cookieListener.GetContext();
-                    var request = context.Request;
-                    var response = context.Response;
+                    using var client = _cookieListener.AcceptTcpClient();
+                    using var stream = client.GetStream();
+                    using var reader = new StreamReader(stream, Encoding.UTF8);
 
-                    if (request.HttpMethod == "POST")
+                    string? line;
+                    int contentLength = 0;
+                    bool isPost = false;
+
+                    // Read HTTP headers
+                    while (!string.IsNullOrEmpty(line = reader.ReadLine()))
                     {
-                        using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
+                        if (line.StartsWith("POST")) isPost = true;
+                        if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
                         {
-                            string body = reader.ReadToEnd();
-                            
-                            // Try to parse out the cookies and save them
-                            if (!string.IsNullOrEmpty(body) && body.Contains(".youtube.com"))
+                            if (int.TryParse(line.Substring(15).Trim(), out int len))
                             {
-                                SaveCookiesFromText(body, "VRCVideoCacher browser extension");
-                                OnStatusUpdate?.Invoke(this, "Successfully processed cookies from extension!");
+                                contentLength = len;
                             }
                         }
                     }
 
+                    if (isPost && contentLength > 0)
+                    {
+                        char[] bodyChars = new char[contentLength];
+                        int read = reader.ReadBlock(bodyChars, 0, contentLength);
+                        string body = new string(bodyChars, 0, read);
+
+                        // Try to parse out the cookies and save them
+                        if (!string.IsNullOrEmpty(body) && body.Contains(".youtube.com"))
+                        {
+                            SaveCookiesFromText(body, "VRCVideoCacher browser extension");
+                            OnStatusUpdate?.Invoke(this, "Successfully processed cookies from extension!");
+                        }
+                    }
+
                     // Send a CORS-friendly 200 OK
-                    response.StatusCode = 200;
-                    response.AddHeader("Access-Control-Allow-Origin", "*");
-                    response.AddHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-                    response.AddHeader("Access-Control-Allow-Headers", "Content-Type");
-                    
-                    byte[] buffer = Encoding.UTF8.GetBytes("OK");
-                    response.ContentLength64 = buffer.Length;
-                    response.OutputStream.Write(buffer, 0, buffer.Length);
-                    response.OutputStream.Close();
+                    string response = "HTTP/1.1 200 OK\r\n" +
+                                      "Access-Control-Allow-Origin: *\r\n" +
+                                      "Access-Control-Allow-Methods: POST, OPTIONS\r\n" +
+                                      "Access-Control-Allow-Headers: Content-Type\r\n" +
+                                      "Connection: close\r\n\r\nOK";
+                    byte[] buffer = Encoding.UTF8.GetBytes(response);
+                    stream.Write(buffer, 0, buffer.Length);
                 }
-                catch (HttpListenerException)
+                catch (SocketException)
                 {
                     // Thrown when the listener is stopped/aborted
                     break;
                 }
                 catch (Exception e)
                 {
-                    OnError?.Invoke(this, new Exception("Error receiving cookies via HttpListener.", e));
+                    OnError?.Invoke(this, new Exception("Error receiving cookies via TcpListener.", e));
                 }
             }
         }
@@ -161,7 +174,6 @@ namespace MediaPlayerCore.YtDlp
             try
             {
                 _cookieListener?.Stop();
-                _cookieListener?.Close();
             }
             catch { }
         }
