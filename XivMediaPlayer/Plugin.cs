@@ -1599,17 +1599,17 @@ namespace XivMediaPlayer
             else if (key.StartsWith("zone_"))
             {
                 var playerPos = GetLocalPlayer()?.Position;
-                if (playerPos != null)
+                if (playerPos != null && key.Contains("_grid_"))
                 {
+                    string baseKey = key.Substring(0, key.IndexOf("_grid_"));
                     int currentGridX = (int)Math.Floor(playerPos.Value.X / 50.0f);
                     int currentGridZ = (int)Math.Floor(playerPos.Value.Z / 50.0f);
-                    var territoryId = _clientState.TerritoryType;
 
                     for (int dx = -1; dx <= 1; dx++)
                     {
                         for (int dz = -1; dz <= 1; dz++)
                         {
-                            keys.Add($"zone_{territoryId}_grid_{currentGridX + dx}_{currentGridZ + dz}");
+                            keys.Add($"{baseKey}_grid_{currentGridX + dx}_{currentGridZ + dz}");
                         }
                     }
                 }
@@ -1628,29 +1628,28 @@ namespace XivMediaPlayer
                 var territoryId = _clientState.TerritoryType;
                 if (territoryId == 0) return null;
 
-                var housingMgr = FFXIVClientStructs.FFXIV.Client.Game.HousingManager.Instance();
-                if (housingMgr != null && housingMgr->IsInside())
+                ushort worldId = 0;
+                try
                 {
-                    // Get world ID from local player character struct
-                    ushort worldId = 0;
-                    try
+                    var charMgr = FFXIVClientStructs.FFXIV.Client.Game.Character.CharacterManager.Instance();
+                    if (charMgr != null)
                     {
-                        var charMgr = FFXIVClientStructs.FFXIV.Client.Game.Character.CharacterManager.Instance();
-                        if (charMgr != null)
+                        var localChar = charMgr->LookupBattleCharaByEntityId(_objectTable[0]?.EntityId ?? 0);
+                        if (localChar != null)
                         {
-                            var localChar = charMgr->LookupBattleCharaByEntityId(
-                              _objectTable[0]?.EntityId ?? 0);
-                            if (localChar != null)
-                            {
-                                worldId = localChar->CurrentWorld;
-                            }
+                            worldId = localChar->CurrentWorld;
                         }
                     }
-                    catch { }
+                }
+                catch { }
 
-                    short ward = housingMgr->GetCurrentWard();
-                    short plot = housingMgr->GetCurrentPlot();
-                    short room = housingMgr->GetCurrentRoom();
+                var housingMgr = FFXIVClientStructs.FFXIV.Client.Game.HousingManager.Instance();
+                short ward = housingMgr != null ? housingMgr->GetCurrentWard() : (short)-1;
+                short plot = housingMgr != null ? housingMgr->GetCurrentPlot() : (short)-1;
+                short room = housingMgr != null ? housingMgr->GetCurrentRoom() : (short)-1;
+
+                if (housingMgr != null && housingMgr->IsInside())
+                {
                     return $"house_{worldId}_{territoryId}_{ward}_{plot}_{room}";
                 }
 
@@ -1659,14 +1658,14 @@ namespace XivMediaPlayer
                 {
                     int gridX = (int)Math.Floor(playerPos.Value.X / 50.0f);
                     int gridZ = (int)Math.Floor(playerPos.Value.Z / 50.0f);
-                    return $"zone_{territoryId}_grid_{gridX}_{gridZ}";
+                    return $"zone_{worldId}_{ward}_{territoryId}_grid_{gridX}_{gridZ}";
                 }
 
-                return $"zone_{territoryId}";
+                return $"zone_{worldId}_{ward}_{territoryId}";
             }
             catch
             {
-                return $"zone_{_clientState.TerritoryType}";
+                return $"zone_0_-1_{_clientState.TerritoryType}";
             }
         }
 
