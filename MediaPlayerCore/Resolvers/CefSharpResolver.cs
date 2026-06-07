@@ -78,8 +78,6 @@ namespace MediaPlayerCore.Resolvers
             settings.WindowlessRenderingEnabled = true;
             settings.CachePath = Path.Combine(pluginDir, "cef_cache");
             settings.LogFile = Path.Combine(pluginDir, "cef.log");
-            if (!settings.CefCommandLineArgs.ContainsKey("disable-gpu")) settings.CefCommandLineArgs.Add("disable-gpu", "1");
-            if (!settings.CefCommandLineArgs.ContainsKey("disable-gpu-vsync")) settings.CefCommandLineArgs.Add("disable-gpu-vsync", "1");
             if (!settings.CefCommandLineArgs.ContainsKey("disable-dev-shm-usage")) settings.CefCommandLineArgs.Add("disable-dev-shm-usage", "1");
             if (!settings.CefCommandLineArgs.ContainsKey("mute-audio")) settings.CefCommandLineArgs.Add("mute-audio", "1");
             if (!settings.CefCommandLineArgs.ContainsKey("no-sandbox")) settings.CefCommandLineArgs.Add("no-sandbox", "1");

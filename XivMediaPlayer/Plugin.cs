@@ -870,6 +870,12 @@ namespace XivMediaPlayer
                     var metadataTask = _ytDlpManager.GetMetadata(url);
                     var resolveTask = _ytDlpManager.ResolveStreamUrl(url);
 
+                    if (!Uri.TryCreate(url, UriKind.Absolute, out _))
+                    {
+                        _pluginLog.Warning($"[Media Player] Invalid stream URL rejected: {url}");
+                        return;
+                    }
+
                     string? streamUrl = null;
                     try
                     {
