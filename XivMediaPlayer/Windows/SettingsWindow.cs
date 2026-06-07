@@ -77,6 +77,7 @@ namespace XivMediaPlayer.Windows {
       if (ImGui.Checkbox("Enable Public Outdoor Screens", ref enableOutdoor)) {
         _plugin.Config.EnableOutdoorPublicScreens = enableOutdoor;
         _plugin.Config.Save();
+        _plugin.HandleOutdoorSettingToggled();
       }
 
       bool safeMode = _plugin.Config.OnlySafeDomainsPublicScreens;

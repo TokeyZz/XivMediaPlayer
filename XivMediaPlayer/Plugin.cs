@@ -2254,6 +2254,34 @@ namespace XivMediaPlayer
             _settingsWindow.Toggle();
         }
 
+        public void HandleOutdoorSettingToggled()
+        {
+            var key = GetLocationKey();
+            if (string.IsNullOrEmpty(key)) return;
+
+            if (key.StartsWith("zone_"))
+            {
+                if (!_config.EnableOutdoorPublicScreens)
+                {
+                    _worldRenderer.Transform.Enabled = false;
+                    _mediaManager?.StopStream();
+                    _lastStreamURL = "";
+                    _currentMediaOwnerId = "";
+                    _isLocalDj = false;
+                    _lastStreamObject = null;
+                }
+                else
+                {
+                    Task.Run(() =>
+                    {
+                        RestoreScreenForCurrentLocation();
+                        RestoreMediaForCurrentLocation();
+                        _ = FetchServerDataForCurrentLocationAsync();
+                    });
+                }
+            }
+        }
+
         private void OnBrowserPlayRequested(object? sender, MediaCatalogItem item)
         {
             if (_disposed || _playerObject == null) return;
