@@ -1641,10 +1641,11 @@ namespace XivMediaPlayer
                 short ward = housingMgr != null ? housingMgr->GetCurrentWard() : (short)-1;
                 short plot = housingMgr != null ? housingMgr->GetCurrentPlot() : (short)-1;
                 short room = housingMgr != null ? housingMgr->GetCurrentRoom() : (short)-1;
+                ulong indoorHouseId = housingMgr != null ? housingMgr->GetCurrentIndoorHouseId().Id : 0;
 
                 if (housingMgr != null && housingMgr->IsInside())
                 {
-                    return $"house_{worldId}_{territoryId}_{ward}_{plot}_{room}";
+                    return $"house_{worldId}_{territoryId}_{ward}_{plot}_{room}_{indoorHouseId}";
                 }
 
                 var playerPos = _cachedLocalPlayerPosition;
