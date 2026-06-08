@@ -272,6 +272,7 @@ namespace XivMediaPlayer
 
             _depthPreviewWindow = new DepthPreviewWindow(_textureProvider, _pluginLog);
             _depthPreviewWindow.Capture = _depthCapture;
+            _depthPreviewWindow.UICapture = _uiCapture;
 
             _browserWindow.OnPlayRequested += OnBrowserPlayRequested;
 
@@ -615,6 +616,10 @@ namespace XivMediaPlayer
 
             switch (splitArgs[0].ToLower())
             {
+                case "depth":
+                    _depthPreviewWindow.IsOpen = !_depthPreviewWindow.IsOpen;
+                    _chat.Print($"[Media Player] Depth preview {(_depthPreviewWindow.IsOpen ? "opened" : "closed")}.");
+                    break;
                 case "twitch":
                     if (splitArgs.Length > 1 && splitArgs[1].Contains("twitch.tv"))
                     {
@@ -2548,11 +2553,6 @@ namespace XivMediaPlayer
                     _config.Save();
                     var locKey = GetLocationKey();
                     _chat.Print($"[Media Player] Screen placement saved for {locKey}.");
-                    break;
-
-                case "depth":
-                    _depthPreviewWindow.IsOpen = !_depthPreviewWindow.IsOpen;
-                    _chat.Print($"[Media Player] Depth preview {(_depthPreviewWindow.IsOpen ? "opened" : "closed")}.");
                     break;
 
                 default:

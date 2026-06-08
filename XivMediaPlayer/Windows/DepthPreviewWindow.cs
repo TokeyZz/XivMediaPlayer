@@ -16,7 +16,9 @@ namespace XivMediaPlayer.Windows {
     private readonly ITextureProvider _textureProvider;
     private readonly IPluginLog _pluginLog;
     private IDalamudTextureWrap _previewTexture;
+    private IDalamudTextureWrap _uiPreviewTexture;
     private int _lastDataHash;
+    private int _lastUiDataHash;
     private bool _disposed;
     private string _rtmProbeResult;
     private string _sceneProbeResult;
@@ -75,7 +77,8 @@ namespace XivMediaPlayer.Windows {
       if (data != null && data.Length > 0) {
         try {
           int hash = data.Length;
-          for (int i = 0; i < Math.Min(64, data.Length); i += 4) {
+          int step = Math.Max(4, data.Length / 64);
+          for (int i = 0; i < data.Length; i += step) {
             hash = hash * 31 + data[i];
           }
 
@@ -92,12 +95,13 @@ namespace XivMediaPlayer.Windows {
 
         if (_previewTexture != null) {
           var avail = ImGui.GetContentRegionAvail();
+          // We want the image to fit half the window height to leave room for the UI preview
+          float drawH = avail.Y * 0.5f; 
           float aspect = (float)Capture.CaptureWidth / Capture.CaptureHeight;
-          float drawW = avail.X;
-          float drawH = drawW / aspect;
-          if (drawH > avail.Y) {
-            drawH = avail.Y;
-            drawW = drawH * aspect;
+          float drawW = drawH * aspect;
+          if (drawW > avail.X) {
+            drawW = avail.X;
+            drawH = drawW / aspect;
           }
           ImGui.Image(_previewTexture.Handle, new Vector2(drawW, drawH));
         }
@@ -108,7 +112,42 @@ namespace XivMediaPlayer.Windows {
       // UI Capture debug section
       if (UICapture != null) {
         ImGui.Separator();
+        UICapture.GeneratePreview();
         ImGui.TextColored(new Vector4(0, 1, 1, 1), $"UI Capture: {UICapture.DebugInfo}");
+        
+        var uiData = UICapture.LastAlphaData;
+        if (uiData != null && uiData.Length > 0) {
+          try {
+            int hash = uiData.Length;
+            int step = Math.Max(4, uiData.Length / 64);
+            for (int i = 0; i < uiData.Length; i += step) {
+              hash = hash * 31 + uiData[i];
+            }
+
+            if (hash != _lastUiDataHash) {
+              var oldTex = _uiPreviewTexture;
+              _uiPreviewTexture = _textureProvider.CreateFromRaw(
+                new RawImageSpecification(UICapture.CaptureWidth, UICapture.CaptureHeight, 28), uiData);
+              _lastUiDataHash = hash;
+              oldTex?.Dispose();
+            }
+          } catch (Exception e) {
+            _pluginLog.Warning(e, "[Depth Preview] Failed to create UI preview texture.");
+          }
+
+          if (_uiPreviewTexture != null) {
+            var avail = ImGui.GetContentRegionAvail();
+            float drawH = avail.Y; 
+            float aspect = (float)UICapture.CaptureWidth / UICapture.CaptureHeight;
+            float drawW = drawH * aspect;
+            if (drawW > avail.X) {
+              drawW = avail.X;
+              drawH = drawW / aspect;
+            }
+            ImGui.Image(_uiPreviewTexture.Handle, new Vector2(drawW, drawH));
+          }
+        }
+
         ImGui.Text($"Addon rects: {UICapture.LastAddonRects.Count}");
         if (ImGui.CollapsingHeader("Detected Addons")) {
           for (int i = 0; i < UICapture.LastAddonRects.Count; i++) {
@@ -123,6 +162,7 @@ namespace XivMediaPlayer.Windows {
       if (_disposed) return;
       _disposed = true;
       _previewTexture?.Dispose();
+      _uiPreviewTexture?.Dispose();
     }
   }
 }
