@@ -2657,7 +2657,7 @@ namespace XivMediaPlayer
             });
         }
 
-        private void DoRefreshCurrentMedia()
+        internal void DoRefreshCurrentMedia()
         {
             if (string.IsNullOrEmpty(_lastStreamURL) || _playerObject == null) return;
 

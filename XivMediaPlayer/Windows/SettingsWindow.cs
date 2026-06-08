@@ -91,9 +91,10 @@ namespace XivMediaPlayer.Windows {
       ImGui.Separator();
 
       bool spatialAudio = _plugin.Config.SpatialAudioEnabled;
-      if (ImGui.Checkbox("Enable 3D Spatial Audio (Requires Restart)", ref spatialAudio)) {
+      if (ImGui.Checkbox("Enable 3D Spatial Audio", ref spatialAudio)) {
         _plugin.Config.SpatialAudioEnabled = spatialAudio;
         _plugin.Config.Save();
+        _plugin.DoRefreshCurrentMedia();
       }
       ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f),
         "Dynamically pans audio to simulate physical TV locations. If you experience A/V sync issues, disable this.");
