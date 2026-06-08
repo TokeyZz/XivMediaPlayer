@@ -373,6 +373,7 @@ namespace MediaPlayerCore {
             // Do NOT hold _disposeLock while stopping!
             if (playerToStop != null) {
                 try { playerToStop.Stop(); } catch { }
+                _bufferedWaveProvider?.ClearBuffer();
             }
 
             lock (_disposeLock) {

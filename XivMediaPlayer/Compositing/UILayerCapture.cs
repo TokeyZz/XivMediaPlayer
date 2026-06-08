@@ -20,6 +20,7 @@ namespace XivMediaPlayer.Compositing {
     private ID3D11ShaderResourceView _backBufferSRV;
     private ID3D11Texture2D _sceneDiffuseCopy;
     private ID3D11ShaderResourceView _sceneDiffuseSRV;
+    private ID3D11Texture2D _stagingTexture;
     private int _width, _height;
     private bool _disposed;
     private bool _initialized;
@@ -91,6 +92,7 @@ namespace XivMediaPlayer.Compositing {
         if (_backBufferCopy == null || _width != (int)desc.Width || _height != (int)desc.Height) {
           _backBufferCopy?.Dispose();
           _backBufferSRV?.Dispose();
+          _stagingTexture?.Dispose();
           _backBufferSRV = null;
 
           _width = (int)desc.Width;
@@ -106,6 +108,18 @@ namespace XivMediaPlayer.Compositing {
             Usage = ResourceUsage.Default,
             BindFlags = BindFlags.ShaderResource,
             CPUAccessFlags = CpuAccessFlags.None,
+          });
+
+          _stagingTexture = _device.CreateTexture2D(new Texture2DDescription {
+            Width = 1,
+            Height = 1,
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = desc.Format,
+            SampleDescription = new SampleDescription(1, 0),
+            Usage = ResourceUsage.Staging,
+            BindFlags = BindFlags.None,
+            CPUAccessFlags = CpuAccessFlags.Read,
           });
 
           _backBufferSRV = _device.CreateShaderResourceView(_backBufferCopy);
@@ -129,6 +143,31 @@ namespace XivMediaPlayer.Compositing {
         _debugInfo = $"Captured {_width}x{_height}, {LastAddonRects.Count} addons";
       } catch (Exception ex) {
         _debugInfo = $"Capture failed: {ex.Message}";
+      }
+    }
+
+    /// <summary>
+    /// Reads the alpha value of a single pixel from the captured backbuffer.
+    /// Returns 0 if coordinates are out of bounds or capture failed.
+    /// </summary>
+    public float GetPixelAlpha(int x, int y) {
+      if (_disposed || !_initialized || !_frameCaptured || _backBufferCopy == null || _stagingTexture == null) return 0f;
+      if (x < 0 || y < 0 || x >= _width || y >= _height) return 0f;
+
+      try {
+        _context.CopySubresourceRegion(_stagingTexture, 0, 0, 0, 0, _backBufferCopy, 0, new Vortice.Mathematics.Box(x, y, 0, x + 1, y + 1, 1));
+        var mapped = _context.Map(_stagingTexture, 0, Vortice.Direct3D11.MapMode.Read, Vortice.Direct3D11.MapFlags.None);
+        
+        float alpha = 0f;
+        unsafe {
+            byte* ptr = (byte*)mapped.DataPointer;
+            alpha = ptr[3] / 255f; // BGRA or RGBA, alpha is the 4th byte
+        }
+        
+        _context.Unmap(_stagingTexture, 0);
+        return alpha;
+      } catch {
+        return 0f;
       }
     }
 
@@ -226,6 +265,7 @@ namespace XivMediaPlayer.Compositing {
     public void Dispose() {
       if (_disposed) return;
       _disposed = true;
+      _stagingTexture?.Dispose();
       _backBufferSRV?.Dispose();
       _backBufferCopy?.Dispose();
       _sceneDiffuseSRV?.Dispose();

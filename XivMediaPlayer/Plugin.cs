@@ -1974,6 +1974,16 @@ namespace XivMediaPlayer
                         }
                     }
 
+                    // UI Alpha Mask Check
+                    if (_uiCapture != null && uv.X >= 0 && uv.Y >= 0)
+                    {
+                        float alpha = _uiCapture.GetPixelAlpha((int)mousePos.X, (int)mousePos.Y);
+                        if (alpha > 0f)
+                        {
+                            uv = new System.Numerics.Vector2(-1, -1);
+                        }
+                    }
+
                     // We must calculate mouse state unconditionally every frame so that holding the mouse
                     // and dragging it OVER the window doesn't falsely trigger a "Click" event!
                     bool isLeftMousePressed = (GetAsyncKeyState(0x01) & 0x8000) != 0; // VK_LBUTTON
@@ -1985,7 +1995,7 @@ namespace XivMediaPlayer
                     {
                         hoverUV = uv;
 
-                        if (isLeftMousePressed)
+                        if (isMouseReleased)
                         {
                             // Handle Volume Slider Drag
                             if (uv.Y > 0.95f && uv.Y < 0.97f && uv.X > 0.28f && uv.X < 0.58f)
@@ -1995,7 +2005,6 @@ namespace XivMediaPlayer
                                     float volProgress = (uv.X - 0.28f) / 0.30f;
                                     _mediaManager.LiveStreamVolume = Math.Clamp(volProgress * 3f, 0f, 3f);
                                     _config.LivestreamVolume = _mediaManager.LiveStreamVolume;
-                                    // Avoid saving config every frame of drag
                                 }
                             }
                             
@@ -2007,7 +2016,7 @@ namespace XivMediaPlayer
                                     float seekProgress = (uv.X - 0.28f) / 0.30f;
                                     activeStream.Time = (long)(seekProgress * activeStream.Length);
                                     _isLocalDj = true;
-                                    _wasDragging3DSeek = true;
+                                    _ = PushMediaToServerAsync(isBackgroundSync: false);
                                 }
                             }
                         }
@@ -2015,11 +2024,6 @@ namespace XivMediaPlayer
                         if (isMouseReleased)
                         {
                             _config.Save(); // Save volume if it changed
-                            if (_wasDragging3DSeek)
-                            {
-                                _wasDragging3DSeek = false;
-                                _ = PushMediaToServerAsync(isBackgroundSync: false);
-                            }
                         }
 
                         if (isMouseClicked)
