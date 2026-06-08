@@ -98,6 +98,7 @@ namespace XivMediaPlayer
         public Dalamud.Plugin.Services.IObjectTable ObjectTable => _objectTable;
         public Dalamud.Plugin.Services.IPluginLog PluginLog => _pluginLog;
         public Dalamud.Plugin.Services.IChatGui Chat => _chat;
+        public string LastStreamURL => _lastStreamURL;
 
         private bool _isDisposing;
 
@@ -2096,6 +2097,24 @@ namespace XivMediaPlayer
                                 else if (uv.X >= 0.95f && uv.X <= 0.99f)
                                 {
                                     KillAndRestart();
+                                }
+                            }
+                            // DMCA Top Right (0.92 - 0.98, 0.04 - 0.12)
+                            else if (uv.Y >= 0.04f && uv.Y <= 0.12f && uv.X >= 0.92f && uv.X <= 0.98f)
+                            {
+                                string url = _lastStreamURL;
+                                if (!string.IsNullOrEmpty(url)) {
+                                    string domain = "the site administrator";
+                                    try {
+                                        Uri uri = new Uri(url);
+                                        domain = uri.Host;
+                                    } catch { }
+                                    
+                                    string dmcaText = $"Content URL: {url}\n\nPlease contact {domain} to report this content.";
+                                    ImGui.SetClipboardText(dmcaText);
+                                    _chat.Print("[Media Player] DMCA contact info and URL copied to clipboard.");
+                                } else {
+                                    _chat.PrintError("[Media Player] No active media URL to copy.");
                                 }
                             }
                         }

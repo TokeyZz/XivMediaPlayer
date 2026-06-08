@@ -433,6 +433,19 @@ float4 PS(VS_OUT input) : SV_TARGET {
   
   // Media Controls UI overlay
   if (isInside && !occluded && HoverUV.x >= 0.0 && HoverUV.y >= 0.0) {
+    // DMCA Button (Top Right: 0.92 - 0.98, 0.04 - 0.12)
+    if (uv.x > 0.92 && uv.x < 0.98 && uv.y > 0.04 && uv.y < 0.12) {
+       color.rgb = lerp(color.rgb, float3(0.05, 0.05, 0.05), 0.7);
+       float px = (uv.x - 0.92) / 0.06;
+       float py = (uv.y - 0.04) / 0.08;
+       
+       // draw 'i' for info/report
+       if (px > 0.4 && px < 0.6) {
+           if (py > 0.2 && py < 0.3) color.rgb = float3(1, 1, 1);
+           if (py > 0.4 && py < 0.8) color.rgb = float3(1, 1, 1);
+       }
+    }
+
     if (uv.y > 0.85) {
       // Background
       color.rgb = lerp(color.rgb, float3(0.05, 0.05, 0.05), 0.7);

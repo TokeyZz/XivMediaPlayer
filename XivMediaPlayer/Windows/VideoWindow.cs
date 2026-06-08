@@ -252,7 +252,26 @@ namespace XivMediaPlayer.Windows {
             _plugin.RefreshCurrentMedia();
           }
           if (ImGui.IsItemHovered()) ImGui.SetTooltip("Re-resolve and replay the current media");
+          ImGui.SameLine();
 
+          // DMCA
+          if (ImGui.Button("DMCA", wideBtnSize)) {
+              string url = _plugin.LastStreamURL;
+              if (!string.IsNullOrEmpty(url)) {
+                  string domain = "the site administrator";
+                  try {
+                      Uri uri = new Uri(url);
+                      domain = uri.Host;
+                  } catch { }
+                  
+                  string dmcaText = $"Content URL: {url}\n\nPlease contact {domain} to report this content.";
+                  ImGui.SetClipboardText(dmcaText);
+                  _plugin.Chat.Print("[Media Player] DMCA contact info and URL copied to clipboard.");
+              } else {
+                  _plugin.Chat.PrintError("[Media Player] No active media URL to copy.");
+              }
+          }
+          if (ImGui.IsItemHovered()) ImGui.SetTooltip("Copy DMCA info & media URL to clipboard");
           ImGui.SameLine();
 
           // Kill
