@@ -752,6 +752,8 @@ namespace XivMediaPlayer
 
         private void TuneIntoStream(string url, MediaPlayerCore.IMediaGameObject audioGameObject, int startTimeMs = 0, Dictionary<string, string>? httpHeaders = null, bool isAutoSync = false)
         {
+            url = CleanUrl(url);
+
             if (!isAutoSync && CurrentTvPlacement?.IsLocked == true && CurrentTvPlacement?.OwnerId != _config.OwnerId && !IsHousingMenuOpen)
             {
                 _chat.PrintError("[Media Player] Cannot play stream: The TV in this room is locked by its owner.");
@@ -825,6 +827,15 @@ namespace XivMediaPlayer
 
         private void PlayViaYtDlp(string url, IMediaGameObject audioGameObject, int startTimeMs = 0, bool isAutoSync = false)
         {
+            url = CleanUrl(url);
+
+            // Intercept local files or unsupported URLs and route them directly to TuneIntoStream
+            if (!YtDlpManager.IsUrlSupported(url) || !_ytDlpManager.IsAvailable())
+            {
+                TuneIntoStream(url, audioGameObject, startTimeMs, null, isAutoSync);
+                return;
+            }
+
             _isIntentionallyPaused = false;
             _lastUrlLoadTime = DateTime.UtcNow;
 
@@ -1399,68 +1410,83 @@ namespace XivMediaPlayer
                 _lastLocationKey = key;
                 return;
             }
-
-            _lastLocationKey = key;
         }
 
         private async Task PushMediaToServerAsync(bool isBackgroundSync = false)
         {
             var key = _lastLocationKey;
-            _pluginLog.Information($"[Sync] PushMediaToServerAsync invoked. Key: {key}");
-            _pluginLog.Information($"[Sync] Attempting to push media to server for key: {key}");
-            if (string.IsNullOrEmpty(key) || (!key.StartsWith("house_") && !key.StartsWith("zone_")))
-            {
-                _pluginLog.Information($"[Sync] Aborting push because key is invalid.");
-                return;
-            }
-
             var activeStream = _mediaManager?.ActiveStream;
+            string lastUrl = _lastStreamURL ?? "";
+            string soundPath = activeStream?.SoundPath ?? "";
+            long activeTime = (long)(activeStream?.Time ?? 0);
+            bool isIntentionallyPaused = _isIntentionallyPaused;
+            var mediaQueueArray = _mediaQueue.ToArray();
+            var duration = _currentMediaDurationMs;
 
-            // Don't push if there's literally no stream URL and we aren't loading one
-            if (string.IsNullOrEmpty(_lastStreamURL) && (activeStream == null || string.IsNullOrEmpty(activeStream.SoundPath))) return;
-
-            var sync = new Networking.Models.RoomMediaStateSync
+            await Task.Run(async () =>
             {
-                LocationKey = key,
-                CurrentUrl = !string.IsNullOrEmpty(_lastStreamURL) ? _lastStreamURL : activeStream?.SoundPath ?? "",
-                TimecodeMs = activeStream?.Time ?? 0,
-                // Only push "Paused" if the DJ explicitly pressed the pause button!
-                // Otherwise, random network buffering on the DJ's client will accidentally force-pause the entire room!
-                IsPlaying = !_isIntentionallyPaused,
-                OwnerId = _config.OwnerId,
-                PlaylistJson = System.Text.Json.JsonSerializer.Serialize(_mediaQueue.ToArray()),
-                BypassLock = IsHousingMenuOpen || key.StartsWith("zone_"),
-                DurationMs = _currentMediaDurationMs,
-                IsBackgroundSync = isBackgroundSync
-            };
-
-            try
-            {
-                await ServerClient.UpdateMediaStateAsync(key, sync);
-                _currentMediaOwnerId = _config.OwnerId;
-
-                // If we successfully pushed a foreground sync, we are definitely the DJ now.
-                if (!isBackgroundSync)
+                _pluginLog.Information($"[Sync] PushMediaToServerAsync invoked. Key: {key}");
+                _pluginLog.Information($"[Sync] Attempting to push media to server for key: {key}");
+                if (string.IsNullOrEmpty(key) || (!key.StartsWith("house_") && !key.StartsWith("zone_")))
                 {
-                    _chat.Print($"[Media Player] Server push successful!");
-                    _isLocalDj = true;
-                    _currentMediaOwnerId = _config.OwnerId;
+                    _pluginLog.Information($"[Sync] Aborting push because key is invalid.");
+                    return;
                 }
-            }
-            catch (InvalidOperationException)
-            {
-                // We were deposed as the DJ!
-                _isLocalDj = false;
-                _currentMediaOwnerId = "";
-                await FetchMediaFromServerAsync();
-            }
-            catch (UnauthorizedAccessException)
-            {
-                _isLocalDj = false;
-                _currentMediaOwnerId = "";
-                _chat.PrintError("[Media Player] Cannot share media: The TV in this room is locked by its owner.");
-                await FetchMediaFromServerAsync();
-            }
+
+                // Don't push local files
+                if (!string.IsNullOrEmpty(lastUrl) && !lastUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase) && !lastUrl.StartsWith("rtmp", StringComparison.OrdinalIgnoreCase)) return;
+                
+                // Don't push if there's literally no stream URL and we aren't loading one
+                if (string.IsNullOrEmpty(lastUrl) && string.IsNullOrEmpty(soundPath) && !_isResolvingMedia) return;
+
+                var sync = new Networking.Models.RoomMediaStateSync
+                {
+                    LocationKey = key,
+                    CurrentUrl = !string.IsNullOrEmpty(lastUrl) ? lastUrl : soundPath,
+                    TimecodeMs = activeTime,
+                    // Only push "Paused" if the DJ explicitly pressed the pause button!
+                    // Otherwise, random network buffering on the DJ's client will accidentally force-pause the entire room!
+                    IsPlaying = !isIntentionallyPaused,
+                    OwnerId = _config.OwnerId,
+                    PlaylistJson = System.Text.Json.JsonSerializer.Serialize(mediaQueueArray),
+                    BypassLock = IsHousingMenuOpen || key.StartsWith("zone_"),
+                    DurationMs = duration,
+                    IsBackgroundSync = isBackgroundSync
+                };
+
+                try
+                {
+                    await ServerClient.UpdateMediaStateAsync(key, sync);
+                    _currentMediaOwnerId = _config.OwnerId;
+
+                    // If we successfully pushed a foreground sync, we are definitely the DJ now.
+                    if (!isBackgroundSync)
+                    {
+                        _chat.Print($"[Media Player] Server push successful!");
+                        _isLocalDj = true;
+                        _currentMediaOwnerId = _config.OwnerId;
+                    }
+                    _pluginLog.Information($"[Sync] Payload successfully pushed to server.");
+                }
+                catch (InvalidOperationException)
+                {
+                    // We were deposed as the DJ!
+                    _isLocalDj = false;
+                    _currentMediaOwnerId = "";
+                    await FetchMediaFromServerAsync();
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    _isLocalDj = false;
+                    _currentMediaOwnerId = "";
+                    _chat.PrintError("[Media Player] Cannot share media: The TV in this room is locked by its owner.");
+                    await FetchMediaFromServerAsync();
+                }
+                catch (Exception ex)
+                {
+                    _pluginLog.Error(ex, "[Sync] Failed to push media state to server.");
+                }
+            });
         }
 
         private async Task FetchServerTimeAsync()
@@ -2327,6 +2353,20 @@ namespace XivMediaPlayer
         #endregion
 
         #region Utilities
+
+        private static string CleanUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return url;
+            if (url.StartsWith("\"") && url.EndsWith("\"") && url.Length >= 2)
+            {
+                url = url.Substring(1, url.Length - 2);
+            }
+            if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.IsFile)
+            {
+                url = uri.LocalPath;
+            }
+            return url;
+        }
 
         private static string RemoveSpecialSymbols(string value)
         {

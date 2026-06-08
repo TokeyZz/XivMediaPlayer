@@ -50,9 +50,7 @@ namespace MediaPlayerCore {
         try {
           OnNewMediaTriggered?.Invoke(this, EventArgs.Empty);
           if (!string.IsNullOrEmpty(audioPath)) {
-            if (audioPath.StartsWith("http") || audioPath.StartsWith("rtmp")) {
-              ConfigureStream(playerObject, audioPath, startTimeMs, httpHeaders);
-            }
+            ConfigureStream(playerObject, audioPath, startTimeMs, httpHeaders);
           }
         } catch (Exception e) {
           OnErrorReceived?.Invoke(this, new MediaError() { Exception = e });
@@ -65,10 +63,8 @@ namespace MediaPlayerCore {
         try {
           OnNewMediaTriggered?.Invoke(this, EventArgs.Empty);
           if (!string.IsNullOrEmpty(audioPath)) {
-            if (audioPath.StartsWith("http") || audioPath.StartsWith("rtmp")) {
-              if (_playbackStreams.ContainsKey(playerObject.Name)) {
-                _playbackStreams[playerObject.Name].ChangeVideoStream(audioPath, width);
-              }
+            if (_playbackStreams.ContainsKey(playerObject.Name)) {
+              _playbackStreams[playerObject.Name].ChangeVideoStream(audioPath, width);
             }
           }
         } catch (Exception e) {

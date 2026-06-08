@@ -309,15 +309,29 @@ namespace MediaPlayerCore {
             await media.Parse(soundPath.StartsWith("http") || soundPath.StartsWith("rtmp")
               ? MediaParseOptions.ParseNetwork : MediaParseOptions.ParseLocal);
             
+            MediaPlayer playerToStop = null;
             lock (_disposeLock) {
                 if (_disposed) {
                     media.Dispose();
                     return;
                 }
-                
-                // Explicitly stop the previous media before assigning the new one to prevent VLC from deadlocking
-                _vlcPlayer.Stop();
-                _vlcPlayer.Media = media;
+                playerToStop = _vlcPlayer;
+            }
+
+            // Explicitly stop the previous media before assigning the new one to prevent VLC from deadlocking
+            // Do NOT hold _disposeLock while stopping!
+            if (playerToStop != null) {
+                try { playerToStop.Stop(); } catch { }
+            }
+
+            lock (_disposeLock) {
+                if (_disposed) {
+                    media.Dispose();
+                    return;
+                }
+                if (_vlcPlayer != null) {
+                    _vlcPlayer.Media = media;
+                }
             }
 
             long exactSeekMs = startTimeMs;
@@ -414,6 +428,9 @@ namespace MediaPlayerCore {
       }
 
     public void Dispose() {
+      MediaPlayer playerToStop = null;
+      LibVLC libVlcToDispose = null;
+
       lock (_disposeLock) {
           if (_disposed) {
             return;
@@ -421,10 +438,10 @@ namespace MediaPlayerCore {
           _disposed = true;
           _parent.OnCleanupTime -= _parent_OnCleanupTime;
           
-          Stop();
-          try { _vlcPlayer?.Dispose(); } catch { }
+          playerToStop = _vlcPlayer;
+          libVlcToDispose = libVLC;
+          
           _vlcPlayer = null;
-          try { libVLC?.Dispose(); } catch { }
           libVLC = null;
 
           if (_vlcMappedViewAccessor != null) {
@@ -436,6 +453,15 @@ namespace MediaPlayerCore {
               _vlcMappedFile = null;
           }
           _vlcBuffer = IntPtr.Zero;
+      }
+
+      if (playerToStop != null) {
+          PlaybackStopped?.Invoke(this, "OK");
+          try { playerToStop.Stop(); } catch { }
+          try { playerToStop.Dispose(); } catch { }
+      }
+      if (libVlcToDispose != null) {
+          try { libVlcToDispose.Dispose(); } catch { }
       }
     }
   }
