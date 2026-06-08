@@ -37,6 +37,23 @@ namespace MediaPlayerCore.Catalog {
     [JsonProperty("isLive")]
     public bool IsLive { get; set; }
 
+    [JsonProperty("startTimeMs")]
+    public long StartTimeMs { get; set; }
+
+    /// <summary>
+    /// Formatted start time string (e.g. "1:23:45").
+    /// </summary>
+    [JsonIgnore]
+    public string ProgressFormatted {
+      get {
+        if (StartTimeMs <= 0) return "";
+        var ts = TimeSpan.FromMilliseconds(StartTimeMs);
+        return ts.TotalHours >= 1
+          ? ts.ToString(@"h\:mm\:ss")
+          : ts.ToString(@"mm\:ss");
+      }
+    }
+
     /// <summary>
     /// Formatted duration string (e.g. "1:23:45").
     /// </summary>

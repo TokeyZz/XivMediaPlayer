@@ -14,6 +14,7 @@ using MediaPlayerCore.Compositing;
 using MediaPlayerCore.Twitch;
 using MediaPlayerCore.YtDlp;
 using XivMediaPlayer.Compositing;
+using XivMediaPlayer.Providers;
 using Dalamud.Bindings.ImGui;
 using System;
 using System.Collections.Generic;
@@ -64,6 +65,8 @@ namespace XivMediaPlayer
         private DepthBufferCapture _depthCapture;
         private UILayerCapture _uiCapture;
         private Compositing.TitleTextureManager _titleTextureManager;
+        private Compositing.HistoryMenuTextureManager _historyMenuTextureManager;
+        private bool _isHistoryMenuOpen = false;
 
         private MediaManager _mediaManager;
         public MediaManager MediaManager => _mediaManager;
@@ -112,6 +115,7 @@ namespace XivMediaPlayer
 
         private DateTime _lastClipboardCheck = DateTime.MinValue;
         private DateTime _lastServerSyncPush = DateTime.MinValue;
+        private DateTime _lastHistoryUpdate = DateTime.MinValue;
         private DateTime? _deferredTerritoryChangeTime = null;
         private DateTime _lastServerSyncFetch = DateTime.MinValue;
         private string _lastGridLocationKey = string.Empty;
@@ -219,6 +223,7 @@ namespace XivMediaPlayer
             _uiCapture = new UILayerCapture();
             _uiCapture.Initialize();
             _titleTextureManager = new Compositing.TitleTextureManager(_textureProvider);
+            _historyMenuTextureManager = new Compositing.HistoryMenuTextureManager(_textureProvider);
 
             // Create windows
             _windowSystem = new WindowSystem("XivMediaPlayer");
@@ -249,6 +254,8 @@ namespace XivMediaPlayer
                 var ytProvider = new YtDlpPlaylistProvider(_ytDlpManager);
                 _browserWindow.AddProvider(ytProvider);
             }
+
+            _browserWindow.AddProvider(new HistoryMediaProvider(_config));
 
             _depthCapture = new DepthBufferCapture();
             _depthCapture.Initialize();
@@ -491,6 +498,14 @@ namespace XivMediaPlayer
                 {
                     _lastServerSyncFetch = DateTime.UtcNow;
                     _ = FetchServerDataForCurrentLocationAsync();
+                }
+            }
+
+            if ((DateTime.UtcNow - _lastHistoryUpdate).TotalSeconds >= 10)
+            {
+                _lastHistoryUpdate = DateTime.UtcNow;
+                if (_mediaManager?.ActiveStream != null && !_isIntentionallyPaused) {
+                    UpdateWatchHistory();
                 }
             }
 
@@ -760,6 +775,9 @@ namespace XivMediaPlayer
 
         private void TuneIntoStream(string url, MediaPlayerCore.IMediaGameObject audioGameObject, int startTimeMs = 0, Dictionary<string, string>? httpHeaders = null, bool isAutoSync = false)
         {
+            if (_disposed) return;
+            UpdateWatchHistory();
+
             url = CleanUrl(url);
 
             if (!isAutoSync && CurrentTvPlacement?.IsLocked == true && CurrentTvPlacement?.OwnerId != _config.OwnerId && !IsHousingMenuOpen)
@@ -835,6 +853,9 @@ namespace XivMediaPlayer
 
         private void PlayViaYtDlp(string url, IMediaGameObject audioGameObject, int startTimeMs = 0, bool isAutoSync = false)
         {
+            if (_disposed) return;
+            UpdateWatchHistory();
+
             url = CleanUrl(url);
 
             // Intercept local files or unsupported URLs and route them directly to TuneIntoStream
@@ -1121,47 +1142,17 @@ namespace XivMediaPlayer
             EnqueueFrameworkAction(() => _chat.Print("[Media Player] Starting Stream..."));
         }
 
-        private void _mediaManager_OnPlaybackFinished(object sender, string e)
+        private void _mediaManager_OnPlaybackFinished(object? sender, string e)
         {
-            EnqueueFrameworkAction(() =>
+            _chat.Print("[Media Player] Playback finished.");
+
+            if (!string.IsNullOrEmpty(_lastStreamURL))
             {
-                if (!_isLocalDj) return;
+                _config.WatchHistory.Remove(_lastStreamURL);
+                _config.Save();
+            }
 
-                // Replay current track
-                if (_config.LoopEnabled && !string.IsNullOrEmpty(_lastStreamURL) && _playerObject != null)
-                {
-                    _chat.Print("[Media Player] Looping current track...");
-                    PlayViaYtDlp(_lastStreamURL, CurrentAudioSource, 0);
-                    return;
-                }
-
-                // Advance queue (with shuffle support)
-                if (_mediaQueue.Count > 0 && _playerObject != null)
-                {
-                    // Record history
-                    if (!string.IsNullOrEmpty(_lastStreamURL))
-                    {
-                        _mediaHistory.Push(_lastStreamURL);
-                    }
-
-                    string nextUrl;
-                    if (_config.ShuffleEnabled && _mediaQueue.Count > 1)
-                    {
-                        var list = _mediaQueue.ToList();
-                        int idx = _shuffleRandom.Next(list.Count);
-                        nextUrl = list[idx];
-                        list.RemoveAt(idx);
-                        _mediaQueue = new Queue<string>(list);
-                    }
-                    else
-                    {
-                        nextUrl = _mediaQueue.Dequeue();
-                    }
-
-                    _chat.Print($"[Media Player] Playing Next in Queue: {nextUrl}");
-                    PlayViaYtDlp(nextUrl, CurrentAudioSource);
-                }
-            });
+            PlayNext();
         }
 
         private unsafe void ResetStreamValues()
@@ -1566,7 +1557,7 @@ namespace XivMediaPlayer
                     if (_playerObject != null)
                     {
                         // Starts the stream. If sync.IsPlaying is false, we should pause it immediately after it loads...
-                        // But yt-dlp might take a while, so we just let it start and the next poll will pause it.
+                        // But yt-dlp might take a while, so we just let it start and the next poll will poll it.
                         PlayViaYtDlp(state.CurrentUrl, CurrentAudioSource, (int)targetTimeMs, isAutoSync: true);
                     }
                 });
@@ -1709,45 +1700,46 @@ namespace XivMediaPlayer
 
         private int _mediaErrorCount = 0;
 
-        private void OnMediaError(object sender, MediaError e)
+        private void OnMediaError(object? sender, MediaError e)
         {
-            _pluginLog.Warning(e.Exception, e.Exception?.Message);
-
-            // Auto-retry VLC playback if it crashes shortly after starting (e.g. dropped TLS connection)
-            // Ensure we ONLY retry if VLC actually threw a FATAL error, completely ignoring internal VLC logger spam
-            if (!e.Exception?.Message?.Contains("Failed to create demuxer") == true) return;
-
-            // If the player is actually successfully playing right now, then this is just a minor background stream error
-            // (e.g. dropping a secondary audio track) and not a fatal playback crash. Ignore it.
-            if (_mediaManager?.ActiveStream?.PlaybackState == NAudio.Wave.PlaybackState.Playing) return;
-
-            if (!string.IsNullOrEmpty(_lastStreamURL) && _lastStreamObject != null)
+            _mediaErrorCount++;
+            _pluginLog.Warning(e.Exception, $"[Media Player] Media error occurred! Error count: {_mediaErrorCount}");
+            if (_mediaErrorCount < 3)
             {
-                if ((DateTime.UtcNow - _lastUrlLoadTime).TotalSeconds < 10)
-                {
-                    if (_mediaErrorCount < 5)
-                    {
-                        _mediaErrorCount++;
-                        int retryCount = _mediaErrorCount;
-                        EnqueueFrameworkAction(() => _chat.Print($"[Media Player] VLC encountered an error. Retrying playback... (Attempt {retryCount}/5)"));
-                        Task.Run(async () =>
-                        {
-                            await Task.Delay(1000);
-                            EnqueueFrameworkAction(() =>
-                            {
-                                if (!_disposed && !string.IsNullOrEmpty(_lastStreamURL) && _lastStreamObject != null)
-                                {
-                                    PlayViaYtDlp(_lastStreamURL, _lastStreamObject, (int)(_mediaManager?.ActiveStream?.Time ?? 0), isAutoSync: true);
-                                }
-                            });
-                        });
-                    }
-                    else
-                    {
-                        EnqueueFrameworkAction(() => _chat.PrintError("[Media Player] VLC failed to play the media after multiple attempts. The format might be unsupported or the server is dropping the connection."));
-                    }
-                }
+                _refreshQueued = true;
             }
+            else
+            {
+                _chat.PrintError("[Media Player] Failed to play media after multiple attempts.");
+            }
+        }
+
+        private void UpdateWatchHistory()
+        {
+            if (string.IsNullOrEmpty(_lastStreamURL) || _mediaManager?.ActiveStream == null) return;
+            
+            long time = _mediaManager.ActiveStream.Time;
+            long length = _mediaManager.ActiveStream.Length;
+            
+            // Only track media that has been watched for at least 5 seconds
+            if (time <= 5000) return;
+            
+            // If it has reached within 5 seconds of the end, don't update it, let the End hook remove it
+            if (length > 0 && time >= length - 5000) return;
+
+            string title = !string.IsNullOrEmpty(_currentMediaTitle) && _currentMediaTitle != "Loading..." 
+                ? _currentMediaTitle 
+                : _lastStreamURL;
+
+            var entry = new MediaHistoryEntry {
+                Url = _lastStreamURL,
+                Title = title,
+                TimecodeMs = time,
+                LastPlayed = DateTime.UtcNow
+            };
+            
+            _config.WatchHistory[_lastStreamURL] = entry;
+            _config.Save();
         }
 
         /// <summary>
@@ -2134,6 +2126,18 @@ namespace XivMediaPlayer
                                     RequestKillAndRestart();
                                 }
                             }
+                            // History Top Left (0.02 - 0.08, 0.04 - 0.12)
+                            else if (uv.Y >= 0.04f && uv.Y <= 0.12f && uv.X >= 0.02f && uv.X <= 0.08f)
+                            {
+                                EnqueueFrameworkAction(() =>
+                                {
+                                    _isHistoryMenuOpen = !_isHistoryMenuOpen;
+                                    if (_isHistoryMenuOpen)
+                                    {
+                                        _historyMenuTextureManager?.UpdateHistory(_config.WatchHistory);
+                                    }
+                                });
+                            }
                             // DMCA Top Right (0.92 - 0.98, 0.04 - 0.12)
                             else if (uv.Y >= 0.04f && uv.Y <= 0.12f && uv.X >= 0.92f && uv.X <= 0.98f)
                             {
@@ -2143,6 +2147,7 @@ namespace XivMediaPlayer
                                     try {
                                         Uri uri = new Uri(url);
                                         domain = uri.Host;
+                                        _chat.Print($"[Media Player] Opening DMCA Information...");
                                     } catch { }
                                     
                                     string dmcaText = $"Content URL: {url}\n\nPlease contact {domain} to report this content.";
@@ -2150,6 +2155,31 @@ namespace XivMediaPlayer
                                     _chat.Print("[Media Player] DMCA contact info and URL copied to clipboard.");
                                 } else {
                                     _chat.PrintError("[Media Player] No active media URL to copy.");
+                                }
+                            }
+                            else if (_isHistoryMenuOpen)
+                            {
+                                // We clicked inside the TV bounds while the history menu was open.
+                                var clickedEntry = _historyMenuTextureManager?.GetItemAtUV(uv.X, uv.Y);
+                                if (clickedEntry != null)
+                                {
+                                    // Clicked a history item! Close menu and play it.
+                                    _isHistoryMenuOpen = false;
+                                    
+                                    // Same routing logic as MediaBrowserWindow
+                                    if (YtDlpManager.IsUrlSupported(clickedEntry.Url) && _ytDlpManager.IsAvailable())
+                                    {
+                                        PlayViaYtDlp(clickedEntry.Url, CurrentAudioSource, (int)clickedEntry.TimecodeMs);
+                                    }
+                                    else
+                                    {
+                                        TuneIntoStream(clickedEntry.Url, CurrentAudioSource, (int)clickedEntry.TimecodeMs);
+                                    }
+                                }
+                                else
+                                {
+                                    // Clicked outside any items, close the menu
+                                    _isHistoryMenuOpen = false;
                                 }
                             }
                         }
@@ -2167,7 +2197,12 @@ namespace XivMediaPlayer
                         lockState = -1.0f;
                     }
                     float volume = _mediaManager != null ? _mediaManager.LiveStreamVolume : 1f;
-                    _worldRenderer.Render(textureWrap, _depthCapture, cameraPos, cameraForward, cameraRight, cameraUp, fovY, aspectRatio, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, lockState, volume, _titleTextureManager?.TextureHandle ?? IntPtr.Zero, _config.LoopEnabled, _config.ShuffleEnabled, timeSeconds, showScreensaver);
+                    
+                    IntPtr srvPtr = _isHistoryMenuOpen 
+                        ? (_historyMenuTextureManager?.TextureHandle ?? IntPtr.Zero) 
+                        : (_titleTextureManager?.TextureHandle ?? IntPtr.Zero);
+
+                    _worldRenderer.Render(textureWrap, _depthCapture, cameraPos, cameraForward, cameraRight, cameraUp, fovY, aspectRatio, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, lockState, volume, srvPtr, _config.LoopEnabled, _config.ShuffleEnabled, timeSeconds, showScreensaver);
                 }
             }
 
@@ -2342,11 +2377,11 @@ namespace XivMediaPlayer
             // Route through yt-dlp if available, otherwise direct play
             if (YtDlpManager.IsUrlSupported(item.Url) && _ytDlpManager.IsAvailable())
             {
-                PlayViaYtDlp(item.Url, CurrentAudioSource, 0);
+                PlayViaYtDlp(item.Url, CurrentAudioSource, (int)item.StartTimeMs);
             }
             else
             {
-                TuneIntoStream(item.Url, CurrentAudioSource, 0);
+                TuneIntoStream(item.Url, CurrentAudioSource, (int)item.StartTimeMs);
             }
         }
 
@@ -2662,7 +2697,7 @@ namespace XivMediaPlayer
 
         public void RequestKillAndRestart()
         {
-            if (_killRestartQueued) return;
+            UpdateWatchHistory();
             _killRestartQueued = true;
             EnqueueFrameworkAction(() =>
             {
@@ -2716,6 +2751,8 @@ namespace XivMediaPlayer
             if (_disposed) return;
             _disposed = true;
 
+            UpdateWatchHistory();
+
             SaveScreenForCurrentLocation();
             SaveMediaStateForCurrentLocation();
 
@@ -2741,6 +2778,7 @@ namespace XivMediaPlayer
             _videoWindow.MarkDisposed();
             _uiCapture?.Dispose();
             _titleTextureManager?.Dispose();
+            _historyMenuTextureManager?.Dispose();
             _worldRenderer?.Dispose();
             _depthCapture?.Dispose();
             _depthPreviewWindow?.Dispose();

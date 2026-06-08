@@ -12,6 +12,14 @@ namespace XivMediaPlayer {
   }
 
   [Serializable]
+  public class MediaHistoryEntry {
+      public string Url { get; set; } = "";
+      public string Title { get; set; } = "";
+      public long TimecodeMs { get; set; } = 0;
+      public DateTime LastPlayed { get; set; } = DateTime.UtcNow;
+  }
+
+  [Serializable]
   public class Configuration : IPluginConfiguration {
     public event EventHandler OnConfigurationChanged;
 
@@ -48,6 +56,7 @@ namespace XivMediaPlayer {
       = new Dictionary<string, MediaPlayerCore.Compositing.WorldScreenTransform>();
 
     public Dictionary<string, RoomMediaState> RoomMediaStates { get; set; } = new Dictionary<string, RoomMediaState>();
+    public Dictionary<string, MediaHistoryEntry> WatchHistory { get; set; } = new Dictionary<string, MediaHistoryEntry>();
 
     public string ServerUrl { get; set; } = "http://24.77.70.65:5000";
 

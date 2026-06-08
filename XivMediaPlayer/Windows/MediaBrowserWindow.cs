@@ -17,6 +17,7 @@ namespace XivMediaPlayer.Windows {
     private string _statusMessage = "";
     private bool _isLoading;
     private List<MediaCatalogItem> _filteredItems = new List<MediaCatalogItem>();
+    private int _forceSelectProviderIndex = -1;
 
     /// <summary>
     /// Fired when the user clicks Play on a catalog item.
@@ -40,6 +41,15 @@ namespace XivMediaPlayer.Windows {
       _providers.Remove(provider);
     }
 
+    public void SelectHistoryTab() {
+      for (int i = 0; i < _providers.Count; i++) {
+        if (_providers[i].Name == "History") {
+          _forceSelectProviderIndex = i;
+          break;
+        }
+      }
+    }
+
     public override void Draw() {
       // Provider selector 
       if (_providers.Count == 0) {
@@ -52,7 +62,14 @@ namespace XivMediaPlayer.Windows {
       string[] providerNames = _providers.Select(p => p.Name).ToArray();
       if (ImGui.BeginTabBar("##ProviderTabs")) {
         for (int i = 0; i < _providers.Count; i++) {
-          if (ImGui.BeginTabItem(providerNames[i])) {
+          ImGuiTabItemFlags flags = ImGuiTabItemFlags.None;
+          if (_forceSelectProviderIndex == i) {
+            flags = ImGuiTabItemFlags.SetSelected;
+            _forceSelectProviderIndex = -1;
+          }
+          
+          bool open = true;
+          if (ImGui.BeginTabItem(providerNames[i], ref open, flags)) {
             if (_selectedProviderIndex != i) {
               _selectedProviderIndex = i;
               _currentCatalog = null;
@@ -164,6 +181,7 @@ namespace XivMediaPlayer.Windows {
       // Clickable row
       Vector2 cursorPos = ImGui.GetCursorScreenPos();
       bool clicked = ImGui.InvisibleButton("##item", new Vector2(availWidth, rowHeight));
+      ImGui.SetItemAllowOverlap();
 
       // Hover highlight
       bool hovered = ImGui.IsItemHovered();
