@@ -66,13 +66,15 @@ namespace XivMediaPlayer
         private Compositing.TitleTextureManager _titleTextureManager;
 
         private MediaManager _mediaManager;
-        internal MediaManager MediaManager => _mediaManager;
+        public MediaManager MediaManager => _mediaManager;
         private YtDlpManager _ytDlpManager;
         private Task _ytDlpInitTask;
 
         private string _lastLocationKey = "";
-        private IMediaGameObject? _playerObject;
+        private MediaGameObject? _playerObject;
         private IMediaGameObject? _lastStreamObject;
+        private MediaGameObject? _tvAudioObject;
+        private IMediaGameObject CurrentAudioSource => (_worldRenderer?.Transform.Enabled == true) ? _tvAudioObject! : _playerObject!;
         private Queue<string> _mediaQueue = new Queue<string>();
         private Stack<string> _mediaHistory = new Stack<string>();
         private float _preMuteVolume = 0.5f;
@@ -99,6 +101,7 @@ namespace XivMediaPlayer
 
         public Networking.ServerClient ServerClient { get; private set; }
         public Configuration Config => _config;
+        public YtDlpManager YtDlpManager => _ytDlpManager;
         public bool IsHousingMenuOpen => _wasHousingMenuOpen;
         public Dalamud.Plugin.Services.IObjectTable ObjectTable => _objectTable;
         public Dalamud.Plugin.Services.IPluginLog PluginLog => _pluginLog;
@@ -325,6 +328,10 @@ namespace XivMediaPlayer
 
             _playerObject?.Update();
             _playerCamera?.Update();
+            
+            if (_worldRenderer?.Transform.Enabled == true && _tvAudioObject != null) {
+                _tvAudioObject.SetPosition(_worldRenderer.Transform.Position);
+            }
 
             // Cache local player data for background threads to avoid "Not on main thread!" exceptions
             var localPlayer = _objectTable[0] as Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter;
@@ -531,6 +538,7 @@ namespace XivMediaPlayer
 
             _pluginLog.Info("[Media Player] Initializing media manager...");
             _playerObject = new MediaGameObject(localPlayer);
+            _tvAudioObject = new MediaGameObject("TV", System.Numerics.Vector3.Zero);
             _camera = CameraManager.Instance()->GetActiveCamera();
             _playerCamera = new MediaCameraObject(_camera);
             _mediaManager = new MediaManager(_playerObject, _playerCamera, _dependencyManager.DependenciesDir);
@@ -583,8 +591,8 @@ namespace XivMediaPlayer
                     {
                         if (_playerObject != null)
                         {
-                            _lastStreamObject = _playerObject;
-                            PlayViaYtDlp(splitArgs[1], _playerObject, 0);
+                            _lastStreamObject = CurrentAudioSource;
+                            PlayViaYtDlp(splitArgs[1], CurrentAudioSource, 0);
                         }
                     }
                     else
@@ -618,8 +626,8 @@ namespace XivMediaPlayer
                     {
                         if (_playerObject != null)
                         {
-                            _lastStreamObject = _playerObject;
-                            TuneIntoStream(splitArgs[1], _playerObject, 0);
+                            _lastStreamObject = CurrentAudioSource;
+                            TuneIntoStream(splitArgs[1], CurrentAudioSource, 0);
                         }
                     }
                     break;
@@ -634,22 +642,22 @@ namespace XivMediaPlayer
                             _pluginLog.Warning("[Media Player] _playerObject is null. _hasBeenInitialized=" + _hasBeenInitialized);
                             break;
                         }
-                        _lastStreamObject = _playerObject;
+                        _lastStreamObject = CurrentAudioSource;
                         /* if (url.Contains("twitch.tv")) {
-                           TuneIntoStream(url, _playerObject, false);
+                           TuneIntoStream(url, CurrentAudioSource, false);
                          } else if (url.StartsWith("rtmp")) {
-                           TuneIntoStream(url, _playerObject, true);
+                           TuneIntoStream(url, CurrentAudioSource, true);
                          } else */
                         if (YtDlpManager.IsUrlSupported(url))
                         {
                             // Invoke yt-dlp resolution
                             _chat.Print("[Media Player] Resolving URL via yt-dlp...");
-                            PlayViaYtDlp(url, _playerObject);
+                            PlayViaYtDlp(url, CurrentAudioSource);
                         }
                         else
                         {
                             // Fallback — direct URL to VLC
-                            TuneIntoStream(url, _playerObject, 0);
+                            TuneIntoStream(url, CurrentAudioSource, 0);
                         }
                     }
                     else
@@ -698,7 +706,7 @@ namespace XivMediaPlayer
                 case "listen":
                     if (!string.IsNullOrEmpty(_potentialStream) && _playerObject != null)
                     {
-                        PlayViaYtDlp(_potentialStream, _playerObject, 0);
+                        PlayViaYtDlp(_potentialStream, CurrentAudioSource, 0);
                     }
                     break;
 
@@ -766,7 +774,7 @@ namespace XivMediaPlayer
             if (_streamURLs.Length > 0)
             {
                 string playUrl = ((int)_videoWindow.FeedType < _streamURLs.Length) ? _streamURLs[(int)_videoWindow.FeedType] : _streamURLs[0];
-                _mediaManager.PlayStream(audioGameObject, playUrl, startTimeMs, httpHeaders);
+                _mediaManager.PlayStream(audioGameObject, playUrl, _config.SpatialAudioEnabled, startTimeMs, httpHeaders);
                 _lastStreamURL = cleanedURL;
                 _currentStreamer = "Stream";
                 _chat.Print(@"[Media Player] Playing stream!" +
@@ -882,7 +890,7 @@ namespace XivMediaPlayer
                 _streamURLs = new string[] { url };
                 _videoWindow.IsOpen = _config.DefaultVideoOpen == 0;
 
-                _mediaManager.PlayStream(audioGameObject, url, startTimeMs, null);
+                _mediaManager.PlayStream(audioGameObject, url, _config.SpatialAudioEnabled, startTimeMs, null);
 
                 _currentMediaDurationMs = null;
                 _currentStreamer = "Direct Stream";
@@ -1041,7 +1049,7 @@ namespace XivMediaPlayer
                         _streamURLs = new string[] { resolvedStreamUrl };
                         _videoWindow.IsOpen = _config.DefaultVideoOpen == 0;
 
-                        _mediaManager.PlayStream(audioGameObject, resolvedStreamUrl, startTimeMs, resolvedHeaders);
+                        _mediaManager.PlayStream(audioGameObject, resolvedStreamUrl, _config.SpatialAudioEnabled, startTimeMs, resolvedHeaders);
                         _lastStreamURL = url;
                         _currentMediaDurationMs = resolvedDurationMs;
                         _currentStreamer = !string.IsNullOrEmpty(uploader) ? uploader : title;
@@ -1123,7 +1131,7 @@ namespace XivMediaPlayer
                 if (_config.LoopEnabled && !string.IsNullOrEmpty(_lastStreamURL) && _playerObject != null)
                 {
                     _chat.Print("[Media Player] Looping current track...");
-                    PlayViaYtDlp(_lastStreamURL, _playerObject, 0);
+                    PlayViaYtDlp(_lastStreamURL, CurrentAudioSource, 0);
                     return;
                 }
 
@@ -1151,7 +1159,7 @@ namespace XivMediaPlayer
                     }
 
                     _chat.Print($"[Media Player] Playing Next in Queue: {nextUrl}");
-                    PlayViaYtDlp(nextUrl, _playerObject);
+                    PlayViaYtDlp(nextUrl, CurrentAudioSource);
                 }
             });
         }
@@ -1206,10 +1214,10 @@ namespace XivMediaPlayer
                         {
                             if (_playerObject != null)
                             {
-                                var audioGameObject = _playerObject;
+                                var audioGameObject = CurrentAudioSource;
                                 if (_mediaManager.IsAllowedToStartStream(audioGameObject))
                                 {
-                                    _lastStreamObject = _playerObject;
+                                    _lastStreamObject = CurrentAudioSource;
                                     PlayViaYtDlp(value
                                       .Trim('(').Trim(')')
                                       .Trim('[').Trim(']')
@@ -1400,8 +1408,8 @@ namespace XivMediaPlayer
                 if (!string.IsNullOrEmpty(state.CurrentUrl) && _playerObject != null)
                 {
                     _chat.Print($"[Media Player] Resuming playback in this room...");
-                    _lastStreamObject = _playerObject;
-                    PlayViaYtDlp(state.CurrentUrl, _playerObject, (int)state.TimecodeMs, isAutoSync: true);
+                    _lastStreamObject = CurrentAudioSource;
+                    PlayViaYtDlp(state.CurrentUrl, CurrentAudioSource, (int)state.TimecodeMs, isAutoSync: true);
                 }
             }
             else
@@ -1577,7 +1585,7 @@ namespace XivMediaPlayer
                     {
                         // Starts the stream. If sync.IsPlaying is false, we should pause it immediately after it loads...
                         // But yt-dlp might take a while, so we just let it start and the next poll will pause it.
-                        PlayViaYtDlp(state.CurrentUrl, _playerObject, (int)targetTimeMs, isAutoSync: true);
+                        PlayViaYtDlp(state.CurrentUrl, CurrentAudioSource, (int)targetTimeMs, isAutoSync: true);
                     }
                 });
             }
@@ -2122,7 +2130,7 @@ namespace XivMediaPlayer
                                     if (!string.IsNullOrEmpty(clip) && _playerObject != null)
                                     {
                                         _chat.Print("[Media Player] Loading URL from clipboard...");
-                                        PlayViaYtDlp(clip, _playerObject);
+                                        PlayViaYtDlp(clip, CurrentAudioSource);
                                     }
                                 }
                                 // Queue (0.90 - 0.94)
@@ -2134,7 +2142,7 @@ namespace XivMediaPlayer
                                         _mediaQueue.Enqueue(clip);
                                         _chat.Print($"[Media Player] Queued ({_mediaQueue.Count}): {clip}");
                                         if (activeStream == null || activeStream.PlaybackState == NAudio.Wave.PlaybackState.Stopped)
-                                            if (_playerObject != null) PlayViaYtDlp(_mediaQueue.Dequeue(), _playerObject);
+                                            if (_playerObject != null) PlayViaYtDlp(_mediaQueue.Dequeue(), CurrentAudioSource);
                                         else _ = PushMediaToServerAsync(false);
                                     }
                                 }
@@ -2347,16 +2355,16 @@ namespace XivMediaPlayer
         {
             if (_disposed || _playerObject == null) return;
 
-            _lastStreamObject = _playerObject;
+            _lastStreamObject = CurrentAudioSource;
 
             // Route through yt-dlp if available, otherwise direct play
             if (YtDlpManager.IsUrlSupported(item.Url) && _ytDlpManager.IsAvailable())
             {
-                PlayViaYtDlp(item.Url, _playerObject, 0);
+                PlayViaYtDlp(item.Url, CurrentAudioSource, 0);
             }
             else
             {
-                TuneIntoStream(item.Url, _playerObject, 0);
+                TuneIntoStream(item.Url, CurrentAudioSource, 0);
             }
         }
 
@@ -2579,7 +2587,7 @@ namespace XivMediaPlayer
             }
 
             _chat.Print($"[Media Player] Playing next: {nextUrl}");
-            PlayViaYtDlp(nextUrl, _playerObject);
+            PlayViaYtDlp(nextUrl, CurrentAudioSource);
         }
 
         /// <summary>
@@ -2600,7 +2608,7 @@ namespace XivMediaPlayer
 
             string prevUrl = _mediaHistory.Pop();
             _chat.Print($"[Media Player] Playing previous: {prevUrl}");
-            PlayViaYtDlp(prevUrl, _playerObject);
+            PlayViaYtDlp(prevUrl, CurrentAudioSource);
         }
 
         /// <summary>
@@ -2658,7 +2666,7 @@ namespace XivMediaPlayer
 
             _chat.Print("[Media Player] Refreshing media...");
             _mediaManager?.StopStream();
-            PlayViaYtDlp(_lastStreamURL, _playerObject, currentTimeMs);
+            PlayViaYtDlp(_lastStreamURL, CurrentAudioSource, currentTimeMs);
         }
 
         /// <summary>
@@ -2711,7 +2719,7 @@ namespace XivMediaPlayer
             if (!string.IsNullOrEmpty(savedUrl) && _playerObject != null)
             {
                 _chat.Print("[Media Player] Resuming playback...");
-                PlayViaYtDlp(savedUrl, _playerObject, savedTimeMs);
+                PlayViaYtDlp(savedUrl, CurrentAudioSource, savedTimeMs);
             }
             else
             {
@@ -2764,3 +2772,5 @@ namespace XivMediaPlayer
         #endregion
     }
 }
+
+

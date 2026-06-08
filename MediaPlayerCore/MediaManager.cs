@@ -45,12 +45,12 @@ namespace MediaPlayerCore {
       _updateLoop = Task.Run(() => Update());
     }
 
-    public void PlayStream(IMediaGameObject playerObject, string audioPath, int startTimeMs = 0, Dictionary<string, string>? httpHeaders = null) {
+    public void PlayStream(IMediaGameObject playerObject, string audioPath, bool spatialAllowed, int startTimeMs = 0, Dictionary<string, string>? httpHeaders = null) {
       Task.Run(() => {
         try {
           OnNewMediaTriggered?.Invoke(this, EventArgs.Empty);
           if (!string.IsNullOrEmpty(audioPath)) {
-            ConfigureStream(playerObject, audioPath, startTimeMs, httpHeaders);
+            ConfigureStream(playerObject, audioPath, spatialAllowed, startTimeMs, httpHeaders);
           }
         } catch (Exception e) {
           OnErrorReceived?.Invoke(this, new MediaError() { Exception = e });
@@ -107,14 +107,14 @@ namespace MediaPlayerCore {
       return false;
     }
 
-    public void ConfigureStream(IMediaGameObject playerObject, string audioPath, int startTimeMs, Dictionary<string, string>? httpHeaders = null) {
+    public void ConfigureStream(IMediaGameObject playerObject, string audioPath, bool spatialAllowed, int startTimeMs, Dictionary<string, string>? httpHeaders = null) {
       if (playerObject != null) {
         try {
           MediaObject stream;
           bool isNew = false;
           lock (_playbackStreams) {
               if (!_playbackStreams.TryGetValue(playerObject.Name, out stream)) {
-                  stream = new MediaObject(this, playerObject, _camera, SoundType.Livestream, audioPath, _libVLCPath, false);
+                  stream = new MediaObject(this, playerObject, _camera, SoundType.Livestream, audioPath, _libVLCPath, spatialAllowed);
                   _playbackStreams[playerObject.Name] = stream;
                   isNew = true;
               }
@@ -154,22 +154,24 @@ namespace MediaPlayerCore {
             if (sounds.ContainsKey(characterObjectName)) {
               try {
                 lock (sounds[characterObjectName]) {
-                  if (sounds[characterObjectName].SpatialAllowed) {
-                    if (sounds[characterObjectName].CharacterObject != null) {
-                      Vector3 dir = new Vector3();
-                      if (sounds[characterObjectName].CharacterObject.Position.Length() > 0) {
-                        dir = sounds[characterObjectName].CharacterObject.Position - GetListeningPosition();
-                      } else {
-                        dir = _mainPlayer.Position - GetListeningPosition();
+                    if (sounds[characterObjectName].SpatialAllowed) {
+                      if (sounds[characterObjectName].CharacterObject != null) {
+                        Vector3 dir = new Vector3();
+                        if (sounds[characterObjectName].CharacterObject.Position.Length() > 0) {
+                          dir = Vector3.Normalize(sounds[characterObjectName].CharacterObject.Position - GetListeningPosition());
+                        } else {
+                          dir = Vector3.Normalize(_mainPlayer.Position - GetListeningPosition());
+                        }
+                        float direction = AngleDir(_camera.Forward, dir, _camera.Top);
+                        try {
+                          sounds[characterObjectName].Pan = direction;
+                          sounds[characterObjectName].Volume = CalculateObjectVolume(characterObjectName, sounds[characterObjectName]);
+                        } catch (Exception e) { OnErrorReceived?.Invoke(this, new MediaError() { Exception = e }); }
                       }
-                      float direction = AngleDir(_camera.Forward, dir, _camera.Top);
-                      try {
-                        sounds[characterObjectName].Volume = CalculateObjectVolume(characterObjectName, sounds[characterObjectName]);
-                      } catch (Exception e) { OnErrorReceived?.Invoke(this, new MediaError() { Exception = e }); }
+                    } else {
+                      sounds[characterObjectName].Pan = 0f;
+                      sounds[characterObjectName].Volume = _livestreamVolume;
                     }
-                  } else {
-                    sounds[characterObjectName].Volume = _livestreamVolume;
-                  }
                 }
               } catch (Exception e) { OnErrorReceived?.Invoke(this, new MediaError() { Exception = e }); }
             }
@@ -186,7 +188,14 @@ namespace MediaPlayerCore {
       float maxDistance = 100;
       float volume = _livestreamVolume;
       float distance = Vector3.Distance(GetListeningPosition(), mediaObject.CharacterObject.Position);
-      return Math.Clamp(volume * ((maxDistance - distance) / maxDistance), 0f, 1f);
+      
+      // Calculate linear attenuation
+      float attenuation = Math.Clamp((maxDistance - distance) / maxDistance, 0f, 1f);
+      
+      // Apply an exponential curve to make the volume drop off more naturally over distance
+      float exponentialAttenuation = (float)Math.Pow(attenuation, 2.0);
+      
+      return Math.Clamp(volume * exponentialAttenuation, 0f, 1f);
     }
 
     public float AngleDir(Vector3 fwd, Vector3 targetDir, Vector3 up) {

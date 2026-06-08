@@ -42,6 +42,10 @@ namespace XivMediaPlayer.GameObjects {
       Update();
     }
 
+    public void SetPosition(Vector3 position) {
+      _position = position;
+    }
+
     public void Update() {
       if (_gameObject != null) {
         try {

@@ -1,5 +1,7 @@
 using LibVLCSharp.Shared;
 using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
+using NAudio.CoreAudioApi;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Advanced;
 using SixLabors.ImageSharp.PixelFormats;
@@ -21,6 +23,23 @@ namespace MediaPlayerCore {
     private MemoryMappedFile _vlcMappedFile;
     private MemoryMappedViewAccessor _vlcMappedViewAccessor;
     private IntPtr _vlcBuffer = IntPtr.Zero;
+
+    private IWavePlayer _waveOut;
+    private WaveFormat _waveFormat;
+    private BufferedWaveProvider _bufferedWaveProvider;
+    private PanningSampleProvider _panningProvider;
+    private VolumeSampleProvider _volumeProvider;
+    private bool _isPlayingAudio = false;
+
+    public float Pan {
+      get => _panningProvider?.Pan ?? 0;
+      set {
+        if (_panningProvider != null) {
+          _panningProvider.Pan = Math.Clamp(value, -1f, 1f);
+        }
+      }
+    }
+
     public event EventHandler<MediaError> OnErrorReceived;
     public event EventHandler<string> PlaybackStopped;
     public event EventHandler<string> PlaybackFinished;
@@ -109,6 +128,9 @@ namespace MediaPlayerCore {
             if (newValue != _vlcPlayer.Volume) {
               _baseVolume = newValue;
               _vlcPlayer.Volume = (int)((float)newValue * volumePercentage);
+              if (_volumeProvider != null) {
+                  _volumeProvider.Volume = (float)newValue / 100f * volumePercentage;
+              }
             }
           } catch (Exception e) { OnErrorReceived?.Invoke(this, new MediaError() { Exception = e }); }
         }
@@ -231,7 +253,26 @@ namespace MediaPlayerCore {
                 }
 
                 _vlcPlayer = new MediaPlayer(media);
-                _vlcPlayer.SetAudioOutput("directsound");
+                
+                if (_spatialAllowed) {
+                    _vlcPlayer.SetAudioFormat("s16l", 48000, 1);
+                    _vlcPlayer.SetAudioCallbacks(PlayAudio, PauseAudio, ResumeAudio, FlushAudio, DrainAudio);
+                    
+                    _waveFormat = new WaveFormat(48000, 16, 1);
+                    _bufferedWaveProvider = new BufferedWaveProvider(_waveFormat);
+                    _bufferedWaveProvider.BufferDuration = TimeSpan.FromSeconds(10);
+                    _bufferedWaveProvider.DiscardOnBufferOverflow = true;
+                    
+                    _panningProvider = new PanningSampleProvider(_bufferedWaveProvider.ToSampleProvider());
+                    _panningProvider.Pan = 0;
+                    
+                    _volumeProvider = new VolumeSampleProvider(_panningProvider);
+                    _volumeProvider.Volume = _baseVolume / 100f; // Scale 0-100 to 0-1
+                    
+                    _waveOut = new WasapiOut(AudioClientShareMode.Shared, 150);
+                    _waveOut.Init(_volumeProvider);
+                }
+
                 _vlcPlayer.Stopped += delegate {
                   lock (_parent.FrameLock) {
                     _parent.LastFrame = Array.Empty<byte>();
@@ -388,6 +429,43 @@ namespace MediaPlayerCore {
       // No-op for VLC-only path; volume is managed through the VLC player directly.
     }
 
+      private void DrainAudio(IntPtr data) {
+      }
+
+      private void FlushAudio(IntPtr data, long pts) {
+          // Do not clear the buffer on flush, as VLC may flush frequently for minor sync corrections, causing stutters.
+          // _bufferedWaveProvider?.ClearBuffer();
+      }
+
+      private void ResumeAudio(IntPtr data, long pts) {
+          _waveOut?.Play();
+      }
+
+      private void PauseAudio(IntPtr data, long pts) {
+          _waveOut?.Pause();
+      }
+
+        private void PlayAudio(IntPtr data, IntPtr samples, uint count, long pts) {
+            if (_bufferedWaveProvider != null && _waveFormat != null) {
+                int bytes = (int)count * _waveFormat.BlockAlign;
+                byte[] buffer = new byte[bytes];
+                Marshal.Copy(samples, buffer, 0, bytes);
+                _bufferedWaveProvider.AddSamples(buffer, 0, bytes);
+
+                if (_waveOut != null) {
+                    if (_waveOut.PlaybackState != PlaybackState.Playing) {
+                        // Wait until we have a healthy 300ms cushion before starting audio playback
+                        if (_bufferedWaveProvider.BufferedDuration.TotalMilliseconds > 300) {
+                            _waveOut.Play();
+                        }
+                    } else if (_bufferedWaveProvider.BufferedDuration.TotalMilliseconds < 50) {
+                        // We are starving! The stream lagged. Pause to rebuild the buffer.
+                        _waveOut.Pause();
+                    }
+                }
+            }
+        }
+
       private void Display(IntPtr opaque, IntPtr picture) {
         lock (_disposeLock) {
             if (_disposed) return;
@@ -476,6 +554,12 @@ namespace MediaPlayerCore {
               _vlcMappedFile = null;
           }
           _vlcBuffer = IntPtr.Zero;
+
+          if (_waveOut != null) {
+              _waveOut.Stop();
+              _waveOut.Dispose();
+              _waveOut = null;
+          }
       }
     }
   }

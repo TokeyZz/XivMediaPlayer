@@ -88,6 +88,18 @@ namespace XivMediaPlayer.Windows {
       ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f),
         "Blocks unverified URLs on outdoor screens to prevent abuse.");
 
+      ImGui.Separator();
+
+      bool spatialAudio = _plugin.Config.SpatialAudioEnabled;
+      if (ImGui.Checkbox("Enable 3D Spatial Audio (Requires Restart)", ref spatialAudio)) {
+        _plugin.Config.SpatialAudioEnabled = spatialAudio;
+        _plugin.Config.Save();
+      }
+      ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f),
+        "Dynamically pans audio to simulate physical TV locations. If you experience A/V sync issues, disable this.");
+
+      ImGui.Separator();
+      
       bool showGrid = _plugin.Config.ShowOutdoorGridDebug;
       if (ImGui.Checkbox("Show Outdoor Grid Overlay (Debug)", ref showGrid)) {
         _plugin.Config.ShowOutdoorGridDebug = showGrid;
