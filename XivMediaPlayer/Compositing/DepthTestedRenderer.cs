@@ -413,41 +413,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
       }
   }
 
-  // Check if this pixel is inside any UI bounding box
-  bool insideUI = false;
-  for (int i = 0; i < UIRectCount; i++) {
-      float4 r = UIRects[i];
-      if (pixelPos.x >= r.x && pixelPos.x <= r.x + r.z &&
-          pixelPos.y >= r.y && pixelPos.y <= r.y + r.w) {
-          insideUI = true;
-          break;
-      }
-  }
-  
-  if (insideUI) {
-      float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
-      float4 bbColor = BackBufferTexture.Sample(VideoSampler, screenUV);
-      
-      if (color.a > 0.5) {
-          // The fundamental problem: FFXIV's semi-transparent UI background plates (like the pill shape) 
-          // are baked into the backbuffer along with the game scene (rocks, wood).
-          // If we add them, we add the rocks. If we subtract the TV, we create a black hole.
-          
-          // 1. Extract only the solid icons and completely destroy the muddy background plates.
-          // Background plates are usually alpha ~0.4-0.6. This curve drops them to exactly 0.0.
-          float crispAlpha = smoothstep(0.65, 0.90, bbAlpha);
-          
-          // 2. Synthesize a clean, rock-free drop shadow by darkening the TV directly!
-          // We fade this shadow out where the crisp icon takes over to prevent dark fringes.
-          float shadow = bbAlpha * 0.4 * saturate(1.0 - crispAlpha);
-          float3 tvDarkened = color.rgb * saturate(1.0 - shadow);
-          
-          // 3. Composite!
-          // This perfectly preserves energy (tv + crisp = 1.0), meaning absolutely zero black holes,
-          // while rendering beautiful floating icons over a subtly shadowed TV.
-          color.rgb = tvDarkened * saturate(1.0 - crispAlpha) + bbColor.rgb * crispAlpha;
-      }
-  }
+  // The UI compositing block was moved to the bottom of the shader to draw OVER the media controls.
   
   // Media Controls UI overlay
   if (isInside && !occluded && HoverUV.x >= 0.0 && HoverUV.y >= 0.0) {
@@ -652,6 +618,28 @@ float4 PS(VS_OUT input) : SV_TARGET {
          }
       }
     }
+  }
+  
+  // Check if this pixel is inside any UI bounding box
+  bool insideUI = false;
+  for (int i = 0; i < UIRectCount; i++) {
+      float4 r = UIRects[i];
+      if (pixelPos.x >= r.x && pixelPos.x <= r.x + r.z &&
+          pixelPos.y >= r.y && pixelPos.y <= r.y + r.w) {
+          insideUI = true;
+          break;
+      }
+  }
+  
+  if (insideUI) {
+      float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
+      float4 bbColor = BackBufferTexture.Sample(VideoSampler, screenUV);
+      
+      if (color.a > 0.5) {
+          // As per the user's explicit request: stop trying to be clever and cut away
+          // the UI. Just purely blend the backbuffer over the TV using its native alpha mask.
+          color.rgb = color.rgb * saturate(1.0 - bbAlpha) + bbColor.rgb * bbAlpha;
+      }
   }
   
   return color;
