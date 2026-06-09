@@ -219,9 +219,11 @@ namespace MediaPlayerCore {
 
               // Hook VLC's internal log to catch errors
               libVLC.Log += (s, e) => {
-                if (e.Level >= LogLevel.Warning) {
+                if (e.Level >= LogLevel.Error) {
                   Debug.WriteLine($"[VLC-{e.Level}] {e.Module}: {e.Message}");
                   OnErrorReceived?.Invoke(this, new MediaError() { Exception = new Exception($"VLC [{e.Level}] {e.Module}: {e.Message}") });
+                } else if (e.Level >= LogLevel.Warning) {
+                  Debug.WriteLine($"[VLC-{e.Level}] {e.Module}: {e.Message}");
                 }
               };
 
