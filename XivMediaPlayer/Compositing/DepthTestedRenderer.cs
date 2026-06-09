@@ -409,11 +409,15 @@ float4 PS(VS_OUT input) : SV_TARGET {
           
           if (HasBackBuffer > 0.5) {
               float3 sceneColor = BackBufferTexture.Sample(VideoSampler, screenUV).rgb;
+              float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
               
               // Color Dodge Blend: Final = Scene / (1.0 - Light)
               // Screen blending raised the black floor, causing the grey fog over the shadows.
               // Color Dodge preserves pure black shadows (0 / X = 0) while powerfully illuminating the textures!
-              float3 finalColor = saturate(sceneColor / max(0.001, 1.0 - light));
+              float3 glowedScene = saturate(sceneColor / max(0.001, 1.0 - light));
+              
+              // Protect the UI from being overexposed by blending the original scene back on top based on UI alpha
+              float3 finalColor = lerp(glowedScene, sceneColor, bbAlpha);
               
               color = float4(finalColor, 1.0); // Output opaque because we already blended the scene!
           } else {
@@ -643,25 +647,35 @@ float4 PS(VS_OUT input) : SV_TARGET {
           int compIdx = i % 4;
           float typeVal = UIRectTypes[vecIdx][compIdx];
           
-          if (typeVal > 1.5) {
-              rectType = 2; // ActionDetail takes highest precedence
+          if (typeVal > 2.5) {
+              rectType = 3; // MjlHud takes highest precedence
+          } else if (typeVal > 1.5 && rectType < 3) {
+              rectType = 2; // ActionDetail
           } else if (typeVal > 0.5 && rectType < 2) {
               rectType = 1; // MJI
           }
       }
   }
   
-  if (insideUI) {
+  if (insideUI && isInside && !occluded) {
       float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
       float4 bbColor = BackBufferTexture.Sample(VideoSampler, screenUV);
       
       if (color.a > 0.5) {
-          if (rectType == 2) {
+          if (rectType == 3) {
+              // MjlHud: threshold 233, backdrop #ACA393
+              float threshold = 233.0 / 255.0;
+              float isPureWhite = smoothstep(threshold - 0.02, 1.0, bbAlpha);
+              float3 shadowColor = float3(172.0 / 255.0, 163.0 / 255.0, 147.0 / 255.0); // #ACA393
+              float3 targetColor = lerp(shadowColor, bbColor.rgb, isPureWhite);
+              color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
+          } else if (rectType == 2) {
               // ActionDetail: ultra aggressive threshold, only 255 cuts the TV
               float threshold = 254.0 / 255.0;
               float isPureWhite = smoothstep(threshold - 0.02, 1.0, bbAlpha);
-              float3 blendedBlack = color.rgb * saturate(1.0 - bbAlpha);
-              color.rgb = blendedBlack + (bbColor.rgb * bbAlpha * isPureWhite);
+              float3 shadowColor = float3(48.0 / 255.0, 34.0 / 255.0, 21.0 / 255.0); // #302215
+              float3 targetColor = lerp(shadowColor, bbColor.rgb, isPureWhite);
+              color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
           } else if (rectType == 1) {
               // MJI: threshold 152
               float threshold = 152.0 / 255.0;
@@ -858,11 +872,11 @@ float4 PS(VS_OUT input) : SV_TARGET {
             uiConsts.UIRects[i * 4 + 2] = r.W;
             uiConsts.UIRects[i * 4 + 3] = r.H;
             
-            // Flag addons so the shader treats them differently: 1 = MJI, 2 = _ActionContents, 0 = Standard
+            // Flag addons so the shader treats them differently: 2 = _ActionContents, 3 = MJI (Island Sanctuary HUD), 0 = Standard
             if (r.Name != null && r.Name.StartsWith("_ActionContents")) {
                 uiConsts.UIRectTypes[i] = 2.0f;
             } else if (r.Name != null && r.Name.StartsWith("MJI")) {
-                uiConsts.UIRectTypes[i] = 1.0f;
+                uiConsts.UIRectTypes[i] = 3.0f;
             } else {
                 uiConsts.UIRectTypes[i] = 0.0f;
             }
