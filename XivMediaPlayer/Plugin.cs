@@ -62,6 +62,9 @@ namespace XivMediaPlayer
         internal WorldVideoRenderer WorldRenderer => _worldRenderer;
         private DepthPreviewWindow _depthPreviewWindow;
 
+        private Windows.EmulationWindow _emulationWindow;
+        private Networking.EmulationClient? _emulationClient;
+
         private string _currentMediaOwnerId = string.Empty;
         private bool _isLocalDj = false;
         private DepthBufferCapture _depthCapture;
@@ -239,6 +242,7 @@ namespace XivMediaPlayer
             // Create windows
             _windowSystem = new WindowSystem("XivMediaPlayer");
             _videoWindow = new VideoWindow(this, _pluginInterface, _textureProvider, _pluginLog);
+            _emulationWindow = new Windows.EmulationWindow(_videoWindow);
             _settingsWindow = new SettingsWindow(this, FixWindowsVolume);
             _browserWindow = new MediaBrowserWindow();
             _screenSettingsWindow = new ScreenSettingsWindow(
@@ -278,6 +282,7 @@ namespace XivMediaPlayer
             _browserWindow.OnPlayRequested += OnBrowserPlayRequested;
 
             _windowSystem.AddWindow(_videoWindow);
+            _windowSystem.AddWindow(_emulationWindow);
             _windowSystem.AddWindow(_settingsWindow);
             _windowSystem.AddWindow(_browserWindow);
             _windowSystem.AddWindow(_screenSettingsWindow);
@@ -301,7 +306,8 @@ namespace XivMediaPlayer
                 " /media play <url> — Play a media URL\n" +
                 " /media stop — Stop current stream\n" +
                 " /media video — Toggle video window\n" +
-                " /media browse — Open media browser",
+                " /media browse — Open media browser\n" +
+                " /media emulate <ip> <session> — Connect to emulation server",
                 ShowInHelp = true,
             });
 
@@ -759,6 +765,18 @@ namespace XivMediaPlayer
                     _browserWindow.IsOpen = true;
                     break;
 
+                case "emulate":
+                    if (splitArgs.Length >= 3)
+                    {
+                        string ip = splitArgs[1];
+                        string session = splitArgs[2];
+                        _ = ConnectEmulationAsync(ip, session);
+                    }
+                    else
+                    {
+                        _chat.PrintError("[Media Player] Usage: /media emulate <ip> <session>");
+                    }
+                    break;
 
                 case "listen":
                     if (!string.IsNullOrEmpty(_potentialStream) && _playerObject != null)
@@ -800,6 +818,7 @@ namespace XivMediaPlayer
                       " /media stop — Stop current stream\n" +
                       " /media video — Toggle video window\n" +
                       " /media browse — Open media browser\n" +
+                      " /media emulate <ip> <session> — Connect to emulation server\n" +
                       " /media screen [place|move|rotate|scale|reset|save] — 3D screen\n" +
                       " /media listen — Tune into a shared stream\n" +
                       " /media ytdlp-update — Update yt-dlp\n" +
@@ -810,6 +829,24 @@ namespace XivMediaPlayer
                     _settingsWindow.Toggle();
                     break;
             }
+        }
+
+        private async Task ConnectEmulationAsync(string ip, string session)
+        {
+            _chat.Print($"[Media Player] Connecting to emulation server at {ip}...");
+            string rtsp = await Networking.EmulationClient.GetRtspUrlAsync(ip, session);
+            if (string.IsNullOrEmpty(rtsp))
+            {
+                _chat.PrintError("[Media Player] Failed to retrieve stream info from emulation server.");
+                return;
+            }
+
+            _emulationClient?.Dispose();
+            _emulationClient = new Networking.EmulationClient(ip, session);
+            _emulationWindow.EmulationClient = _emulationClient;
+            _emulationWindow.IsOpen = true;
+
+            TuneIntoStream(rtsp, CurrentAudioSource, 0);
         }
 
         #endregion
