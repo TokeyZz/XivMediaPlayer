@@ -73,9 +73,12 @@ namespace MediaPlayerCore {
     private bool _isDisposing;
     private readonly object _disposeLock = new object();
 
+    private bool _audioOnly;
+
     public MediaObject(MediaManager parent, IMediaGameObject playerObject, IMediaGameObject camera,
-      SoundType soundType, string soundPath, string libVLCPath, bool spatialAllowed) {
+      SoundType soundType, string soundPath, string libVLCPath, bool spatialAllowed, bool audioOnly = false) {
       _playerObject = playerObject;
+      _audioOnly = audioOnly;
       _soundPath = soundPath;
       _camera = camera;
       _libVLCPath = libVLCPath;
@@ -211,8 +214,7 @@ namespace MediaPlayerCore {
 
               var vlcArgs = new List<string> {
                 "--vout=none", 
-                "--http-reconnect",
-                "--network-caching=2000"
+                "--http-reconnect"
               };
 
               libVLC = new LibVLC(vlcArgs.ToArray());
@@ -227,8 +229,25 @@ namespace MediaPlayerCore {
                 }
               };
 
-              var media = new Media(libVLC, mediaPath, mediaPath.StartsWith("http") || mediaPath.StartsWith("rtmp")
+              var media = new Media(libVLC, mediaPath, mediaPath.StartsWith("http") || mediaPath.StartsWith("rtmp") || mediaPath.StartsWith("rtsp")
                 ? FromType.FromLocation : FromType.FromPath);
+              
+              if (_audioOnly) {
+                  media.AddOption(":no-video");
+              }
+
+              if (mediaPath.StartsWith("rtsp")) {
+                  if (_audioOnly) {
+                      media.AddOption(":network-caching=300");
+                  } else {
+                      media.AddOption(":network-caching=30");
+                      media.AddOption(":clock-jitter=0");
+                      media.AddOption(":drop-late-frames");
+                      media.AddOption(":skip-frames");
+                  }
+              } else {
+                  media.AddOption(":network-caching=2000");
+              }
               
               if (startTimeMs > 0) {
                   media.AddOption($":start-time={startTimeMs / 1000.0}");
@@ -245,7 +264,7 @@ namespace MediaPlayerCore {
               }
 
               Debug.WriteLine("[MediaObject] Parsing media...");
-              await media.Parse(mediaPath.StartsWith("http") || mediaPath.StartsWith("rtmp")
+              await media.Parse(mediaPath.StartsWith("http") || mediaPath.StartsWith("rtmp") || mediaPath.StartsWith("rtsp")
                 ? MediaParseOptions.ParseNetwork : MediaParseOptions.ParseLocal);
               Debug.WriteLine($"[MediaObject] Media parsed. Duration: {media.Duration}ms");
 
@@ -291,7 +310,7 @@ namespace MediaPlayerCore {
                   Debug.WriteLine("[MediaObject] VLC EncounteredError event fired!");
                   OnErrorReceived?.Invoke(this, new MediaError() { Exception = new Exception("VLC player encountered an error during playback.") });
                 };
-                if (mediaPath.StartsWith("http") || mediaPath.StartsWith("rtmp") || mediaPath.EndsWith(".mp4") || mediaPath.EndsWith(".avi")) {
+                if (!_audioOnly && (mediaPath.StartsWith("http") || mediaPath.StartsWith("rtmp") || mediaPath.StartsWith("rtsp") || mediaPath.EndsWith(".mp4") || mediaPath.EndsWith(".avi"))) {
                     _vlcPlayer.SetVideoFormatCallbacks(VideoFormatSetup, null);
                     _vlcPlayer.SetVideoCallbacks(Lock, null, Display);
                 }
@@ -342,8 +361,21 @@ namespace MediaPlayerCore {
       Task.Run(async delegate {
         try {
           if (_vlcPlayer != null) {
-            var media = new Media(libVLC, soundPath, soundPath.StartsWith("http") || soundPath.StartsWith("rtmp")
+            var media = new Media(libVLC, soundPath, soundPath.StartsWith("http") || soundPath.StartsWith("rtmp") || soundPath.StartsWith("rtsp")
                      ? FromType.FromLocation : FromType.FromPath);
+            
+            if (_audioOnly) {
+                media.AddOption(":no-video");
+            }
+
+            if (soundPath.StartsWith("rtsp")) {
+                media.AddOption(":network-caching=30");
+                media.AddOption(":clock-jitter=0");
+                media.AddOption(":drop-late-frames");
+                media.AddOption(":skip-frames");
+            } else {
+                media.AddOption(":network-caching=2000");
+            }
             
             if (startTimeMs > 0) {
                 media.AddOption($":start-time={startTimeMs / 1000.0}");
@@ -360,7 +392,7 @@ namespace MediaPlayerCore {
                 media.AddOption($":http-referrer={mediaReferer}");
             }
 
-            await media.Parse(soundPath.StartsWith("http") || soundPath.StartsWith("rtmp")
+            await media.Parse(soundPath.StartsWith("http") || soundPath.StartsWith("rtmp") || soundPath.StartsWith("rtsp")
               ? MediaParseOptions.ParseNetwork : MediaParseOptions.ParseLocal);
             
             MediaPlayer playerToStop = null;

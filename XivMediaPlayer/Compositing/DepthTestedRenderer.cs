@@ -402,7 +402,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
           float alpha = saturate(depthMask * luminance * 3.5); 
           
           // Clamp intensity ceiling to prevent extreme highlights overexposure.
-          alpha = clamp(alpha, 0.0, 0.75); 
+          alpha = clamp(alpha, 0.0, 0.45); 
           
           // Compute additive backlight intensity.
           float3 light = prominentColor * alpha;
@@ -429,7 +429,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
   // The UI compositing block was moved to the bottom of the shader to draw OVER the media controls.
   
   // Media Controls UI overlay
-  if (isInside && !occluded && HoverUV.x >= 0.0 && HoverUV.y >= 0.0) {
+  if (isInside && !occluded && HoverUV.x >= 0.0 && HoverUV.y >= 0.0 && IsLockedTV >= 0.0) {
     // History Icon Top Left (0.02 - 0.08, 0.04 - 0.12)
     if (uv.x > 0.02 && uv.x < 0.08 && uv.y > 0.04 && uv.y < 0.12) {
        color.rgb = lerp(color.rgb, float3(0.05, 0.05, 0.05), 0.7);
