@@ -133,6 +133,7 @@ namespace XivMediaPlayer
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
 
+        private IDisposable _cefBrowserHandle;
         private Stopwatch _streamSetCooldown = new Stopwatch();
         private Stopwatch _screensaverTimer = new Stopwatch();
 
@@ -1045,6 +1046,7 @@ namespace XivMediaPlayer
                         {
                             streamUrl = cefResult.Url;
                             metadata = new MediaPlayerCore.YtDlp.YtDlpMetadata { HttpHeaders = cefResult.Headers };
+                            _cefBrowserHandle = cefResult.BrowserHandle;
 
                             if (!_isLocalDj && url != streamUrl && startTimeMs < 5000)
                             {
@@ -1211,6 +1213,9 @@ namespace XivMediaPlayer
             _currentStreamer = "";
             _currentMediaTitle = "";
             _videoWindow.IsOpen = false;
+            
+            _cefBrowserHandle?.Dispose();
+            _cefBrowserHandle = null;
 
             bool wasPlaying = _streamWasPlaying;
             _streamWasPlaying = false;
@@ -2859,6 +2864,8 @@ namespace XivMediaPlayer
             // Tear down
             _mediaManager?.Dispose();
             _mediaManager = null;
+            _cefBrowserHandle?.Dispose();
+            _cefBrowserHandle = null;
             _videoWindow.MediaManager = null;
 
             // Reinitialize

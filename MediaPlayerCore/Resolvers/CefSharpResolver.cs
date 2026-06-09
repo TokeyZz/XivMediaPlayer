@@ -14,6 +14,7 @@ namespace MediaPlayerCore.Resolvers
         public string Url { get; set; } = string.Empty;
         public Dictionary<string, string> Headers { get; set; } = new Dictionary<string, string>();
         public string M3u8Content { get; set; } = null;
+        public IDisposable BrowserHandle { get; set; } = null;
     }
 
     public static class CefSharpResolver
@@ -83,6 +84,9 @@ namespace MediaPlayerCore.Resolvers
             if (!settings.CefCommandLineArgs.ContainsKey("no-sandbox")) settings.CefCommandLineArgs.Add("no-sandbox", "1");
             if (!settings.CefCommandLineArgs.ContainsKey("disable-web-security")) settings.CefCommandLineArgs.Add("disable-web-security", "1");
             if (!settings.CefCommandLineArgs.ContainsKey("allow-running-insecure-content")) settings.CefCommandLineArgs.Add("allow-running-insecure-content", "1");
+
+            // Spoof standard Chrome User Agent to help bypass Cloudflare / bot protection
+            settings.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
             
             string cefDir = Path.Combine(pluginDir, "cef");
             settings.BrowserSubprocessPath = Path.Combine(cefDir, "CefSharp.BrowserSubprocess.exe");
@@ -123,9 +127,10 @@ namespace MediaPlayerCore.Resolvers
             // We must run browser creation on the thread pool, as it might block or require specific threading
             await Task.Run(async () =>
             {
+                ChromiumWebBrowser browser = null;
                 try
                 {
-                    using var browser = new ChromiumWebBrowser(url);
+                    browser = new ChromiumWebBrowser(url);
                     var handler = new StreamInterceptorRequestHandler(tcs);
                     browser.RequestHandler = handler;
 
@@ -143,6 +148,7 @@ namespace MediaPlayerCore.Resolvers
                     var res = await tcs.Task;
                     if (res != null)
                     {
+                        res.BrowserHandle = browser;
                         var cookies = await browser.GetCookieManager().VisitUrlCookiesAsync(url, true);
                         var cookieStrs = new List<string>();
                         foreach (var c in cookies)
@@ -168,10 +174,14 @@ namespace MediaPlayerCore.Resolvers
                             catch { }
                         }
                     }
+                    else
+                    {
+                        browser?.Dispose();
+                    }
                 }
                 catch
                 {
-                    // Ignore
+                    browser?.Dispose();
                 }
             });
 
