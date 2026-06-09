@@ -356,35 +356,39 @@ float4 PS(VS_OUT input) : SV_TARGET {
       float depthMask = 1.0;
       if (gameDepth < 0.0001) depthMask = 0; // Ignore skybox
       
-      // Calculate TV dimensions in screen pixels
-      float tvWidthPixels = length(CornerTR - CornerTL);
-      float tvHeightPixels = length(CornerBL - CornerTL);
-      float tvPixelSize = max(tvWidthPixels, tvHeightPixels);
+      // Convert gameDepth (reversed Z) to viewZ
+      float gameViewZ = (NearPlane * FarPlane) / (gameDepth * (FarPlane - NearPlane) + NearPlane);
       
-      // Calculate distance from the center of the TV in true screen pixels!
-      // By using true screen distance, we completely bypass UV space perspective distortion and the mathematical vanishing point.
-      // This guarantees a perfectly smooth radial glow everywhere on screen.
-      float2 tvCenter = (CornerTL + CornerTR + CornerBL + CornerBR) * 0.25;
-      float distInPixels = distance(pixelPos, tvCenter);
+      // Reconstruct the 3D world position of the game pixel
+      float3 gameWorldPos = CameraPos + rayDir * (gameViewZ / dot(rayDir, -CameraForward));
+      
+      // Calculate TV dimensions in 3D world space
+      float3 tvCenter3D = (CornerTR3D + CornerBL3D) * 0.5;
+      float tvWidth3D = length(CornerTR3D - CornerTL3D);
+      float tvHeight3D = length(CornerBL3D - CornerTL3D);
+      float tvSize3D = max(tvWidth3D, tvHeight3D);
+      
+      // Calculate distance from the center of the TV in 3D world space
+      float3 toPixel = gameWorldPos - tvCenter3D;
+      float dist3D = length(toPixel);
       
       // Subtract half the TV size so the glow starts fading from the edges, not the center
-      distInPixels = max(0.0, distInPixels - tvPixelSize * 0.5);
+      dist3D = max(0.0, dist3D - tvSize3D * 0.5);
       
-      // Removing the 2D in-front shadow blocker!
-      // Because we use Color Dodge, the light naturally wraps around 3D objects and beautifully illuminates them.
-      // Trying to fake shadows with a 2D screen-space cutout creates blocky rectangular lines on characters!
-      
-      // Physical light dissipation based on screen pixels!
-      // This ensures the light reaches the same distance regardless of perspective.
-      float maxGlowRadiusPixels = max(200.0, tvPixelSize * 1.5);
-      float distanceFade = saturate(1.0 - (distInPixels / maxGlowRadiusPixels)); 
+      // Physical light dissipation based on world space distance
+      float maxGlowRadius3D = max(4.0, tvSize3D * 1.5);
+      float distanceFade = saturate(1.0 - (dist3D / maxGlowRadius3D)); 
       depthMask *= pow(distanceFade, 2.5); // Non-linear falloff for realism
       
+      // Backlight directionality fade: shine behind the TV, not on objects in front
+      float3 dirToPixel = dist3D > 0.001 ? normalize(toPixel) : float3(0, 0, 0);
+      float dotNorm = dot(dirToPixel, tvNormal);
+      float directionFade = smoothstep(0.5, -0.2, dotNorm);
+      depthMask *= directionFade;
+      
       if (depthMask > 0.001) {
-          // We replace the 9-point sample with a massive 144-point (12x12 grid) average!
-          // Because all screen pixels read the exact same UVs, this is a 100% texture cache hit
-          // and costs almost zero performance, but it creates an incredibly stable color.
-          // This completely eliminates the epilepsy flicker caused by moving objects!
+          // Use a 144-point (12x12 grid) average texture sample to stabilize the glow color
+          // and mitigate potential flicker from on-screen movement.
           float3 prominentColor = float3(0, 0, 0);
           for (float x = 0.05; x < 1.0; x += 0.0833) {
               for (float y = 0.05; y < 1.0; y += 0.0833) {
@@ -393,35 +397,30 @@ float4 PS(VS_OUT input) : SV_TARGET {
           }
           prominentColor /= 144.0;
           
-          // Brighter video pixels get more alpha.
+          // Scale glow alpha by the computed video luminance.
           float luminance = dot(prominentColor, float3(0.299, 0.587, 0.114));
           float alpha = saturate(depthMask * luminance * 3.5); 
           
-          // We clamp the ceiling to prevent extreme blowout on bright pixels.
-          // alpha = 0.75 -> Scene / 0.25 = 4.0x brightness max.
-          // This keeps the light vibrant without reaching the 10x multiplier of alpha 0.9.
+          // Clamp intensity ceiling to prevent extreme highlights overexposure.
           alpha = clamp(alpha, 0.0, 0.75); 
           
-          // TRUE LIGHTING BLEND
-          // Instead of using ImGui's standard alpha blend (which washes out the background like fog),
-          // we sample the actual game pixel and ADD the light to it!
+          // Compute additive backlight intensity.
           float3 light = prominentColor * alpha;
           
           if (HasBackBuffer > 0.5) {
               float3 sceneColor = BackBufferTexture.Sample(VideoSampler, screenUV).rgb;
               float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
               
-              // Color Dodge Blend: Final = Scene / (1.0 - Light)
-              // Screen blending raised the black floor, causing the grey fog over the shadows.
-              // Color Dodge preserves pure black shadows (0 / X = 0) while powerfully illuminating the textures!
+              // Color Dodge Blend: Final = Scene / (1.0 - Light) to preserve dark shadows
+              // while illuminating brighter midtones.
               float3 glowedScene = saturate(sceneColor / max(0.001, 1.0 - light));
               
-              // Protect the UI from being overexposed by blending the original scene back on top based on UI alpha
+              // Protect overlapping UI elements from overexposure by blending back original scene color.
               float3 finalColor = lerp(glowedScene, sceneColor, bbAlpha);
               
-              color = float4(finalColor, 1.0); // Output opaque because we already blended the scene!
+              color = float4(finalColor, 1.0); // Output pre-blended opaque color
           } else {
-              // Fallback to standard fog overlay if backbuffer is missing
+              // Fallback to standard transparent fog overlay if backbuffer is missing
               color = float4(prominentColor, alpha);
           }
       }

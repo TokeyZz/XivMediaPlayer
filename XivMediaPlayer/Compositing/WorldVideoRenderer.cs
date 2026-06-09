@@ -88,20 +88,31 @@ namespace XivMediaPlayer.Compositing {
         float zBR = Vector3.Dot(br - cameraPos.Value, -cameraForward.Value);
         float zBL = Vector3.Dot(bl - cameraPos.Value, -cameraForward.Value);
         
-        // If ALL corners are behind the camera plane, do not render to avoid perspective wrap-around
-        if (zTL <= 0.1f && zTR <= 0.1f && zBR <= 0.1f && zBL <= 0.1f) {
-            return;
-        }
+        bool bypassCulling = _useDepthOcclusion && depthCapture != null;
 
-        // If ANY corner is extremely far behind the camera, also cull to prevent massive polygon stretching
-        if (zTL <= -2f || zTR <= -2f || zBR <= -2f || zBL <= -2f) {
-            return;
+        if (!bypassCulling) {
+          // Prevent rendering when all corners are behind camera plane to avoid perspective wrap-around.
+          if (zTL <= 0.1f && zTR <= 0.1f && zBR <= 0.1f && zBL <= 0.1f) {
+              return;
+          }
+
+          // Prevent rendering when any corner is far behind the camera to avoid polygon stretching.
+          if (zTL <= -2f || zTR <= -2f || zBR <= -2f || zBL <= -2f) {
+              return;
+          }
         }
       }
 
       if (_useDepthOcclusion && depthCapture != null && cameraPos.HasValue && cameraForward.HasValue && cameraRight.HasValue && cameraUp.HasValue) {
+        var (tl, tr, br, bl) = _transform.Corners;
+        float zTL = cameraPos.HasValue && cameraForward.HasValue ? Vector3.Dot(tl - cameraPos.Value, -cameraForward.Value) : 1f;
+        float zTR = cameraPos.HasValue && cameraForward.HasValue ? Vector3.Dot(tr - cameraPos.Value, -cameraForward.Value) : 1f;
+        float zBR = cameraPos.HasValue && cameraForward.HasValue ? Vector3.Dot(br - cameraPos.Value, -cameraForward.Value) : 1f;
+        float zBL = cameraPos.HasValue && cameraForward.HasValue ? Vector3.Dot(bl - cameraPos.Value, -cameraForward.Value) : 1f;
+        bool allCornersInFront = zTL > 0.1f && zTR > 0.1f && zBR > 0.1f && zBL > 0.1f;
+
         RenderWithOcclusion(textureWrap, depthCapture, cameraPos.Value,
-          cameraForward.Value, cameraRight.Value, cameraUp.Value, fovY, aspectRatio, uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, lockState, volume, titleSrvPtr, isLooping, isShuffle, time, showScreensaver, videoAspect);
+          cameraForward.Value, cameraRight.Value, cameraUp.Value, fovY, aspectRatio, uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, lockState, volume, titleSrvPtr, isLooping, isShuffle, time, showScreensaver, videoAspect, allCornersInFront);
       } else {
         RenderScreenSpace(textureWrap, videoAspect);
       }
@@ -137,7 +148,7 @@ namespace XivMediaPlayer.Compositing {
     /// </summary>
     private void RenderWithOcclusion(IDalamudTextureWrap textureWrap, DepthBufferCapture depthCapture,
       Vector3 cameraPos, Vector3 cameraForward, Vector3 cameraRight, Vector3 cameraUp, float fovY, float aspectRatio, UILayerCapture uiCapture,
-      float nearPlane, float farPlane, Vector2? hoverUV, float progress, bool isPlaying, float lockState, float volume, IntPtr titleSrvPtr, bool isLooping, bool isShuffle, float time, float showScreensaver, float videoAspectRatio) {
+      float nearPlane, float farPlane, Vector2? hoverUV, float progress, bool isPlaying, float lockState, float volume, IntPtr titleSrvPtr, bool isLooping, bool isShuffle, float time, float showScreensaver, float videoAspectRatio, bool allCornersInFront) {
       var (tl, tr, br, bl) = _transform.Corners;
 
       // WorldToScreen is the source of truth for screen positions
@@ -182,7 +193,7 @@ namespace XivMediaPlayer.Compositing {
       var drawList = ImGui.GetBackgroundDrawList();
 
       // Draw glow behind the video
-      if (_enableGlow) {
+      if (_enableGlow && allCornersInFront) {
         float visibility = ComputeVisibility(depthCapture, sTL, sTR, sBR, sBL, centerDepth);
         RenderGlow(drawList, textureWrap, sTL, sTR, sBR, sBL, visibility);
       }
