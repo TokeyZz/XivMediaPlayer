@@ -665,9 +665,11 @@ float4 PS(VS_OUT input) : SV_TARGET {
       
       if (color.a > 0.5) {
           if (rectType == 4) {
-              // _ToDoList: threshold 107, backdrop #453C26
-              float threshold = 107.0 / 255.0;
-              float isPureWhite = smoothstep(threshold - 0.02, 1.0, bbAlpha);
+              // _ToDoList: threshold 90, backdrop #453C26
+              float threshold = 90.0 / 255.0;
+              float bbLuminance = dot(bbColor.rgb, float3(0.299, 0.587, 0.114));
+              float colorBoost = smoothstep(0.3, 0.6, bbLuminance);
+              float isPureWhite = max(smoothstep(threshold - 0.02, 1.0, bbAlpha), colorBoost);
               float3 shadowColor = float3(69.0 / 255.0, 60.0 / 255.0, 38.0 / 255.0); // #453C26
               float3 targetColor = lerp(shadowColor, bbColor.rgb, isPureWhite);
               color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
