@@ -30,8 +30,8 @@ namespace XivMediaPlayer
             if (Directory.Exists(Path.Combine(pluginDir, "cef")) && Directory.Exists(Path.Combine(pluginDir, "libvlc")))
             {
                 DependenciesDir = pluginDir;
-                IsReady = true;
-                Status = "Ready (Local Build)";
+                CheckDependencies();
+                if (IsReady) Status = "Ready (Local Build)";
             }
             else
             {
@@ -44,6 +44,7 @@ namespace XivMediaPlayer
         {
             string cefPath = Path.Combine(DependenciesDir, "cef", "libcef.dll");
             string vlcPath = Path.Combine(DependenciesDir, "libvlc", "win-x64", "libvlc.dll");
+            string ffmpegPath = Path.Combine(DependenciesDir, "ffmpeg.exe");
 
             if (File.Exists(cefPath) && File.Exists(vlcPath))
             {
@@ -54,6 +55,12 @@ namespace XivMediaPlayer
             {
                 IsReady = false;
                 Status = "Missing media dependencies. Click to download.";
+            }
+
+            if (!File.Exists(ffmpegPath) && !IsDownloading)
+            {
+                _pluginLog.Information("ffmpeg.exe not found! Auto-downloading...");
+                _ = Task.Run(async () => await DownloadFFmpegAsync());
             }
         }
 
@@ -164,6 +171,43 @@ namespace XivMediaPlayer
             finally
             {
                 IsDownloading = false;
+            }
+
+            if (!File.Exists(Path.Combine(DependenciesDir, "ffmpeg.exe")))
+            {
+                await DownloadFFmpegAsync();
+            }
+        }
+
+        private async Task DownloadFFmpegAsync()
+        {
+            try
+            {
+                Status = "Downloading FFmpeg...";
+                _pluginLog.Information("Downloading FFmpeg...");
+                string zipPath = Path.Combine(DependenciesDir, "ffmpeg.zip");
+                string url = "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v4.4.1/ffmpeg-4.4.1-win-64.zip";
+
+                using (var client = new HttpClient())
+                using (var response = await client.GetAsync(url))
+                using (var stream = await response.Content.ReadAsStreamAsync())
+                using (var fileStream = new FileStream(zipPath, FileMode.Create, FileAccess.Write))
+                {
+                    await stream.CopyToAsync(fileStream);
+                }
+
+                Status = "Extracting FFmpeg...";
+                await Task.Run(() =>
+                {
+                    ZipFile.ExtractToDirectory(zipPath, DependenciesDir, true);
+                    File.Delete(zipPath);
+                });
+
+                CheckDependencies();
+            }
+            catch (Exception ex)
+            {
+                _pluginLog.Error(ex, "Failed to download FFmpeg.");
             }
         }
     }

@@ -30,7 +30,7 @@ namespace XivMediaPlayer.Windows {
     public TwitchFeedType FeedType = TwitchFeedType._360p;
     private bool _wasNotOpen;
     Stopwatch eventTriggerCooldown = new Stopwatch();
-    private IDalamudTextureWrap _frameToLoad;
+    private Direct3D11VideoTexture _videoTexture;
     private IDalamudTextureWrap _blackFrame;
     private ulong _lastLoadedFrameCount = 0;
     private byte[] _lastLoadedFrame;
@@ -93,22 +93,14 @@ namespace XivMediaPlayer.Windows {
           }
 
           if (_lastLoadedFrameCount != frameCount) {
-            // Create texture directly from the locked array, avoiding a massive 8MB array clone per frame.
-            var newTexture = _textureProvider.CreateFromRaw(
-              Dalamud.Interface.Textures.RawImageSpecification.Bgra32(frameWidth, frameHeight),
-              _mediaManager.LastFrame,
-              "VideoWindowTexture");
-
             lock (_textureLock) {
-              if (_disposed) {
-                newTexture.Dispose();
-                return;
+              if (_disposed) return;
+              if (_videoTexture == null || _videoTexture.Width != frameWidth || _videoTexture.Height != frameHeight) {
+                _videoTexture?.Dispose();
+                _videoTexture = new Direct3D11VideoTexture(frameWidth, frameHeight);
               }
-
-              var oldTexture = _frameToLoad;
-              _frameToLoad = newTexture;
+              _videoTexture.Update(_mediaManager.LastFrame, frameWidth, frameHeight);
               _lastLoadedFrameCount = frameCount;
-              oldTexture?.Dispose();
             }
           }
         }
@@ -128,8 +120,34 @@ namespace XivMediaPlayer.Windows {
         SizeConstraints = new WindowSizeConstraints() { MaximumSize = ImGui.GetMainViewport().Size, MinimumSize = new Vector2(360, 480) };
         
         float availWidth = ImGui.GetContentRegionAvail().X;
-        if (_frameToLoad != null) {
-          ImGui.Image(_frameToLoad.Handle, new Vector2(availWidth, availWidth * 0.5625f));
+        IntPtr currentSrv = IntPtr.Zero;
+        Dalamud.Bindings.ImGui.ImTextureID currentId = default;
+        lock (_textureLock) {
+            if (_videoTexture != null && _videoTexture.ImGuiHandle != IntPtr.Zero) {
+                currentSrv = _videoTexture.ImGuiHandle;
+                currentId = System.Runtime.CompilerServices.Unsafe.As<IntPtr, Dalamud.Bindings.ImGui.ImTextureID>(ref currentSrv);
+            } else if (_blackFrame != null) {
+                var handle = _blackFrame.Handle;
+                currentId = handle;
+                currentSrv = System.Runtime.CompilerServices.Unsafe.As<Dalamud.Bindings.ImGui.ImTextureID, IntPtr>(ref handle);
+            }
+        }
+        
+        if (currentSrv != IntPtr.Zero) {
+          Vector2 p0 = ImGui.GetCursorScreenPos();
+          Vector2 imageSize = new Vector2(availWidth, availWidth * 0.5625f);
+          ImGui.Image(currentId, imageSize);
+
+          if (ImGui.IsItemHovered()) {
+              Vector2 mouse = ImGui.GetMousePos();
+              float normX = Math.Clamp((mouse.X - p0.X) / imageSize.X, 0f, 1f);
+              float normY = Math.Clamp((mouse.Y - p0.Y) / imageSize.Y, 0f, 1f);
+              
+              bool lmb = ImGui.IsMouseDown(Dalamud.Bindings.ImGui.ImGuiMouseButton.Left);
+              bool rmb = ImGui.IsMouseDown(Dalamud.Bindings.ImGui.ImGuiMouseButton.Right);
+              
+              _plugin.SendEmulationMouseState(normX, normY, lmb, rmb);
+          }
         }
 
         // --- Seek Slider (VODs only) ---
@@ -347,20 +365,33 @@ namespace XivMediaPlayer.Windows {
     public void MarkDisposed() {
       lock (_textureLock) {
         _disposed = true;
-        _frameToLoad?.Dispose();
-        _frameToLoad = null;
+        _videoTexture?.Dispose();
+        _videoTexture = null;
         _blackFrame?.Dispose();
         _blackFrame = null;
       }
     }
 
     /// <summary>
-    /// Returns the current video frame texture wrap,
+    /// Returns the current video frame texture pointer and dimensions,
     /// or a black 16:9 placeholder if no video is playing.
     /// </summary>
-    public IDalamudTextureWrap? GetCurrentTextureWrap() {
+    public void GetCurrentVideoTexture(out IntPtr srv, out int width, out int height) {
       lock (_textureLock) {
-        return _frameToLoad ?? _blackFrame;
+        if (_videoTexture != null && _videoTexture.ImGuiHandle != IntPtr.Zero) {
+            srv = _videoTexture.ImGuiHandle;
+            width = _videoTexture.Width;
+            height = _videoTexture.Height;
+        } else if (_blackFrame != null) {
+            var handle = _blackFrame.Handle;
+            srv = System.Runtime.CompilerServices.Unsafe.As<Dalamud.Bindings.ImGui.ImTextureID, IntPtr>(ref handle);
+            width = _blackFrame.Width;
+            height = _blackFrame.Height;
+        } else {
+            srv = IntPtr.Zero;
+            width = 16;
+            height = 9;
+        }
       }
     }
 
@@ -385,8 +416,8 @@ namespace XivMediaPlayer.Windows {
     /// Returns the pixel dimensions of the current video frame texture.
     /// </summary>
     public Vector2 GetCurrentTextureSize() {
-      if (_frameToLoad != null) {
-        return new Vector2(_frameToLoad.Width, _frameToLoad.Height);
+      if (_videoTexture != null) {
+        return new Vector2(_videoTexture.Width, _videoTexture.Height);
       }
       return Vector2.Zero;
     }
