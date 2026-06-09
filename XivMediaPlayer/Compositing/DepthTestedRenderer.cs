@@ -647,8 +647,10 @@ float4 PS(VS_OUT input) : SV_TARGET {
           int compIdx = i % 4;
           float typeVal = UIRectTypes[vecIdx][compIdx];
           
-          if (typeVal > 2.5) {
-              rectType = 3; // MjlHud takes highest precedence
+          if (typeVal > 3.5) {
+              rectType = 4; // _ToDoList takes highest precedence
+          } else if (typeVal > 2.5 && rectType < 4) {
+              rectType = 3; // MjlHud
           } else if (typeVal > 1.5 && rectType < 3) {
               rectType = 2; // ActionDetail
           } else if (typeVal > 0.5 && rectType < 2) {
@@ -662,7 +664,14 @@ float4 PS(VS_OUT input) : SV_TARGET {
       float4 bbColor = BackBufferTexture.Sample(VideoSampler, screenUV);
       
       if (color.a > 0.5) {
-          if (rectType == 3) {
+          if (rectType == 4) {
+              // _ToDoList: threshold 107, backdrop #453C26
+              float threshold = 107.0 / 255.0;
+              float isPureWhite = smoothstep(threshold - 0.02, 1.0, bbAlpha);
+              float3 shadowColor = float3(69.0 / 255.0, 60.0 / 255.0, 38.0 / 255.0); // #453C26
+              float3 targetColor = lerp(shadowColor, bbColor.rgb, isPureWhite);
+              color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
+          } else if (rectType == 3) {
               // MjlHud: threshold 233, backdrop #ACA393
               float threshold = 233.0 / 255.0;
               float isPureWhite = smoothstep(threshold - 0.02, 1.0, bbAlpha);
@@ -684,8 +693,12 @@ float4 PS(VS_OUT input) : SV_TARGET {
               float3 blendedBlack = color.rgb * saturate(1.0 - bbAlpha);
               color.rgb = blendedBlack + (bbColor.rgb * bbAlpha * isPureWhite);
           } else {
-              // For all other UI (standard game UI), use the pure standard alpha blend
-              color.rgb = color.rgb * saturate(1.0 - bbAlpha) + bbColor.rgb * bbAlpha;
+              // For all other UI (standard game UI), use a black backdrop with threshold 152
+              float threshold = 152.0 / 255.0;
+              float isPureWhite = smoothstep(threshold - 0.02, 1.0, bbAlpha);
+              float3 shadowColor = float3(0.0, 0.0, 0.0);
+              float3 targetColor = lerp(shadowColor, bbColor.rgb, isPureWhite);
+              color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
           }
       }
   }
@@ -872,11 +885,13 @@ float4 PS(VS_OUT input) : SV_TARGET {
             uiConsts.UIRects[i * 4 + 2] = r.W;
             uiConsts.UIRects[i * 4 + 3] = r.H;
             
-            // Flag addons so the shader treats them differently: 2 = _ActionContents, 3 = MJI (Island Sanctuary HUD), 0 = Standard
+            // Flag addons so the shader treats them differently: 2 = _ActionContents, 3 = MJI (Island Sanctuary HUD), 4 = _ToDoList, 0 = Standard
             if (r.Name != null && r.Name.StartsWith("_ActionContents")) {
                 uiConsts.UIRectTypes[i] = 2.0f;
             } else if (r.Name != null && r.Name.StartsWith("MJI")) {
                 uiConsts.UIRectTypes[i] = 3.0f;
+            } else if (r.Name != null && r.Name.StartsWith("_ToDoList")) {
+                uiConsts.UIRectTypes[i] = 4.0f;
             } else {
                 uiConsts.UIRectTypes[i] = 0.0f;
             }
