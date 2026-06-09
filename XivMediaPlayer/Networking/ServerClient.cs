@@ -133,7 +133,7 @@ namespace XivMediaPlayer.Networking
                 if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
                 {
                     var errorMsg = await response.Content.ReadAsStringAsync();
-                    throw new HttpRequestException(errorMsg);
+                    throw new ArgumentException(errorMsg);
                 }
 
                 if (response.IsSuccessStatusCode)

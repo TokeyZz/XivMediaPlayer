@@ -1182,7 +1182,10 @@ namespace XivMediaPlayer
 
         private void _mediaManager_OnNewMediaTriggered(object sender, EventArgs e)
         {
-            EnqueueFrameworkAction(() => _chat.Print("[Media Player] Starting Stream..."));
+            EnqueueFrameworkAction(() => {
+                _chat.Print("[Media Player] Starting Stream...");
+                _mediaErrorCount = 0; // Reset errors on successful start
+            });
         }
 
         private void _mediaManager_OnPlaybackFinished(object? sender, string e)
@@ -1213,6 +1216,7 @@ namespace XivMediaPlayer
             _streamWasPlaying = false;
             _streamSetCooldown.Stop();
             _streamSetCooldown.Reset();
+            _mediaErrorCount = 0; // Reset error count when stream stops
 
             if (wasPlaying)
             {
@@ -1516,7 +1520,7 @@ namespace XivMediaPlayer
                     _chat.PrintError("[Media Player] Cannot share media: The TV in this room is locked by its owner.");
                     await FetchMediaFromServerAsync();
                 }
-                catch (HttpRequestException ex)
+                catch (ArgumentException ex)
                 {
                     if (IsPlayerAlone())
                     {
@@ -1526,6 +1530,14 @@ namespace XivMediaPlayer
                     {
                         _chat.PrintError($"[Media Player] {ex.Message} Cannot share video because others are around.");
                         await FetchMediaFromServerAsync();
+                    }
+                }
+                catch (HttpRequestException ex)
+                {
+                    _pluginLog.Warning(ex, "[Sync] Server connection failed.");
+                    if (!isBackgroundSync)
+                    {
+                        _chat.PrintError("[Media Player] Cannot connect to sync server. It may be offline.");
                     }
                 }
                 catch (Exception ex)
