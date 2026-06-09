@@ -27,7 +27,7 @@ namespace XivMediaPlayer {
     private bool _tuneIntoTwitchStreams = true;
     private bool _tuneIntoTwitchStreamPrompt = true;
     private int _defaultVideoOpen = 1; // 0 = open, 1 = closed
-    private bool _enableOutdoorPublicScreens = true;
+    private bool _enableOutdoorPublicScreens = false; // Opt-in
     private bool _onlySafeDomainsPublicScreens = true;
     private bool _spatialAudioEnabled = true;
 

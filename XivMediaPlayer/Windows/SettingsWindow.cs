@@ -82,11 +82,38 @@ namespace XivMediaPlayer.Windows {
 
       bool safeMode = _plugin.Config.OnlySafeDomainsPublicScreens;
       if (ImGui.Checkbox("Safe Mode (Only allow safe domains outside)", ref safeMode)) {
-        _plugin.Config.OnlySafeDomainsPublicScreens = safeMode;
-        _plugin.Config.Save();
+        if (!safeMode) {
+            ImGui.OpenPopup("Disable Safe Mode Warning");
+        } else {
+            _plugin.Config.OnlySafeDomainsPublicScreens = true;
+            _plugin.Config.Save();
+        }
       }
       ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f),
         "Blocks unverified URLs on outdoor screens to prevent abuse.");
+
+      var viewportCenter = ImGui.GetMainViewport().GetCenter();
+      ImGui.SetNextWindowPos(viewportCenter, ImGuiCond.Appearing, new Vector2(0.5f, 0.5f));
+      if (ImGui.BeginPopupModal("Disable Safe Mode Warning", ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoSavedSettings)) {
+          ImGui.Text("WARNING: Disabling Safe Mode will allow almost any domain to play on outdoor screens (unless otherwise blacklisted by your current server).");
+          ImGui.Text("You may be exposed to content that you may not wish to see from unmoderated domains.");
+          ImGui.Spacing();
+          ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "By clicking 'I Agree', you accept full responsibility for your own screen,");
+          ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "and you explicitly agree that you WILL NOT play illegal content.");
+          ImGui.Separator();
+          ImGui.Spacing();
+          
+          if (ImGui.Button("I Agree, Disable Safe Mode", new Vector2(250, 0))) {
+              _plugin.Config.OnlySafeDomainsPublicScreens = false;
+              _plugin.Config.Save();
+              ImGui.CloseCurrentPopup();
+          }
+          ImGui.SameLine();
+          if (ImGui.Button("Cancel", new Vector2(120, 0))) {
+              ImGui.CloseCurrentPopup();
+          }
+          ImGui.EndPopup();
+      }
 
       ImGui.Separator();
 

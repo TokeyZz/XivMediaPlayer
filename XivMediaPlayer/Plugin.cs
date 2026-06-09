@@ -18,6 +18,7 @@ using XivMediaPlayer.Providers;
 using Dalamud.Bindings.ImGui;
 using System;
 using System.Collections.Generic;
+using System.Net.Http;
 using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
