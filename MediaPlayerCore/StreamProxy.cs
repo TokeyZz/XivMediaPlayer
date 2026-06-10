@@ -252,7 +252,6 @@ namespace MediaPlayerCore
                     using var response = await session.Client.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead);
                     
                     res.ContentType = response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream";
-                    res.SendChunked = true; // Streaming chunked response
 
                     using var stream = await response.Content.ReadAsStreamAsync();
 
@@ -273,16 +272,27 @@ namespace MediaPlayerCore
                         long totalLength = response.Content.Headers.ContentLength ?? 0;
                         if (totalLength > 0)
                         {
+                            res.ContentLength64 = totalLength - requestedOffset;
                             res.Headers["Content-Range"] = $"bytes {requestedOffset}-{totalLength - 1}/{totalLength}";
                         }
                         else
                         {
+                            res.SendChunked = true;
                             res.Headers["Content-Range"] = $"bytes {requestedOffset}-/*";
                         }
                     }
                     else
                     {
                         res.StatusCode = (int)response.StatusCode;
+                        if (response.Content.Headers.ContentLength.HasValue)
+                        {
+                            res.ContentLength64 = response.Content.Headers.ContentLength.Value;
+                        }
+                        else
+                        {
+                            res.SendChunked = true;
+                        }
+
                         if (response.StatusCode == HttpStatusCode.PartialContent)
                         {
                             res.Headers["Content-Range"] = response.Content.Headers.ContentRange?.ToString();
