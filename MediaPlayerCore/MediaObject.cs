@@ -143,7 +143,9 @@ namespace MediaPlayerCore {
       get {
         if (_vlcPlayer != null) {
           try {
-            return _vlcPlayer.IsPlaying ? PlaybackState.Playing : PlaybackState.Stopped;
+            if (_vlcPlayer.State == LibVLCSharp.Shared.VLCState.Playing) return PlaybackState.Playing;
+            if (_vlcPlayer.State == LibVLCSharp.Shared.VLCState.Paused) return PlaybackState.Paused;
+            return PlaybackState.Stopped;
           } catch {
             return PlaybackState.Stopped;
           }
