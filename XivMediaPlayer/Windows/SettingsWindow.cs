@@ -182,6 +182,22 @@ namespace XivMediaPlayer.Windows {
       }
       ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f),
         "URL of the backend server used to sync TVs.");
+
+      ImGui.Spacing();
+      ImGui.Spacing();
+
+      // Support
+      ImGui.TextColored(new Vector4(0.7f, 0.9f, 1.0f, 1.0f), "Support");
+      ImGui.Separator();
+
+      if (ImGui.Button("Support the Developer on Ko-fi")) {
+          try {
+              System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+                  FileName = "https://ko-fi.com/sebastina",
+                  UseShellExecute = true
+              });
+          } catch { }
+      }
     }
   }
 }
