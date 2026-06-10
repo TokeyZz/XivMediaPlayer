@@ -1942,6 +1942,12 @@ namespace XivMediaPlayer
 
         private void OnMediaError(object? sender, MediaError e)
         {
+            string errorMsg = e.Exception?.Message ?? string.Empty;
+            if (errorMsg.Contains("failed to set on top", StringComparison.OrdinalIgnoreCase))
+            {
+                return; // Benign VLC error related to windowless rendering
+            }
+
             if ((DateTime.UtcNow - _lastMediaErrorTime).TotalMilliseconds < 500)
             {
                 // Group errors that occur within 500ms into a single "error event"
