@@ -2993,10 +2993,25 @@ namespace XivMediaPlayer
 
             var activeStream = _mediaManager?.ActiveStream;
             int currentTimeMs = activeStream != null ? (int)activeStream.Time : 0;
+            
+            // If the stream has crashed multiple times, the server might not support HTTP Range requests (seeking).
+            // Drop the start time requirement to see if it can at least play from the beginning.
+            if (_mediaErrorCount >= 2)
+            {
+                currentTimeMs = 0;
+            }
 
             _chat.Print("[Media Player] Refreshing media...");
             _mediaManager?.StopStream();
-            PlayViaYtDlp(_lastStreamURL, CurrentAudioSource, currentTimeMs);
+            
+            if (YtDlpManager.IsUrlSupported(_lastStreamURL) && _ytDlpManager.IsAvailable())
+            {
+                PlayViaYtDlp(_lastStreamURL, CurrentAudioSource, currentTimeMs);
+            }
+            else
+            {
+                TuneIntoStream(_lastStreamURL, CurrentAudioSource, currentTimeMs);
+            }
         }
 
         /// <summary>

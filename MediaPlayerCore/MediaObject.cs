@@ -159,6 +159,12 @@ namespace MediaPlayerCore {
       get => _vlcPlayer?.Time ?? 0;
       set {
         if (_vlcPlayer != null) {
+          try {
+            if (!_vlcPlayer.IsSeekable && _vlcPlayer.State == LibVLCSharp.Shared.VLCState.Playing) {
+                return; // Cannot seek, ignore request to prevent stream crash
+            }
+          } catch {}
+
           if (_vlcPlayer.State == LibVLCSharp.Shared.VLCState.Ended || _vlcPlayer.State == LibVLCSharp.Shared.VLCState.Stopped) {
             ChangeVideoStream(_soundPath, _width, (int)value);
           } else {
