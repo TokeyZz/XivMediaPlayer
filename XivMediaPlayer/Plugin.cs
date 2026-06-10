@@ -920,6 +920,10 @@ namespace XivMediaPlayer
             if (_streamURLs.Length > 0)
             {
                 string playUrl = ((int)_videoWindow.FeedType < _streamURLs.Length) ? _streamURLs[(int)_videoWindow.FeedType] : _streamURLs[0];
+                if (playUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase) && !playUrl.Contains("127.0.0.1"))
+                {
+                    playUrl = MediaPlayerCore.StreamProxy.Instance.RegisterDirectMediaSession(playUrl, httpHeaders);
+                }
                 _mediaManager.PlayStream(audioGameObject, playUrl, _config.SpatialAudioEnabled, startTimeMs, httpHeaders);
                 _lastStreamURL = cleanedURL;
                 _currentStreamer = "Stream";
@@ -1039,7 +1043,13 @@ namespace XivMediaPlayer
                 _streamURLs = new string[] { url };
                 _videoWindow.IsOpen = _config.DefaultVideoOpen == 0;
 
-                _mediaManager.PlayStream(audioGameObject, url, _config.SpatialAudioEnabled, startTimeMs, null);
+                string playUrl = url;
+                if (playUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                {
+                    playUrl = MediaPlayerCore.StreamProxy.Instance.RegisterDirectMediaSession(url, null);
+                }
+
+                _mediaManager.PlayStream(audioGameObject, playUrl, _config.SpatialAudioEnabled, startTimeMs, null);
 
                 _currentMediaDurationMs = null;
                 _currentStreamer = "Direct Stream";
@@ -1213,7 +1223,13 @@ namespace XivMediaPlayer
                         _streamURLs = new string[] { resolvedStreamUrl };
                         _videoWindow.IsOpen = _config.DefaultVideoOpen == 0;
 
-                        _mediaManager.PlayStream(audioGameObject, resolvedStreamUrl, _config.SpatialAudioEnabled, startTimeMs, resolvedHeaders);
+                        string playUrl = resolvedStreamUrl;
+                        if (playUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase) && !playUrl.Contains("127.0.0.1"))
+                        {
+                            playUrl = MediaPlayerCore.StreamProxy.Instance.RegisterDirectMediaSession(resolvedStreamUrl, resolvedHeaders);
+                        }
+
+                        _mediaManager.PlayStream(audioGameObject, playUrl, _config.SpatialAudioEnabled, startTimeMs, resolvedHeaders);
                         _lastStreamURL = url;
                         _currentMediaDurationMs = resolvedDurationMs;
                         _currentStreamer = !string.IsNullOrEmpty(uploader) ? uploader : title;

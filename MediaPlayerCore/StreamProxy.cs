@@ -97,6 +97,33 @@ namespace MediaPlayerCore
 
             return $"http://127.0.0.1:{_port}/stream.m3u8?sid={sessionId}";
         }
+        public string RegisterDirectMediaSession(string mediaUrl, Dictionary<string, string>? headers = null)
+        {
+            if (string.IsNullOrEmpty(mediaUrl)) return string.Empty;
+            string sessionId = Guid.NewGuid().ToString("N");
+            
+            var handler = new HttpClientHandler { UseCookies = true, AutomaticDecompression = DecompressionMethods.All };
+            var client = new HttpClient(handler);
+            bool hasUserAgent = false;
+            bool hasAccept = false;
+
+            if (headers != null)
+            {
+                foreach (var kvp in headers)
+                {
+                    if (kvp.Key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase)) hasUserAgent = true;
+                    if (kvp.Key.Equals("Accept", StringComparison.OrdinalIgnoreCase)) hasAccept = true;
+                    try { client.DefaultRequestHeaders.TryAddWithoutValidation(kvp.Key, kvp.Value); } catch { }
+                }
+            }
+            if (!hasUserAgent) client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0");
+            if (!hasAccept) client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "*/*");
+
+            _sessions[sessionId] = new ProxySession { OriginalM3u8Url = mediaUrl, Headers = headers, Client = client };
+
+            string targetBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(mediaUrl));
+            return $"http://127.0.0.1:{_port}/proxy_media?sid={sessionId}&target={Uri.EscapeDataString(targetBase64)}";
+        }
 
         private async Task AcceptLoop(CancellationToken token)
         {
@@ -107,10 +134,7 @@ namespace MediaPlayerCore
                     var context = await _listener.GetContextAsync();
                     _ = Task.Run(() => HandleRequest(context));
                 }
-                catch
-                {
-                    // Ignore listener errors during shutdown
-                }
+                catch { }
             }
         }
 
@@ -142,7 +166,6 @@ namespace MediaPlayerCore
                     if (req.QueryString["target"] == null && !string.IsNullOrEmpty(session.PreFetchedM3u8Content))
                     {
                         text = session.PreFetchedM3u8Content;
-                        System.Diagnostics.Debug.WriteLine($"[StreamProxy] Used pre-fetched m3u8. Content starts with: {(text.Length > 50 ? text.Substring(0, 50) : text).Replace("\n", "")}");
                     }
                     else
                     {
@@ -151,11 +174,9 @@ namespace MediaPlayerCore
                             var response = await session.Client.GetAsync(m3u8Url);
                             response.EnsureSuccessStatusCode();
                             text = await response.Content.ReadAsStringAsync();
-                            System.Diagnostics.Debug.WriteLine($"[StreamProxy] Fetched m3u8. Status: {response.StatusCode}. Content starts with: {(text.Length > 50 ? text.Substring(0, 50) : text).Replace("\n", "")}");
                         } 
                         catch (Exception netEx)
                         {
-                            System.Diagnostics.Debug.WriteLine($"[StreamProxy] CRITICAL: Failed to download m3u8 from {m3u8Url}. Your internet connection timed out or the server blocked you. Exception: {netEx.Message}");
                             res.StatusCode = 502; // Bad Gateway
                             res.Close();
                             return;
@@ -171,11 +192,6 @@ namespace MediaPlayerCore
                     {
                         if (line.StartsWith("#"))
                         {
-                            if (line.StartsWith("#EXT-X-STREAM-INF:") || line.StartsWith("#EXT-X-I-FRAME-STREAM-INF:"))
-                            {
-                                sb.AppendLine(line);
-                                continue;
-                            }
                             sb.AppendLine(line);
                         }
                         else
@@ -215,6 +231,65 @@ namespace MediaPlayerCore
                         res.ContentLength64 = response.Content.Headers.ContentLength.Value;
 
                     await response.Content.CopyToAsync(res.OutputStream);
+                }
+                else if (path == "/proxy_media")
+                {
+                    string targetUrl = Encoding.UTF8.GetString(Convert.FromBase64String(req.QueryString["target"]));
+                    var requestMessage = new HttpRequestMessage(HttpMethod.Get, targetUrl);
+
+                    long requestedOffset = 0;
+                    string rangeHeader = req.Headers["Range"];
+                    if (!string.IsNullOrEmpty(rangeHeader) && rangeHeader.StartsWith("bytes="))
+                    {
+                        string rangeVal = rangeHeader.Substring("bytes=".Length).Split('-')[0];
+                        if (long.TryParse(rangeVal, out long offset))
+                        {
+                            requestedOffset = offset;
+                            requestMessage.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(offset, null);
+                        }
+                    }
+
+                    using var response = await session.Client.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead);
+                    
+                    res.ContentType = response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream";
+                    res.SendChunked = true; // Streaming chunked response
+
+                    using var stream = await response.Content.ReadAsStreamAsync();
+
+                    if (response.StatusCode == HttpStatusCode.OK && requestedOffset > 0)
+                    {
+                        // SERVER IGNORED RANGE REQUEST. WE MUST MANUALLY DISCARD BYTES.
+                        long bytesToDiscard = requestedOffset;
+                        byte[] discardBuffer = new byte[81920]; // 80KB buffer
+                        while (bytesToDiscard > 0)
+                        {
+                            int toRead = (int)Math.Min(bytesToDiscard, discardBuffer.Length);
+                            int read = await stream.ReadAsync(discardBuffer, 0, toRead);
+                            if (read == 0) break; // EOF
+                            bytesToDiscard -= read;
+                        }
+
+                        res.StatusCode = 206; // Trick VLC into thinking the server honored the Range request
+                        long totalLength = response.Content.Headers.ContentLength ?? 0;
+                        if (totalLength > 0)
+                        {
+                            res.Headers["Content-Range"] = $"bytes {requestedOffset}-{totalLength - 1}/{totalLength}";
+                        }
+                        else
+                        {
+                            res.Headers["Content-Range"] = $"bytes {requestedOffset}-/*";
+                        }
+                    }
+                    else
+                    {
+                        res.StatusCode = (int)response.StatusCode;
+                        if (response.StatusCode == HttpStatusCode.PartialContent)
+                        {
+                            res.Headers["Content-Range"] = response.Content.Headers.ContentRange?.ToString();
+                        }
+                    }
+
+                    await stream.CopyToAsync(res.OutputStream);
                 }
                 else
                 {
