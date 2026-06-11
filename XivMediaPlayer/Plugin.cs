@@ -1276,10 +1276,20 @@ namespace XivMediaPlayer
                     var tv = tvs[0];
                     CurrentTvPlacement = tv;
 
-                    // Apply to the ACTIVE renderer transform ONLY if we aren't actively editing it
+                    // Apply to the ACTIVE renderer transform ONLY if we aren't actively editing it.
+                    // Preserve a local disabled state so fetching a public TV does not undo
+                    // the user's "Render in World" choice when re-entering a room.
                     if (_worldRenderer != null && !IsHousingMenuOpen)
                     {
-                        _worldRenderer.Transform.Enabled = true;
+                        bool renderEnabled = true;
+                        if ((_config.ScreenPlacements.TryGetValue(tv.LocationKey, out var savedPlacement) ||
+                             _config.ScreenPlacements.TryGetValue(primaryKey, out savedPlacement)) &&
+                            !savedPlacement.Enabled)
+                        {
+                            renderEnabled = false;
+                        }
+
+                        _worldRenderer.Transform.Enabled = renderEnabled;
                         _worldRenderer.Transform.Position = new System.Numerics.Vector3(tv.PositionX, tv.PositionY, tv.PositionZ);
                         _worldRenderer.Transform.RotationDegrees = new System.Numerics.Vector3(tv.RotationX, tv.RotationY, tv.RotationZ);
                         _worldRenderer.Transform.Scale = new System.Numerics.Vector2(tv.ScaleX, tv.ScaleY);
@@ -1288,6 +1298,7 @@ namespace XivMediaPlayer
                         _config.WorldScreen = _worldRenderer.Transform.Clone();
                         _config.ScreenPlacements[tv.LocationKey] = _worldRenderer.Transform.Clone();
                         _config.Save();
+                        _screenSettingsWindow?.SyncFromTransform();
                     }
 
                     _pluginLog.Info($"[Social] Loaded public TV placement from room {tv.LocationKey}.");
@@ -1354,10 +1365,12 @@ namespace XivMediaPlayer
                 _worldRenderer.Transform.RotationDegrees = saved.RotationDegrees;
                 _worldRenderer.Transform.Scale = saved.Scale;
                 _worldRenderer.Transform.Enabled = saved.Enabled;
+                _screenSettingsWindow?.SyncFromTransform();
             }
             else
             {
                 _worldRenderer.Transform.Enabled = false; // Turn off 3D screen in new zones by default
+                _screenSettingsWindow?.SyncFromTransform();
             }
         }
 
