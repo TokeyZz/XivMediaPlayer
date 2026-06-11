@@ -60,9 +60,12 @@ namespace XivMediaPlayer
         internal ScreenSettingsWindow ScreenSettingsWindow => _screenSettingsWindow;
         private WorldVideoRenderer _worldRenderer;
         internal WorldVideoRenderer WorldRenderer => _worldRenderer;
+        internal string CurrentStreamer => _currentStreamer;
+        internal Networking.ControllerService? ControllerService => _controllerService;
         private DepthPreviewWindow _depthPreviewWindow;
 
         private Networking.EmulationClient? _emulationClient;
+        private Networking.ControllerService? _controllerService;
 
         private string _currentMediaOwnerId = string.Empty;
         private bool _isLocalDj = false;
@@ -850,6 +853,9 @@ namespace XivMediaPlayer
 
             _emulationClient?.Dispose();
             _emulationClient = new Networking.EmulationClient(ip, session);
+            _controllerService?.Dispose();
+            _controllerService = new Networking.ControllerService(ip, session);
+            _controllerService.Start();
 
             // Start FFmpeg backend instead of VLC for extreme low latency
             _mediaManager?.PlayFFmpegStream(rtsp);
@@ -886,6 +892,9 @@ namespace XivMediaPlayer
 
                     _emulationClient?.Dispose();
                     _emulationClient = new Networking.EmulationClient(ip, session);
+                    _controllerService?.Dispose();
+                    _controllerService = new Networking.ControllerService(ip, session);
+                    _controllerService.Start();
 
                     // Start FFmpeg backend instead of VLC for extreme low latency video and audio
                     _mediaManager?.PlayFFmpegStream(normalizedUrl, audioGameObject, true);
@@ -1339,6 +1348,8 @@ namespace XivMediaPlayer
             _videoWindow.IsOpen = false;
             _emulationClient?.Dispose();
             _emulationClient = null;
+            _controllerService?.Dispose();
+            _controllerService = null;
             _cefBrowserHandle?.Dispose();
             _cefBrowserHandle = null;
 
@@ -2524,6 +2535,25 @@ namespace XivMediaPlayer
                     _worldRenderer.UIBlendThreshold = _config.UIBlendThreshold;
                     _worldRenderer.Render(videoSrv, videoWidth, videoHeight, _depthCapture, cameraPos, cameraForward, cameraRight, cameraUp, fovY, aspectRatio, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, lockState, volume, srvPtr, _config.LoopEnabled, _config.ShuffleEnabled, timeSeconds, showScreensaver);
                 }
+                
+                // Draw floating Emulation Controller UI
+                if (_currentStreamer == "Emulation" && _worldRenderer.Transform != null) {
+                    var (tl, tr, br, bl) = _worldRenderer.Transform.Corners;
+                    if (_gameGui.WorldToScreen(tr, out var sTR)) {
+                        ImGui.SetNextWindowPos(new System.Numerics.Vector2(sTR.X + 20, sTR.Y));
+                        ImGui.SetNextWindowBgAlpha(0.8f);
+                        if (ImGui.Begin("Emulation Controllers", ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove)) {
+                            ImGui.Text("Controller Slot");
+                            ImGui.Separator();
+                            for (byte i = 0; i < 4; i++) {
+                                if (ImGui.Selectable($"Player {i+1}", _controllerService?.PlayerSlot == i)) {
+                                    if (_controllerService != null) _controllerService.PlayerSlot = i;
+                                }
+                            }
+                            ImGui.End();
+                        }
+                    }
+                }
             }
 
             DrawOutdoorGridDebug();
@@ -3162,6 +3192,7 @@ namespace XivMediaPlayer
             while (_frameworkActions.TryDequeue(out _)) { }
             _videoWindow.MarkDisposed();
             _emulationClient?.Dispose();
+            _controllerService?.Dispose();
             _uiCapture?.Dispose();
             _titleTextureManager?.Dispose();
             _historyMenuTextureManager?.Dispose();

@@ -326,6 +326,15 @@ namespace XivMediaPlayer.Windows {
               _mediaManager.LiveStreamVolume = vol / 100f;
           }
         }
+        
+        // --- Emulation Controller ---
+        if (_plugin.CurrentStreamer == "Emulation" && _plugin.ControllerService != null) {
+          ImGui.SetNextItemWidth(100f);
+          int slot = _plugin.ControllerService.PlayerSlot;
+          if (ImGui.Combo("Controller Slot", ref slot, "Player 1\0Player 2\0Player 3\0Player 4\0")) {
+              _plugin.ControllerService.PlayerSlot = (byte)slot;
+          }
+        }
 
         if (eventTriggerCooldown.ElapsedMilliseconds > 10000) {
           CheckWindowSize(true);

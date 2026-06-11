@@ -98,6 +98,7 @@ namespace XivMediaPlayer.Networking
 
         private bool _running = true;
         private byte _remoteCtrlIdx = 0;
+        public byte PlayerSlot { get => _remoteCtrlIdx; set => _remoteCtrlIdx = value; }
         private byte[] _sessionBytes;
         private UdpClient _udpClient;
         private IPEndPoint _remoteEndPoint;
