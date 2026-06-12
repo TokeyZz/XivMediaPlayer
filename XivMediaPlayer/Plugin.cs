@@ -138,6 +138,10 @@ namespace XivMediaPlayer
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
 
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        private IntPtr _mainWindowHandle;
         private IDisposable _cefBrowserHandle;
         private Stopwatch _streamSetCooldown = new Stopwatch();
         private Stopwatch _screensaverTimer = new Stopwatch();
@@ -176,6 +180,9 @@ namespace XivMediaPlayer
             _pluginInterface = pluginInterface;
             _commandManager = commandManager;
             _chat = chat;
+            
+            _mainWindowHandle = Process.GetCurrentProcess().MainWindowHandle;
+            
             _clientState = clientState;
             _framework = framework;
             _gameConfig = gameConfig;
@@ -1493,10 +1500,9 @@ namespace XivMediaPlayer
                 else
                 {
                     CurrentTvPlacement = null;
-                    if (_worldRenderer != null && !IsHousingMenuOpen)
+                    if (!IsHousingMenuOpen)
                     {
-                        _worldRenderer.Transform.Enabled = false;
-                        _screenSettingsWindow?.SyncFromTransform();
+                        RestoreScreenForCurrentLocation();
                     }
                 }
 
@@ -1990,7 +1996,7 @@ namespace XivMediaPlayer
             _pluginLog.Warning(e.Exception, $"[Media Player] Media error occurred! Error count: {_mediaErrorCount}");
             if (_mediaErrorCount < 5)
             {
-                _refreshQueued = true;
+                RequestRefreshCurrentMedia();
             }
             else if (_mediaErrorCount == 5)
             {
@@ -2281,8 +2287,9 @@ namespace XivMediaPlayer
 
                     // We must calculate mouse state unconditionally every frame so that holding the mouse
                     // and dragging it OVER the window doesn't falsely trigger a "Click" event!
-                    bool isLeftMousePressed = (GetAsyncKeyState(0x01) & 0x8000) != 0; // VK_LBUTTON
-                    bool isRightMousePressed = (GetAsyncKeyState(0x02) & 0x8000) != 0; // VK_RBUTTON
+                    bool hasFocus = GetForegroundWindow() == _mainWindowHandle;
+                    bool isLeftMousePressed = hasFocus && (GetAsyncKeyState(0x01) & 0x8000) != 0; // VK_LBUTTON
+                    bool isRightMousePressed = hasFocus && (GetAsyncKeyState(0x02) & 0x8000) != 0; // VK_RBUTTON
                     bool isMouseClicked = isLeftMousePressed && !_wasLeftMousePressed;
                     bool isMouseReleased = !isLeftMousePressed && _wasLeftMousePressed;
                     _wasLeftMousePressed = isLeftMousePressed;

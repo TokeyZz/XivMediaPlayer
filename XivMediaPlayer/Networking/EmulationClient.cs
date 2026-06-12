@@ -14,7 +14,6 @@ namespace XivMediaPlayer.Networking
         private readonly IPEndPoint _remoteEndPoint;
         private readonly byte[] _sessionBytes;
         private bool _disposed;
-        private ControllerService _controllerService;
 
         public string IpAddress { get; }
         public string SessionId { get; }
@@ -29,9 +28,6 @@ namespace XivMediaPlayer.Networking
 
             _udpClient = new UdpClient();
             _remoteEndPoint = new IPEndPoint(IPAddress.Parse(ip), 50051);
-
-            _controllerService = new ControllerService(ip, sessionId);
-            _controllerService.Start();
         }
 
         public static async Task<string> GetRtspUrlAsync(string ip, string sessionId)
@@ -124,7 +120,6 @@ namespace XivMediaPlayer.Networking
         public void Dispose()
         {
             _disposed = true;
-            _controllerService?.Dispose();
             _udpClient?.Dispose();
         }
     }
