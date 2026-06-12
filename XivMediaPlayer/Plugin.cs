@@ -866,6 +866,8 @@ namespace XivMediaPlayer
 
             // Start FFmpeg backend instead of VLC for extreme low latency
             _mediaManager?.PlayFFmpegStream(rtsp);
+            _lastStreamURL = rtsp;
+            _ = PushMediaToServerAsync(isBackgroundSync: false);
         }
 
         internal void SendEmulationMouseState(float normX, float normY, bool lmb, bool rmb)
@@ -1004,6 +1006,7 @@ namespace XivMediaPlayer
 
         private void PlayRouted(string url, IMediaGameObject audioGameObject, int startTimeMs = 0, bool isAutoSync = false)
         {
+            url = CleanUrl(url);
             if (YtDlpManager.IsUrlSupported(url) && _ytDlpManager.IsAvailable())
             {
                 PlayViaYtDlp(url, audioGameObject, startTimeMs, isAutoSync);
@@ -1618,7 +1621,7 @@ namespace XivMediaPlayer
         {
             var key = _lastLocationKey;
             var activeStream = _mediaManager?.ActiveStream;
-            string lastUrl = _lastStreamURL ?? "";
+            string lastUrl = CleanUrl(_lastStreamURL ?? "");
             string soundPath = activeStream?.SoundPath ?? "";
             long activeTime = (long)(activeStream?.Time ?? 0);
             bool isIntentionallyPaused = _isIntentionallyPaused;
@@ -1636,7 +1639,7 @@ namespace XivMediaPlayer
                 }
 
                 // Don't push local files
-                if (!string.IsNullOrEmpty(lastUrl) && !lastUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase) && !lastUrl.StartsWith("rtmp", StringComparison.OrdinalIgnoreCase)) return;
+                if (!string.IsNullOrEmpty(lastUrl) && !lastUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase) && !lastUrl.StartsWith("rtmp", StringComparison.OrdinalIgnoreCase) && !lastUrl.StartsWith("rtsp", StringComparison.OrdinalIgnoreCase)) return;
                 
                 // Don't push if there's literally no stream URL and we aren't loading one
                 if (string.IsNullOrEmpty(lastUrl) && string.IsNullOrEmpty(soundPath) && !_isResolvingMedia) return;
@@ -2787,6 +2790,24 @@ namespace XivMediaPlayer
             {
                 url = uri.LocalPath;
             }
+
+            // Un-proxy local URLs (e.g. VRCVideoCacher) to ensure room sync sends the real underlying URL
+            if (url.StartsWith("http://127.0.0.1") && url.Contains("target"))
+            {
+                int targetIndex = url.IndexOf("target");
+                if (targetIndex > 0)
+                {
+                    string b64 = url.Substring(targetIndex + 6);
+                    try
+                    {
+                        b64 = b64.PadRight(b64.Length + (4 - b64.Length % 4) % 4, '=');
+                        string decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(b64));
+                        if (decoded.StartsWith("http")) url = decoded;
+                    }
+                    catch { }
+                }
+            }
+
             return url;
         }
 
@@ -3245,6 +3266,10 @@ namespace XivMediaPlayer
         #endregion
     }
 }
+
+
+
+
 
 
 
