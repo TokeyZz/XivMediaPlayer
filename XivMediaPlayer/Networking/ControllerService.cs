@@ -19,9 +19,9 @@ namespace XivMediaPlayer.Networking
         public sbyte RightStickX;
         public sbyte RightStickY;
 
-        public static sbyte ApplyDeadzone(sbyte rawValue, int deadzone = 24)
+        public static sbyte ApplyDeadzone(sbyte rawValue, int deadzone = 8)
         {
-            if (Math.Abs(rawValue) < deadzone) return 0;
+            if (Math.Abs((int)rawValue) < deadzone) return 0;
             return rawValue;
         }
 
@@ -48,7 +48,7 @@ namespace XivMediaPlayer.Networking
             this.RightStickY = MergeAxis(this.RightStickY, other.RightStickY);
         }
 
-        private sbyte MergeAxis(sbyte a, sbyte b)
+        private static sbyte MergeAxis(sbyte a, sbyte b)
         {
             if (Math.Abs((int)a) > Math.Abs((int)b)) return a;
             return b;
