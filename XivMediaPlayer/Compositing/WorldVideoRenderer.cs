@@ -78,6 +78,9 @@ namespace XivMediaPlayer.Compositing {
       Vector2? hoverUV = null, float progress = 0f, bool isPlaying = false, float lockState = 1.0f, float volume = 1.0f, IntPtr titleSrvPtr = default, bool isLooping = false, bool isShuffle = false, float time = 0f, float showScreensaver = 0f) {
 
       if (_disposed || !IsActive || textureSrv == IntPtr.Zero) return;
+      
+      var drawList = Dalamud.Bindings.ImGui.ImGui.GetBackgroundDrawList();
+      int initialCmdSize = drawList.CmdBuffer.Size;
 
       float videoAspect = textureHeight > 0 ? (float)textureWidth / textureHeight : 0;
 
@@ -116,6 +119,33 @@ namespace XivMediaPlayer.Compositing {
       } else {
         RenderScreenSpace(textureSrv, videoAspect);
       }
+      
+      PushCommandsToFront(drawList, initialCmdSize);
+    }
+
+    private unsafe void PushCommandsToFront(Dalamud.Bindings.ImGui.ImDrawListPtr drawList, int startIndex) {
+        var cmdBuffer = drawList.CmdBuffer;
+        int count = cmdBuffer.Size;
+        if (startIndex <= 0 || startIndex >= count) return;
+
+        int addedCount = count - startIndex;
+        Dalamud.Bindings.ImGui.ImDrawCmd* ptr = (Dalamud.Bindings.ImGui.ImDrawCmd*)cmdBuffer.Data;
+        
+        // Backup the newly added commands
+        var newCmds = new Dalamud.Bindings.ImGui.ImDrawCmd[addedCount];
+        for (int i = 0; i < addedCount; i++) {
+            newCmds[i] = ptr[startIndex + i];
+        }
+
+        // Shift existing commands up
+        for (int i = startIndex - 1; i >= 0; i--) {
+            ptr[i + addedCount] = ptr[i];
+        }
+
+        // Copy new commands to the front
+        for (int i = 0; i < addedCount; i++) {
+            ptr[i] = newCmds[i];
+        }
     }
 
     /// <summary>

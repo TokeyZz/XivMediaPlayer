@@ -120,7 +120,7 @@ namespace MediaPlayerCore
                         _ffmpegProcess = new Process();
                         _ffmpegProcess.StartInfo.FileName = _ffmpegPath;
                         // Single process decoding both video and audio over TCP to enforce synchronous backpressure
-                        _ffmpegProcess.StartInfo.Arguments = $"-hwaccel auto -rtsp_transport tcp -fflags nobuffer -flags low_delay -i \"{url}\" -map 0:v -r 60 -f rawvideo -pix_fmt bgra tcp://127.0.0.1:{videoPort} -map 0:a? -f s16le -ac 1 -ar 48000 tcp://127.0.0.1:{audioPort}";
+                        _ffmpegProcess.StartInfo.Arguments = $"-hwaccel auto -rtsp_transport tcp -fflags nobuffer -flags low_delay -i \"{url}\" -map 0:v -r 60 -s {_width}x{_height} -f rawvideo -pix_fmt bgra tcp://127.0.0.1:{videoPort} -map 0:a? -f s16le -ac 1 -ar 48000 tcp://127.0.0.1:{audioPort}";
                         _ffmpegProcess.StartInfo.UseShellExecute = false;
                         _ffmpegProcess.StartInfo.RedirectStandardOutput = false;
                         _ffmpegProcess.StartInfo.RedirectStandardError = true;
