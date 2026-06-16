@@ -125,6 +125,19 @@ namespace MediaPlayerCore
             return $"http://127.0.0.1:{_port}/proxy_media?sid={sessionId}&target={Uri.EscapeDataString(targetBase64)}";
         }
 
+        /// <summary>
+        /// Attempts to recover the original upstream URL from a proxy session ID.
+        /// Returns null if the session is not found or has expired.
+        /// </summary>
+        public string GetOriginalUrl(string sessionId)
+        {
+            if (!string.IsNullOrEmpty(sessionId) && _sessions.TryGetValue(sessionId, out var session))
+            {
+                return session.OriginalM3u8Url;
+            }
+            return null;
+        }
+
         private async Task AcceptLoop(CancellationToken token)
         {
             while (!token.IsCancellationRequested)

@@ -1571,7 +1571,10 @@ namespace XivMediaPlayer
             {
                 // We use _lastStreamURL to save the original un-resolved YouTube/Twitch URL
                 // so we can re-resolve it via yt-dlp upon entering the room next time!
-                state.CurrentUrl = !string.IsNullOrEmpty(_lastStreamURL) ? _lastStreamURL : activeStream.SoundPath;
+                string fallbackPath = activeStream.SoundPath;
+                // Never save local StreamProxy URLs they are ephemeral and won't work on next launch or for other players
+                if (fallbackPath != null && fallbackPath.Contains("127.0.0.1")) fallbackPath = "";
+                state.CurrentUrl = !string.IsNullOrEmpty(_lastStreamURL) ? _lastStreamURL : fallbackPath;
                 state.TimecodeMs = activeStream.Time;
             }
 
@@ -1623,6 +1626,8 @@ namespace XivMediaPlayer
             var activeStream = _mediaManager?.ActiveStream;
             string lastUrl = CleanUrl(_lastStreamURL ?? "");
             string soundPath = activeStream?.SoundPath ?? "";
+            // Never let local StreamProxy URLs (e.g. http://127.0.0.1:xxxxx/stream.m3u8?sid=...) leak as fallback
+            if (soundPath.Contains("127.0.0.1")) soundPath = "";
             long activeTime = (long)(activeStream?.Time ?? 0);
             bool isIntentionallyPaused = _isIntentionallyPaused;
             var mediaQueueArray = _mediaQueue.ToArray();
@@ -1640,6 +1645,9 @@ namespace XivMediaPlayer
 
                 // Don't push local files
                 if (!string.IsNullOrEmpty(lastUrl) && !lastUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase) && !lastUrl.StartsWith("rtmp", StringComparison.OrdinalIgnoreCase) && !lastUrl.StartsWith("rtsp", StringComparison.OrdinalIgnoreCase)) return;
+                
+                // Don't push local StreamProxy URLs to the sync server
+                if (!string.IsNullOrEmpty(lastUrl) && lastUrl.Contains("127.0.0.1")) return;
                 
                 // Don't push if there's literally no stream URL and we aren't loading one
                 if (string.IsNullOrEmpty(lastUrl) && string.IsNullOrEmpty(soundPath) && !_isResolvingMedia) return;
@@ -2806,6 +2814,28 @@ namespace XivMediaPlayer
                     }
                     catch { }
                 }
+            }
+
+            // Handle stream.m3u8?sid= proxy URLs by recovering the original URL from the active StreamProxy session
+            if (url.StartsWith("http://127.0.0.1") && url.Contains("sid="))
+            {
+                try
+                {
+                    int sidIndex = url.IndexOf("sid=");
+                    if (sidIndex > 0)
+                    {
+                        string sid = url.Substring(sidIndex + 4);
+                        int ampIndex = sid.IndexOf('&');
+                        if (ampIndex > 0) sid = sid.Substring(0, ampIndex);
+
+                        string originalUrl = MediaPlayerCore.StreamProxy.Instance.GetOriginalUrl(sid);
+                        if (!string.IsNullOrEmpty(originalUrl))
+                        {
+                            url = originalUrl;
+                        }
+                    }
+                }
+                catch { }
             }
 
             return url;
