@@ -175,7 +175,8 @@ namespace XivMediaPlayer
           IGameGui gameGui,
           IObjectTable objectTable,
           IPartyList partyList,
-          IGameInteropProvider gameInterop)
+          IGameInteropProvider gameInterop,
+          Dalamud.Plugin.Services.IAddonLifecycle addonLifecycle)
         {
             _pluginInterface = pluginInterface;
             _commandManager = commandManager;
@@ -244,7 +245,7 @@ namespace XivMediaPlayer
                 }
             };
 
-            _uiCapture = new UILayerCapture();
+            _uiCapture = new UILayerCapture(addonLifecycle);
             _uiCapture.Initialize();
             _titleTextureManager = new Compositing.TitleTextureManager(_textureProvider);
             _historyMenuTextureManager = new Compositing.HistoryMenuTextureManager(_textureProvider);

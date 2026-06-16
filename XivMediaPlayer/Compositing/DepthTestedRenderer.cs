@@ -79,7 +79,7 @@ namespace XivMediaPlayer.Compositing {
       public float Time;
       public float ShowScreensaver;
       public float UIBlendThreshold;
-      public float _pad6;
+      public float HasPreUI;
       public float _pad7;
       public float _pad8;
     }
@@ -138,7 +138,8 @@ cbuffer Constants : register(b0) {
   float Time;
   float ShowScreensaver;
   float UIBlendThreshold;
-  float3 _pad6;
+  float HasPreUI;
+  float2 _pad7;
 };
 
 cbuffer UIConsts : register(b1) {
@@ -152,6 +153,7 @@ Texture2D VideoTexture : register(t0);
 Texture2D DepthTexture : register(t1);
 Texture2D BackBufferTexture : register(t2);
 Texture2D TitleTexture : register(t3);
+Texture2D PreUITexture : register(t4);
 SamplerState VideoSampler : register(s0);
 SamplerState DepthSampler : register(s1);
 
@@ -660,47 +662,59 @@ float4 PS(VS_OUT input) : SV_TARGET {
   }
   
   if (insideUI && isInside && !occluded) {
-      float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
       float4 bbColor = BackBufferTexture.Sample(VideoSampler, screenUV);
       
-      if (color.a > 0.5) {
-          if (rectType == 4) {
-              // _ToDoList: threshold 90, backdrop #453C26
-              float threshold = 90.0 / 255.0;
-              float bbLuminance = dot(bbColor.rgb, float3(0.299, 0.587, 0.114));
-              float colorBoost = smoothstep(0.3, 0.6, bbLuminance);
-              float isPureWhite = max(smoothstep(threshold - 0.02, 1.0, bbAlpha), colorBoost);
-              float3 shadowColor = float3(69.0 / 255.0, 60.0 / 255.0, 38.0 / 255.0); // #453C26
-              float3 targetColor = lerp(shadowColor, bbColor.rgb, isPureWhite);
-              color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
-          } else if (rectType == 3) {
-              // MjlHud: threshold 233, backdrop #ACA393
-              float threshold = 233.0 / 255.0;
-              float isPureWhite = smoothstep(threshold - 0.02, 1.0, bbAlpha);
-              float3 shadowColor = float3(172.0 / 255.0, 163.0 / 255.0, 147.0 / 255.0); // #ACA393
-              float3 targetColor = lerp(shadowColor, bbColor.rgb, isPureWhite);
-              color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
-          } else if (rectType == 2) {
-              // ActionDetail: ultra aggressive threshold, only 255 cuts the TV
-              float threshold = 254.0 / 255.0;
-              float isPureWhite = smoothstep(threshold - 0.02, 1.0, bbAlpha);
-              float3 shadowColor = float3(48.0 / 255.0, 34.0 / 255.0, 21.0 / 255.0); // #302215
-              float3 targetColor = lerp(shadowColor, bbColor.rgb, isPureWhite);
-              color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
-          } else if (rectType == 1) {
-              // MJI: threshold 152
-              float threshold = 152.0 / 255.0;
-              float isPureWhite = smoothstep(threshold - 0.02, threshold, bbAlpha);
-              
-              float3 blendedBlack = color.rgb * saturate(1.0 - bbAlpha);
-              color.rgb = blendedBlack + (bbColor.rgb * bbAlpha * isPureWhite);
-          } else {
-              // For all other UI (standard game UI), use a black backdrop with threshold 152
-              float threshold = 152.0 / 255.0;
-              float isPureWhite = smoothstep(threshold - 0.02, 1.0, bbAlpha);
-              float3 shadowColor = float3(0.0, 0.0, 0.0);
-              float3 targetColor = lerp(shadowColor, bbColor.rgb, isPureWhite);
-              color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
+      if (HasPreUI > 0.5) {
+          float4 preUIColor = PreUITexture.Sample(VideoSampler, screenUV);
+          float colorDiff = distance(bbColor.rgb, preUIColor.rgb);
+          
+          // If the pixel changed from the pre-UI scene, it's UI.
+          float uiAlpha = smoothstep(0.005, 0.02, colorDiff);
+          
+          if (color.a > 0.5) {
+              color.rgb = lerp(color.rgb, bbColor.rgb, uiAlpha);
+          }
+      } else {
+          float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
+          if (color.a > 0.5) {
+              if (rectType == 4) {
+                  // _ToDoList: threshold 90, backdrop #453C26
+                  float threshold = 90.0 / 255.0;
+                  float bbLuminance = dot(bbColor.rgb, float3(0.299, 0.587, 0.114));
+                  float colorBoost = smoothstep(0.3, 0.6, bbLuminance);
+                  float isPureWhite = max(smoothstep(threshold - 0.02, 1.0, bbAlpha), colorBoost);
+                  float3 shadowColor = float3(69.0 / 255.0, 60.0 / 255.0, 38.0 / 255.0); // #453C26
+                  float3 targetColor = lerp(shadowColor, bbColor.rgb, isPureWhite);
+                  color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
+              } else if (rectType == 3) {
+                  // MjlHud: threshold 233, backdrop #ACA393
+                  float threshold = 233.0 / 255.0;
+                  float isPureWhite = smoothstep(threshold - 0.02, 1.0, bbAlpha);
+                  float3 shadowColor = float3(172.0 / 255.0, 163.0 / 255.0, 147.0 / 255.0); // #ACA393
+                  float3 targetColor = lerp(shadowColor, bbColor.rgb, isPureWhite);
+                  color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
+              } else if (rectType == 2) {
+                  // ActionDetail: ultra aggressive threshold, only 255 cuts the TV
+                  float threshold = 254.0 / 255.0;
+                  float isPureWhite = smoothstep(threshold - 0.02, 1.0, bbAlpha);
+                  float3 shadowColor = float3(48.0 / 255.0, 34.0 / 255.0, 21.0 / 255.0); // #302215
+                  float3 targetColor = lerp(shadowColor, bbColor.rgb, isPureWhite);
+                  color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
+              } else if (rectType == 1) {
+                  // MJI: threshold 152
+                  float threshold = 152.0 / 255.0;
+                  float isPureWhite = smoothstep(threshold - 0.02, threshold, bbAlpha);
+                  
+                  float3 blendedBlack = color.rgb * saturate(1.0 - bbAlpha);
+                  color.rgb = blendedBlack + (bbColor.rgb * bbAlpha * isPureWhite);
+              } else {
+                  // For all other UI (standard game UI), use a black backdrop with threshold 152
+                  float threshold = 152.0 / 255.0;
+                  float isPureWhite = smoothstep(threshold - 0.02, 1.0, bbAlpha);
+                  float3 shadowColor = float3(0.0, 0.0, 0.0);
+                  float3 targetColor = lerp(shadowColor, bbColor.rgb, isPureWhite);
+                  color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
+              }
           }
       }
   }
@@ -819,6 +833,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
       float nearPlane, float farPlane,
       int screenWidth, int screenHeight,
       ID3D11ShaderResourceView uiLayerSrv,
+      ID3D11ShaderResourceView preUiLayerSrv,
       Vector2? hoverUV, float progress, bool isPlaying, float lockState,
       float minDepth, float maxDepth, float volume,
       float renderWidth, float renderHeight,
@@ -873,7 +888,9 @@ float4 PS(VS_OUT input) : SV_TARGET {
           IsLooping = isLooping ? 1.0f : 0.0f,
           IsShuffle = isShuffle ? 1.0f : 0.0f,
           Time = time,
-          ShowScreensaver = showScreensaver
+          ShowScreensaver = showScreensaver,
+          UIBlendThreshold = UIBlendThreshold,
+          HasPreUI = preUiLayerSrv != null ? 1.0f : 0.0f
         };
         _context.UpdateSubresource(constants, _constantBuffer);
 
@@ -910,13 +927,14 @@ float4 PS(VS_OUT input) : SV_TARGET {
         _context.PSSetShader(_pixelShader);
         _context.PSSetConstantBuffer(0, _constantBuffer);
         _context.PSSetConstantBuffer(1, _uiRectBuffer);
-        var srvs = new ID3D11ShaderResourceView[4];
+        var srvs = new ID3D11ShaderResourceView[5];
         srvs[0] = new ID3D11ShaderResourceView(videoSrvPtr);
         srvs[1] = depthSrv;
         srvs[2] = uiLayerSrv;
         srvs[3] = titleSrvPtr != IntPtr.Zero ? new ID3D11ShaderResourceView(titleSrvPtr) : null;
+        srvs[4] = preUiLayerSrv;
         
-        _context.PSSetShaderResources(0, 4, srvs);
+        _context.PSSetShaderResources(0, 5, srvs);
         _context.PSSetSampler(0, _videoSampler);
         _context.PSSetSampler(1, _depthSampler);
 
@@ -932,6 +950,8 @@ float4 PS(VS_OUT input) : SV_TARGET {
         _context.PSSetShaderResource(0, (ID3D11ShaderResourceView)null);
         _context.PSSetShaderResource(1, (ID3D11ShaderResourceView)null);
         _context.PSSetShaderResource(2, (ID3D11ShaderResourceView)null);
+        _context.PSSetShaderResource(3, (ID3D11ShaderResourceView)null);
+        _context.PSSetShaderResource(4, (ID3D11ShaderResourceView)null);
         
         savedRTVs[0]?.Dispose();
         savedDSV?.Dispose();

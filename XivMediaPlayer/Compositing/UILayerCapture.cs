@@ -26,9 +26,14 @@ namespace XivMediaPlayer.Compositing {
     private bool _disposed;
     private bool _initialized;
     private bool _frameCaptured;
+    private bool _preUiCapturedThisFrame;
     private ulong _lastPreDrawFrame;
     private Dalamud.Plugin.Services.IAddonLifecycle _addonLifecycle;
     private string _debugInfo = "Not initialized";
+
+    public UILayerCapture(Dalamud.Plugin.Services.IAddonLifecycle addonLifecycle) {
+        _addonLifecycle = addonLifecycle;
+    }
 
     public string DebugInfo => _debugInfo;
     public bool IsInitialized => _initialized;
@@ -53,6 +58,8 @@ namespace XivMediaPlayer.Compositing {
         Marshal.AddRef(_context.Device.NativePointer);
         _device = _context.Device;
 
+        _addonLifecycle.RegisterListener(Dalamud.Game.Addon.Lifecycle.AddonEvent.PreDraw, System.Linq.Enumerable.Empty<string>(), OnAddonPreDraw);
+
         _initialized = true;
         _debugInfo = "Initialized, waiting for first capture.";
         return true;
@@ -62,47 +69,48 @@ namespace XivMediaPlayer.Compositing {
       }
     }
 
-    /// <summary>
-    /// Call at the very start of OnDraw, before any ImGui rendering.
-    /// Captures the current back buffer (Scene + Game UI). The alpha channel contains the UI mask!
-    /// </summary>
-    public void CaptureFrame() {
-      if (_disposed || !_initialized) return;
-      _frameCaptured = false;
+    private void OnAddonPreDraw(Dalamud.Game.Addon.Lifecycle.AddonEvent eventType, Dalamud.Game.Addon.Lifecycle.AddonArgTypes.AddonArgs args) {
+        if (_disposed || !_initialized) return;
+        if (!_preUiCapturedThisFrame) {
+            // First addon drawing! Capture the scene before any UI is drawn!
+            CapturePreUIScene();
+            _preUiCapturedThisFrame = true;
+        }
+    }
 
+    private bool CaptureToTexture(ref ID3D11Texture2D targetCopy, ref ID3D11ShaderResourceView targetSrv, bool isPreUI) {
       try {
-        // Get the back buffer from the DXGI swap chain directly.
-        // OMGetRenderTargets returns null at the start of OnDraw,
-        // so we go through the FFXIV device's swap chain instead.
         var ffxivDevice = Device.Instance();
         if (ffxivDevice == null || ffxivDevice->SwapChain == null) {
           _debugInfo = "SwapChain not available";
-          return;
+          return false;
         }
 
-        // The FFXIV SwapChain wrapper has a DXGISwapChain pointer
         var scPtr = (IntPtr)ffxivDevice->SwapChain->DXGISwapChain;
         if (scPtr == IntPtr.Zero) {
           _debugInfo = "DXGISwapChain ptr is null";
-          return;
+          return false;
         }
 
         var dxgiSwapChain = new Vortice.DXGI.IDXGISwapChain(scPtr);
-        // GetBuffer(0) = current back buffer
         var backBuffer = dxgiSwapChain.GetBuffer<ID3D11Texture2D>(0);
         var desc = backBuffer.Description;
 
-        // Create or resize our copy texture
-        if (_backBufferCopy == null || _width != (int)desc.Width || _height != (int)desc.Height) {
-          _backBufferCopy?.Dispose();
-          _backBufferSRV?.Dispose();
-          _stagingTexture?.Dispose();
-          _backBufferSRV = null;
+        if (targetCopy == null || _width != (int)desc.Width || _height != (int)desc.Height) {
+          targetCopy?.Dispose();
+          targetSrv?.Dispose();
+          targetSrv = null;
+          
+          if (!isPreUI) {
+             _stagingTexture?.Dispose();
+             _previewStagingTexture?.Dispose();
+             _stagingTexture = null;
+             _previewStagingTexture = null;
+             _width = (int)desc.Width;
+             _height = (int)desc.Height;
+          }
 
-          _width = (int)desc.Width;
-          _height = (int)desc.Height;
-
-          _backBufferCopy = _device.CreateTexture2D(new Texture2DDescription {
+          targetCopy = _device.CreateTexture2D(new Texture2DDescription {
             Width = desc.Width,
             Height = desc.Height,
             MipLevels = 1,
@@ -114,52 +122,69 @@ namespace XivMediaPlayer.Compositing {
             CPUAccessFlags = CpuAccessFlags.None,
           });
 
-          _stagingTexture = _device.CreateTexture2D(new Texture2DDescription {
-            Width = 1,
-            Height = 1,
-            MipLevels = 1,
-            ArraySize = 1,
-            Format = desc.Format,
-            SampleDescription = new SampleDescription(1, 0),
-            Usage = ResourceUsage.Staging,
-            BindFlags = BindFlags.None,
-            CPUAccessFlags = CpuAccessFlags.Read,
-          });
+          targetSrv = _device.CreateShaderResourceView(targetCopy);
 
-          _previewStagingTexture?.Dispose();
-          _previewStagingTexture = _device.CreateTexture2D(new Texture2DDescription {
-            Width = desc.Width,
-            Height = desc.Height,
-            MipLevels = 1,
-            ArraySize = 1,
-            Format = desc.Format,
-            SampleDescription = new SampleDescription(1, 0),
-            Usage = ResourceUsage.Staging,
-            BindFlags = BindFlags.None,
-            CPUAccessFlags = CpuAccessFlags.Read,
-          });
+          if (!isPreUI) {
+              _stagingTexture = _device.CreateTexture2D(new Texture2DDescription {
+                Width = 1,
+                Height = 1,
+                MipLevels = 1,
+                ArraySize = 1,
+                Format = desc.Format,
+                SampleDescription = new SampleDescription(1, 0),
+                Usage = ResourceUsage.Staging,
+                BindFlags = BindFlags.None,
+                CPUAccessFlags = CpuAccessFlags.Read,
+              });
 
-          _backBufferSRV = _device.CreateShaderResourceView(_backBufferCopy);
+              _previewStagingTexture = _device.CreateTexture2D(new Texture2DDescription {
+                Width = desc.Width,
+                Height = desc.Height,
+                MipLevels = 1,
+                ArraySize = 1,
+                Format = desc.Format,
+                SampleDescription = new SampleDescription(1, 0),
+                Usage = ResourceUsage.Staging,
+                BindFlags = BindFlags.None,
+                CPUAccessFlags = CpuAccessFlags.Read,
+              });
+          }
         }
 
-        // Copy the back buffer (Scene + UI) to our snapshot
         if (desc.SampleDescription.Count > 1) {
-          _context.ResolveSubresource(_backBufferCopy, 0, backBuffer, 0, desc.Format);
+          _context.ResolveSubresource(targetCopy, 0, backBuffer, 0, desc.Format);
         } else {
-          _context.CopyResource(_backBufferCopy, backBuffer);
+          _context.CopyResource(targetCopy, backBuffer);
         }
 
         backBuffer.Dispose();
+        return true;
+      } catch (Exception ex) {
+        _debugInfo = $"Capture failed: {ex.Message}";
+        return false;
+      }
+    }
 
-        // We no longer capture GBuffer[3] here. The Pre-UI scene is captured in OnAddonPreDraw!
+    private void CapturePreUIScene() {
+        CaptureToTexture(ref _sceneDiffuseCopy, ref _sceneDiffuseSRV, true);
+    }
+
+    /// <summary>
+    /// Call at the very start of OnDraw, before any ImGui rendering.
+    /// Captures the current back buffer (Scene + Game UI). The alpha channel contains the UI mask!
+    /// </summary>
+    public void CaptureFrame() {
+      if (_disposed || !_initialized) return;
+      _frameCaptured = false;
+      _preUiCapturedThisFrame = false;
+
+      if (CaptureToTexture(ref _backBufferCopy, ref _backBufferSRV, false)) {
         _frameCaptured = true;
         _debugInfo = $"Captured {_width}x{_height}";
 
         // Also enumerate visible addons for debug
         LastAddonRects = GetVisibleAddonRects();
         _debugInfo = $"Captured {_width}x{_height}, {LastAddonRects.Count} addons";
-      } catch (Exception ex) {
-        _debugInfo = $"Capture failed: {ex.Message}";
       }
     }
 
@@ -324,6 +349,7 @@ namespace XivMediaPlayer.Compositing {
     public void Dispose() {
       if (_disposed) return;
       _disposed = true;
+      _addonLifecycle?.UnregisterListener(Dalamud.Game.Addon.Lifecycle.AddonEvent.PreDraw, System.Linq.Enumerable.Empty<string>(), OnAddonPreDraw);
       _stagingTexture?.Dispose();
       _previewStagingTexture?.Dispose();
       _backBufferSRV?.Dispose();
