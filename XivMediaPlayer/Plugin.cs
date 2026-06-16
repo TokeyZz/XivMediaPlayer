@@ -222,34 +222,36 @@ namespace XivMediaPlayer
                  ?? new Configuration();
             _config.Initialize(_pluginInterface);
 
-            if (!_config.HasAutoDetectedAMD) {
-                Task.Run(() => {
-                    try {
-                        var proc = new System.Diagnostics.Process {
-                            StartInfo = new System.Diagnostics.ProcessStartInfo {
-                                FileName = "powershell",
-                                Arguments = "-Command \"(Get-CimInstance Win32_VideoController).Name\"",
-                                UseShellExecute = false,
-                                RedirectStandardOutput = true,
-                                CreateNoWindow = true
-                            }
-                        };
-                        proc.Start();
-                        string output = proc.StandardOutput.ReadToEnd();
-                        proc.WaitForExit();
-                        if (output.Contains("AMD") || output.Contains("Radeon")) {
-                            _config.UIBlendThreshold = 171.0f / 255.0f;
-                            if (_worldRenderer != null) {
-                                _worldRenderer.UIBlendThreshold = _config.UIBlendThreshold;
-                            }
+        if (!_config.HasAutoDetectedAMD_v2) {
+            Task.Run(() => {
+                try {
+                    var proc = new System.Diagnostics.Process {
+                        StartInfo = new System.Diagnostics.ProcessStartInfo {
+                            FileName = "powershell",
+                            Arguments = "-Command \"(Get-CimInstance Win32_VideoController).Name\"",
+                            UseShellExecute = false,
+                            RedirectStandardOutput = true,
+                            CreateNoWindow = true
                         }
-                        _config.HasAutoDetectedAMD = true;
-                        _config.Save();
-                    } catch {
-                        // Ignore if PS query fails, fallback to standard alpha
+                    };
+                    proc.Start();
+                    string output = proc.StandardOutput.ReadToEnd();
+                    proc.WaitForExit();
+                    if (output.Contains("AMD") || output.Contains("Radeon")) {
+                        _config.UIBlendThreshold = 171.0f / 255.0f;
+                    } else {
+                        _config.UIBlendThreshold = 0.0f;
                     }
-                });
-            }
+                    if (_worldRenderer != null) {
+                        _worldRenderer.UIBlendThreshold = _config.UIBlendThreshold;
+                    }
+                    _config.HasAutoDetectedAMD_v2 = true;
+                    _config.Save();
+                } catch {
+                    // Ignore if PS query fails, fallback to standard alpha
+                }
+            });
+        }
             // Initialize yt-dlp manager
             _ytDlpManager = new YtDlpManager(pluginDir, _config.PreferredQuality);
             _ytDlpManager.OnStatusUpdate += (s, msg) => _pluginLog.Info("[yt-dlp] " + msg);
