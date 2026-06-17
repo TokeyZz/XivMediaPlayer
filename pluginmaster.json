@@ -9,7 +9,7 @@
     "TestingAssemblyVersion": "0.0.8.3",
     "RepoUrl": "https://github.com/TokeyZz/XivMediaPlayer",
     "ApplicableVersion": "any",
-    "DalamudApiLevel": 10,
+    "DalamudApiLevel": 15,
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
