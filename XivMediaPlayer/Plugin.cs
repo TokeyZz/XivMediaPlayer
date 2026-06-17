@@ -2311,48 +2311,15 @@ namespace XivMediaPlayer
                     var mousePos = ImGui.GetIO().MousePos;
                     var (tl, tr, br, bl) = _worldRenderer.Transform.Corners;
 
-                    _gameGui.WorldToScreen(tl, out var sTL);
-                    _gameGui.WorldToScreen(tr, out var sTR);
-                    _gameGui.WorldToScreen(br, out var sBR);
-                    _gameGui.WorldToScreen(bl, out var sBL);
+                    bool vTL = _gameGui.WorldToScreen(tl, out var sTL);
+                    bool vTR = _gameGui.WorldToScreen(tr, out var sTR);
+                    bool vBR = _gameGui.WorldToScreen(br, out var sBR);
+                    bool vBL = _gameGui.WorldToScreen(bl, out var sBL);
 
-                    var uv = MathUtils.InverseBilinear(mousePos, sTL, sTR, sBR, sBL);
-
-                    if (_worldRenderer.UseDepthOcclusion && cameraPos.HasValue && cameraForward.HasValue)
+                    System.Numerics.Vector2 uv = new System.Numerics.Vector2(-1, -1);
+                    if (vTL || vTR || vBR || vBL)
                     {
-                        var viewport = ImGui.GetMainViewport();
-                        float ndcX = ((mousePos.X - viewport.Pos.X) / viewport.Size.X) * 2f - 1f;
-                        float ndcY = -(((mousePos.Y - viewport.Pos.Y) / viewport.Size.Y) * 2f - 1f);
-
-                        float fovDist = 1.0f / (float)Math.Tan(fovY * 0.5f);
-                        var rayOrigin = cameraPos.Value;
-                        var rayDir = System.Numerics.Vector3.Normalize(ndcX * aspectRatio * cameraRight + ndcY * cameraUp - fovDist * cameraForward.Value);
-
-                        var tvRight = tr - tl;
-                        var tvDown = bl - tl;
-                        var tvNormal = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Cross(tvRight, tvDown));
-
-                        float denom = System.Numerics.Vector3.Dot(tvNormal, rayDir);
-                        if (Math.Abs(denom) > 1e-6f)
-                        {
-                            float t = System.Numerics.Vector3.Dot(tl - rayOrigin, tvNormal) / denom;
-                            if (t > 0f)
-                            {
-                                var hitPoint = rayOrigin + rayDir * t;
-                                var d = hitPoint - tl;
-                                float u = System.Numerics.Vector3.Dot(d, tvRight) / tvRight.LengthSquared();
-                                float v = System.Numerics.Vector3.Dot(d, tvDown) / tvDown.LengthSquared();
-                                uv = new System.Numerics.Vector2(u, v);
-                            }
-                            else
-                            {
-                                uv = new System.Numerics.Vector2(-1, -1);
-                            }
-                        }
-                        else
-                        {
-                            uv = new System.Numerics.Vector2(-1, -1);
-                        }
+                        uv = MathUtils.InverseBilinear(mousePos, sTL, sTR, sBR, sBL);
                     }
 
                     // UI Alpha Mask Check
