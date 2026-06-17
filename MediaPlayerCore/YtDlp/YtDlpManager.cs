@@ -54,6 +54,7 @@ namespace MediaPlayerCore.YtDlp
         private TcpListener? _cookieListener;
         private Thread? _cookieListenerThread;
         private bool _isListeningForCookies;
+        private readonly List<Process> _runningProcesses = new();
 
         public event EventHandler<string>? OnStatusUpdate;
         public event EventHandler<Exception>? OnError;
@@ -176,6 +177,22 @@ namespace MediaPlayerCore.YtDlp
                 _cookieListener?.Stop();
             }
             catch { }
+
+            lock (_runningProcesses)
+            {
+                foreach (var process in _runningProcesses)
+                {
+                    try
+                    {
+                        if (!process.HasExited)
+                        {
+                            process.Kill(true);
+                        }
+                    }
+                    catch { }
+                }
+                _runningProcesses.Clear();
+            }
         }
 
         /// <summary>
@@ -517,11 +534,16 @@ namespace MediaPlayerCore.YtDlp
                     throw new Exception("Failed to start yt-dlp process");
                 }
 
+                lock (_runningProcesses)
+                {
+                    _runningProcesses.Add(process);
+                }
+
                 bool timedOut = false;
                 using var timer = new Timer(_ =>
                 {
                     timedOut = true;
-                    try { process.Kill(); } catch { }
+                    try { process.Kill(true); } catch { }
                 }, null, 30000, Timeout.Infinite);
 
                 // Read stderr asynchronously to prevent buffer deadlocks
@@ -542,6 +564,11 @@ namespace MediaPlayerCore.YtDlp
                 if (process.ExitCode != 0 && string.IsNullOrEmpty(output))
                 {
                     throw new Exception($"yt-dlp exited with code {process.ExitCode}: {error}");
+                }
+
+                lock (_runningProcesses)
+                {
+                    _runningProcesses.Remove(process);
                 }
 
                 return output;
