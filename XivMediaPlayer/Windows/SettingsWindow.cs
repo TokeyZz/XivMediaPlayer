@@ -75,7 +75,16 @@ namespace XivMediaPlayer.Windows {
         _plugin.Config.Save();
       }
       if (ImGui.IsItemHovered()) {
-        ImGui.SetTooltip("Enable this if you have an AMD card and see a massive brown box over the TV.\nThis perfectly cuts out UI text, but hides UI drop shadows.");
+        ImGui.SetTooltip("Enable this if you have an AMD card and notice that the TV does not render. UI dropshadows are lost.");
+      }
+
+      bool reshadeCompat = _plugin.Config.ReShadeCompatibilityMode;
+      if (ImGui.Checkbox("ReShade Compatibility Mode", ref reshadeCompat)) {
+        _plugin.Config.ReShadeCompatibilityMode = reshadeCompat;
+        _plugin.Config.Save();
+      }
+      if (ImGui.IsItemHovered()) {
+        ImGui.SetTooltip("Enable this if you use ReShade and the TV disapears to to using lightroom.\nThis bypasses the broken alpha channel by comparing game depth to a grayscale game render to mask out the UI.");
       }
 
       ImGui.Spacing();

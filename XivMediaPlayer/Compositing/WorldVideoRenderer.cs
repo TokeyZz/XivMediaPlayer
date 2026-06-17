@@ -152,6 +152,7 @@ namespace XivMediaPlayer.Compositing {
     /// Debug info: per-corner depth thresholds and sampled game depths at corners.
     /// </summary>
     public string DepthDebugInfo { get; private set; }
+    public bool UseDepthBasedUIMask { get; set; } = false;
 
     private (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl)? _lastCorners;
 
@@ -235,6 +236,7 @@ namespace XivMediaPlayer.Compositing {
         if (_depthRenderer == null) {
           _depthRenderer = new DepthTestedRenderer();
         }
+        _depthRenderer.UseDepthBasedUIMask = UseDepthBasedUIMask;
         if (!_depthRenderer.IsInitialized) {
           if (!_depthRenderer.Initialize()) {
             DepthRendererError = $"Init failed: {_depthRenderer.InitError}";

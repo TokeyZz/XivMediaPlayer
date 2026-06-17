@@ -2661,6 +2661,7 @@ namespace XivMediaPlayer
                     }
 
                     _worldRenderer.UIBlendThreshold = _config.UIBlendThreshold;
+                    _worldRenderer.UseDepthBasedUIMask = _config.ReShadeCompatibilityMode;
                     _worldRenderer.Render(videoSrv, videoWidth, videoHeight, _depthCapture, cameraPos, cameraForward, cameraRight, cameraUp, fovY, aspectRatio, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, lockState, volume, srvPtr, _config.LoopEnabled, _config.ShuffleEnabled, timeSeconds, showScreensaver);
                 }
                 
