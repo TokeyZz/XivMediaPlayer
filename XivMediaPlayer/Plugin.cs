@@ -1538,9 +1538,9 @@ namespace XivMediaPlayer
                     CurrentTvPlacement = tv;
                     
                     // Apply to the ACTIVE renderer transform ONLY if we aren't actively editing it.
-                    // Server placement state is authoritative: if a TV exists on the server,
+                    // Server placement state is authoritative, if a TV exists on the server,
                     // render it unless the owner removes it from the area.
-                    if (_worldRenderer != null && !IsHousingMenuOpen)
+                    if (_worldRenderer != null && !IsHousingMenuOpen && !(_screenSettingsWindow?.IsOpen == true))
                     {
                         _worldRenderer.Transform.Enabled = true;
                         _worldRenderer.Transform.Position = new System.Numerics.Vector3(tv.PositionX, tv.PositionY, tv.PositionZ);
@@ -1857,6 +1857,8 @@ namespace XivMediaPlayer
             {
                 return; // NEVER interrupt a local FFmpeg stream with a server sync!
             }
+            if (_isResolvingMedia) return;
+
             var activeStream = _mediaManager?.ActiveStream;
             bool isLocalEnded = activeStream != null && activeStream.VlcState == LibVLCSharp.Shared.VLCState.Ended;
             bool isDifferentUrl = activeStream == null || (!string.IsNullOrEmpty(_lastStreamURL) && _lastStreamURL != sync.CurrentUrl) || (isLocalEnded && sync.IsPlaying);
