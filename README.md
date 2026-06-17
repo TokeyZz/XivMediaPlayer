@@ -3,7 +3,7 @@ If you've ever played VRChat these video players behave very similar.
 
 <img width="1918" height="1058" alt="image" src="https://github.com/user-attachments/assets/55d07c15-4732-4580-b10a-49de781ecce0" />
 
-To place a screen, enter your housing menu and the video player placement controls will pop in!
+To place a screen, enter your interior furnishings menu and the video player placement controls will pop in!
 
 Supports most popular video playback websites that are browser accessible without logging in.
 Youtube, Twitch, Vimeo, RTSP, Image URLS, etc... full supported media site list is [here](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)
