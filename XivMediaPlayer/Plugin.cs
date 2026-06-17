@@ -318,6 +318,7 @@ namespace XivMediaPlayer
             _depthPreviewWindow = new DepthPreviewWindow(_textureProvider, _pluginLog);
             _depthPreviewWindow.Capture = _depthCapture;
             _depthPreviewWindow.UICapture = _uiCapture;
+            _depthPreviewWindow.Config = _config;
 
             _browserWindow.OnPlayRequested += OnBrowserPlayRequested;
 

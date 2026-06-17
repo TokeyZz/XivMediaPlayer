@@ -37,6 +37,7 @@ namespace XivMediaPlayer.Compositing {
     public bool IsInitialized => _initialized;
     public ID3D11ShaderResourceView BackBufferSRV => _backBufferSRV;
     public byte[] LastAlphaData { get; private set; }
+    public byte[] LastColorData { get; private set; }
     public int CaptureWidth { get; private set; }
     public int CaptureHeight { get; private set; }
     public bool Initialize() {
@@ -305,6 +306,9 @@ namespace XivMediaPlayer.Compositing {
           if (LastAlphaData == null || LastAlphaData.Length != captureW * captureH * 4) {
             LastAlphaData = new byte[captureW * captureH * 4];
           }
+          if (LastColorData == null || LastColorData.Length != captureW * captureH * 4) {
+            LastColorData = new byte[captureW * captureH * 4];
+          }
 
           unsafe {
             byte* ptr = (byte*)mapped.DataPointer;
@@ -314,12 +318,20 @@ namespace XivMediaPlayer.Compositing {
                 int srcY = y * stepY;
                 byte* pixel = ptr + srcY * mapped.RowPitch + srcX * 4;
                 
+                byte b = pixel[0];
+                byte g = pixel[1];
+                byte r = pixel[2];
                 byte alpha = pixel[3]; // FFXIV backbuffer is usually B8G8R8A8, so 3 is A
                 int idx = (y * captureW + x) * 4;
                 LastAlphaData[idx + 0] = alpha;
                 LastAlphaData[idx + 1] = alpha;
                 LastAlphaData[idx + 2] = alpha;
                 LastAlphaData[idx + 3] = 255;
+                
+                LastColorData[idx + 0] = r;
+                LastColorData[idx + 1] = g;
+                LastColorData[idx + 2] = b;
+                LastColorData[idx + 3] = 255;
               }
             }
           }

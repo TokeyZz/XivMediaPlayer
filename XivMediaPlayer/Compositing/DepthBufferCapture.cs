@@ -43,6 +43,7 @@ namespace XivMediaPlayer.Compositing {
 
     public string DebugInfo => _debugInfo;
     public byte[] LastRgbaData => _lastRgbaData;
+    public float[] LastDepthData { get; private set; }
     public int CaptureWidth => _captureWidth;
     public int CaptureHeight => _captureHeight;
     public bool IsInitialized => _initialized;
@@ -315,10 +316,12 @@ namespace XivMediaPlayer.Compositing {
           if (_lastRgbaData == null || _lastRgbaData.Length != captureW * captureH * 4) {
             _lastRgbaData = new byte[captureW * captureH * 4];
           }
+          if (LastDepthData == null || LastDepthData.Length != captureW * captureH) {
+            LastDepthData = new float[captureW * captureH];
+          }
 
           float minDepth = float.MaxValue, maxDepth = float.MinValue;
           int nonZeroCount = 0;
-          var depthValues = new float[captureW * captureH];
 
           for (int y = 0; y < captureH; y++) {
             for (int x = 0; x < captureW; x++) {
@@ -345,7 +348,7 @@ namespace XivMediaPlayer.Compositing {
                   break;
               }
 
-              depthValues[y * captureW + x] = depth;
+              LastDepthData[y * captureW + x] = depth;
               if (depth > 0.0001f) nonZeroCount++;
               if (depth < minDepth) minDepth = depth;
               if (depth > maxDepth) maxDepth = depth;
@@ -373,7 +376,7 @@ namespace XivMediaPlayer.Compositing {
           for (int i = 0; i < captureW * captureH; i++) {
             int px = i % captureW;
             int py = i / captureW;
-            float normalized = (depthValues[i] - minDepth) / range;
+            float normalized = (LastDepthData[i] - minDepth) / range;
             byte val = (byte)(Math.Clamp(1f - normalized, 0f, 1f) * 255f);
             int idx = i * 4;
 
@@ -394,7 +397,7 @@ namespace XivMediaPlayer.Compositing {
                   continue;
                 }
 
-                bool occluded = depthValues[i] > threshold;
+                bool occluded = LastDepthData[i] > threshold;
                 if (occluded) {
                   _lastRgbaData[idx + 0] = (byte)Math.Min(255, val / 2 + 128);
                   _lastRgbaData[idx + 1] = (byte)(val / 3);

@@ -28,6 +28,7 @@ namespace XivMediaPlayer.Windows {
     /// </summary>
     public DepthBufferCapture Capture { get; set; }
     public UILayerCapture UICapture { get; set; }
+    public Configuration Config { get; set; }
 
     public DepthPreviewWindow(ITextureProvider textureProvider, IPluginLog pluginLog)
       : base("Depth Buffer Preview", ImGuiWindowFlags.None, false) {
@@ -116,6 +117,45 @@ namespace XivMediaPlayer.Windows {
         ImGui.TextColored(new Vector4(0, 1, 1, 1), $"UI Capture: {UICapture.DebugInfo}");
         
         var uiData = UICapture.LastAlphaData;
+        
+        if (Config != null && Config.ReShadeCompatibilityMode && Capture != null && Capture.LastDepthData != null && UICapture.LastColorData != null) {
+          int w = Math.Min(Capture.CaptureWidth, UICapture.CaptureWidth);
+          int h = Math.Min(Capture.CaptureHeight, UICapture.CaptureHeight);
+          if (w > 0 && h > 0) {
+            var experimentalData = new byte[w * h * 4];
+            var depthData = Capture.LastDepthData;
+            var colorData = UICapture.LastColorData;
+            for (int y = 0; y < h; y++) {
+              for (int x = 0; x < w; x++) {
+                int idx = (y * w + x) * 4;
+                int depthIdx = y * Capture.CaptureWidth + x;
+                int colorIdx = (y * UICapture.CaptureWidth + x) * 4;
+                
+                float gameDepth = depthData[depthIdx];
+                float r = colorData[colorIdx + 0] / 255f;
+                float g = colorData[colorIdx + 1] / 255f;
+                float b = colorData[colorIdx + 2] / 255f;
+                
+                float luminance = r * 0.299f + g * 0.587f + b * 0.114f;
+                float invertedColor = 1.0f - luminance;
+                float diff = Math.Abs(invertedColor - gameDepth);
+                float invertedDiff = 1.0f - diff;
+                float uiAlpha = Math.Clamp(invertedDiff, 0f, 1f);
+                byte alphaByte = (byte)(uiAlpha * 255f);
+                if (alphaByte < 130) {
+                    alphaByte = 0;
+                }
+                
+                experimentalData[idx + 0] = alphaByte;
+                experimentalData[idx + 1] = alphaByte;
+                experimentalData[idx + 2] = alphaByte;
+                experimentalData[idx + 3] = 255;
+              }
+            }
+            uiData = experimentalData;
+          }
+        }
+
         if (uiData != null && uiData.Length > 0) {
           try {
             int hash = uiData.Length;

@@ -675,6 +675,9 @@ float4 PS(VS_OUT input) : SV_TARGET {
           float invertedDiff = 1.0 - diff;
           
           float uiAlpha = saturate(invertedDiff);
+          if (uiAlpha < 130.0 / 255.0) {
+              uiAlpha = 0.0;
+          }
           
           if (color.a > 0.5) {
               color.rgb = lerp(color.rgb, bbColor.rgb, uiAlpha);

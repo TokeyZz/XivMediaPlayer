@@ -84,7 +84,7 @@ namespace XivMediaPlayer.Windows {
         _plugin.Config.Save();
       }
       if (ImGui.IsItemHovered()) {
-        ImGui.SetTooltip("Enable this if you use ReShade and the TV disapears to to using lightroom.\nThis bypasses the broken alpha channel by comparing game depth to a grayscale game render to mask out the UI.");
+        ImGui.SetTooltip("Enable this if you use ReShade and the TV disapears using the lightroom effect.\nThis bypasses the UI alpha channel it breaks by comparing game depth to a grayscale game render to mask out the UI. This fix is very rough.");
       }
 
       ImGui.Spacing();
