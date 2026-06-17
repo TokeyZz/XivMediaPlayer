@@ -71,6 +71,8 @@ namespace XivMediaPlayer
         private Compositing.TitleTextureManager _titleTextureManager;
         private Compositing.HistoryMenuTextureManager _historyMenuTextureManager;
         private bool _isHistoryMenuOpen = false;
+        private Compositing.QueueMenuTextureManager _queueMenuTextureManager;
+        private bool _isQueueMenuOpen = false;
 
         private MediaManager _mediaManager;
         public MediaManager MediaManager => _mediaManager;
@@ -276,6 +278,7 @@ namespace XivMediaPlayer
             _uiCapture.Initialize();
             _titleTextureManager = new Compositing.TitleTextureManager(_textureProvider);
             _historyMenuTextureManager = new Compositing.HistoryMenuTextureManager(_textureProvider);
+            _queueMenuTextureManager = new Compositing.QueueMenuTextureManager(_textureProvider);
 
             // Create windows
             _windowSystem = new WindowSystem("XivMediaPlayer");
@@ -2415,6 +2418,59 @@ namespace XivMediaPlayer
                         {
                             _pluginLog.Information($"Media Control Clicked at UV: {uv.X:F2}, {uv.Y:F2}");
 
+                            if (_isQueueMenuOpen)
+                            {
+                                var action = _queueMenuTextureManager?.GetActionAtUV(uv.X, uv.Y);
+                                if (action == "close") {
+                                    _isQueueMenuOpen = false;
+                                } else if (action == "clear") {
+                                    _mediaQueue.Clear();
+                                    _ = PushMediaToServerAsync(false);
+                                    _queueMenuTextureManager?.UpdateQueue(_mediaQueue, _currentMediaTitle ?? "Nothing Playing");
+                                } else if (action == "paste") {
+                                    Thread thread = new Thread(() =>
+                                    {
+                                        string clip = "";
+                                        for (int i = 0; i < 5; i++)
+                                        {
+                                            try { clip = System.Windows.Forms.Clipboard.GetText(); if (!string.IsNullOrEmpty(clip)) break; } catch { }
+                                            Thread.Sleep(50);
+                                        }
+                                        if (!string.IsNullOrEmpty(clip))
+                                        {
+                                            EnqueueFrameworkAction(() =>
+                                            {
+                                                _mediaQueue.Enqueue(clip);
+                                                _chat.Print($"[Media Player] Queued ({_mediaQueue.Count}): {clip}");
+                                                if (_mediaManager?.ActiveStream == null || _mediaManager.ActiveStream.PlaybackState == NAudio.Wave.PlaybackState.Stopped)
+                                                {
+                                                    if (_playerObject != null) PlayRouted(_mediaQueue.Dequeue(), CurrentAudioSource);
+                                                }
+                                                else _ = PushMediaToServerAsync(false);
+                                                _queueMenuTextureManager?.UpdateQueue(_mediaQueue, _currentMediaTitle ?? "Nothing Playing");
+                                            });
+                                        }
+                                        else
+                                        {
+                                            EnqueueFrameworkAction(() => _chat.PrintError("[Media Player] Failed to read clipboard or clipboard was empty."));
+                                        }
+                                    });
+                                    thread.SetApartmentState(ApartmentState.STA);
+                                    thread.Start();
+                                } else if (action != null && action.StartsWith("remove:")) {
+                                    if (int.TryParse(action.Split(':')[1], out int idx)) {
+                                        var list = _mediaQueue.ToList();
+                                        if (idx >= 0 && idx < list.Count) {
+                                            list.RemoveAt(idx);
+                                            _mediaQueue = new Queue<string>(list);
+                                            _ = PushMediaToServerAsync(false);
+                                            _queueMenuTextureManager?.UpdateQueue(_mediaQueue, _currentMediaTitle ?? "Nothing Playing");
+                                        }
+                                    }
+                                }
+                                return; // Handled
+                            }
+
                             // Handle Transport Controls (Y between 0.85 and 0.95)
                             if (uv.Y > 0.85f && uv.Y < 0.95f)
                             {
@@ -2520,32 +2576,14 @@ namespace XivMediaPlayer
                                 // Queue (0.90 - 0.94)
                                 else if (uv.X >= 0.90f && uv.X <= 0.94f)
                                 {
-                                    Thread thread = new Thread(() =>
+                                    EnqueueFrameworkAction(() =>
                                     {
-                                        string clip = "";
-                                        for (int i = 0; i < 5; i++)
+                                        _isQueueMenuOpen = !_isQueueMenuOpen;
+                                        if (_isQueueMenuOpen)
                                         {
-                                            try { clip = System.Windows.Forms.Clipboard.GetText(); if (!string.IsNullOrEmpty(clip)) break; } catch { }
-                                            Thread.Sleep(50);
-                                        }
-                                        if (!string.IsNullOrEmpty(clip))
-                                        {
-                                            EnqueueFrameworkAction(() =>
-                                            {
-                                                _mediaQueue.Enqueue(clip);
-                                                _chat.Print($"[Media Player] Queued ({_mediaQueue.Count}): {clip}");
-                                                if (activeStream == null || activeStream.PlaybackState == NAudio.Wave.PlaybackState.Stopped)
-                                                    if (_playerObject != null) PlayRouted(_mediaQueue.Dequeue(), CurrentAudioSource);
-                                                else _ = PushMediaToServerAsync(false);
-                                            });
-                                        }
-                                        else
-                                        {
-                                            EnqueueFrameworkAction(() => _chat.PrintError("[Media Player] Failed to read clipboard or clipboard was empty."));
+                                            _queueMenuTextureManager?.UpdateQueue(_mediaQueue, _currentMediaTitle ?? "Nothing Playing");
                                         }
                                     });
-                                    thread.SetApartmentState(ApartmentState.STA);
-                                    thread.Start();
                                 }
                                 // Kill (0.95 - 0.99)
                                 else if (uv.X >= 0.95f && uv.X <= 0.99f)
@@ -2629,7 +2667,9 @@ namespace XivMediaPlayer
                     }
                     float volume = _mediaManager != null ? _mediaManager.LiveStreamVolume : 1f;
                     
-                    IntPtr srvPtr = _isHistoryMenuOpen 
+                    IntPtr srvPtr = _isQueueMenuOpen 
+                        ? (_queueMenuTextureManager?.TextureHandle ?? IntPtr.Zero) 
+                        : _isHistoryMenuOpen 
                         ? (_historyMenuTextureManager?.TextureHandle ?? IntPtr.Zero) 
                         : (_titleTextureManager?.TextureHandle ?? IntPtr.Zero);
 
@@ -3337,6 +3377,7 @@ namespace XivMediaPlayer
             _uiCapture?.Dispose();
             _titleTextureManager?.Dispose();
             _historyMenuTextureManager?.Dispose();
+            _queueMenuTextureManager?.Dispose();
             _worldRenderer?.Dispose();
             _depthCapture?.Dispose();
             _depthPreviewWindow?.Dispose();
