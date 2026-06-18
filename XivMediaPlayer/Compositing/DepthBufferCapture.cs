@@ -75,7 +75,6 @@ namespace XivMediaPlayer.Compositing {
         var contextPtr = (IntPtr)ffxivDevice->D3D11DeviceContext;
         System.Runtime.InteropServices.Marshal.AddRef(contextPtr);
         _context = new ID3D11DeviceContext(contextPtr);
-        System.Runtime.InteropServices.Marshal.AddRef(_context.Device.NativePointer);
         _device = _context.Device;
 
         // We now fetch the DepthStencil pointer dynamically every frame in BeginFrame()
@@ -196,6 +195,7 @@ namespace XivMediaPlayer.Compositing {
 
         if (_gameDepthTexturePtr == IntPtr.Zero) return;
 
+        System.Runtime.InteropServices.Marshal.AddRef(_gameDepthTexturePtr);
         using var depthTexture = new ID3D11Texture2D(_gameDepthTexturePtr);
         CopyDepthBuffer(depthTexture);
         ReadDepthToArray();
@@ -473,6 +473,8 @@ namespace XivMediaPlayer.Compositing {
       _depthCopy?.Dispose();
       _stagingTexture?.Dispose();
 
+      _device?.Dispose();
+      _context?.Dispose();
       _device = null;
       _context = null;
     }

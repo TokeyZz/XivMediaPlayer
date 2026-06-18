@@ -87,5 +87,16 @@ namespace XivMediaPlayer.Compositing {
       var desc = d3d.Description;
       return $"{name}: {desc.Width}x{desc.Height}, {desc.Format}, Bind={desc.BindFlags}\n";
     }
+
+    public static unsafe IntPtr GetToneAdjustSourceSrvPtr() {
+        var rtm = RenderTargetManager.Instance();
+        if (rtm == null) return IntPtr.Zero;
+
+        IntPtr texPtr = System.Runtime.InteropServices.Marshal.ReadIntPtr((IntPtr)rtm, 880); // ToneAdjustSource
+        if (texPtr == IntPtr.Zero) return IntPtr.Zero;
+
+        IntPtr srvPtr = System.Runtime.InteropServices.Marshal.ReadIntPtr(texPtr, 112); // D3D11ShaderResourceView
+        return srvPtr;
+    }
   }
 }

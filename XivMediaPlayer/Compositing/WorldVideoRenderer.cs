@@ -23,16 +23,16 @@ namespace XivMediaPlayer.Compositing {
     private bool _disposed;
     private bool _useDepthOcclusion = true;
     private bool _enableGlow = true;
+    
+    private unsafe FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* _lastGBuffer2Tex;
+    private unsafe FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* _lastGBuffer3Tex;
+    private Vortice.Direct3D11.ID3D11ShaderResourceView? _gbuffer2Srv;
+    private Vortice.Direct3D11.ID3D11ShaderResourceView? _gbuffer3Srv;
 
     /// <summary>
     /// Whether to render a backlit glow effect around the screen.
     /// </summary>
     public bool EnableGlow { get => _enableGlow; set => _enableGlow = value; }
-
-    public float UIBlendThreshold {
-      get => _depthRenderer?.UIBlendThreshold ?? 0.95f;
-      set { if (_depthRenderer != null) _depthRenderer.UIBlendThreshold = value; }
-    }
 
     public WorldScreenTransform Transform => _transform;
 
@@ -152,7 +152,6 @@ namespace XivMediaPlayer.Compositing {
     /// Debug info: per-corner depth thresholds and sampled game depths at corners.
     /// </summary>
     public string DepthDebugInfo { get; private set; }
-    public bool UseDepthBasedUIMask { get; set; } = false;
 
     private (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl)? _lastCorners;
 
@@ -173,14 +172,73 @@ namespace XivMediaPlayer.Compositing {
       }
     }
 
+    private unsafe Vortice.Direct3D11.ID3D11ShaderResourceView GetOrCreateSRV(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* tex, ref FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* lastTex, ref Vortice.Direct3D11.ID3D11ShaderResourceView srv) {
+        if (tex == null || tex->D3D11Texture2D == null) return null;
+        if (tex != lastTex || srv == null) {
+            srv?.Dispose();
+            srv = null;
+            lastTex = tex;
+            
+            var texPtr = (IntPtr)tex->D3D11Texture2D;
+            System.Runtime.InteropServices.Marshal.AddRef(texPtr);
+            var d3dTex = new Vortice.Direct3D11.ID3D11Texture2D(texPtr);
+            var device = d3dTex.Device;
+            
+            try {
+                if (d3dTex.Description.Format == Vortice.DXGI.Format.R24G8_Typeless) {
+                    var desc = new Vortice.Direct3D11.ShaderResourceViewDescription {
+                        Format = Vortice.DXGI.Format.R24_UNorm_X8_Typeless,
+                        ViewDimension = Vortice.Direct3D.ShaderResourceViewDimension.Texture2D,
+                        Texture2D = new Vortice.Direct3D11.Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 }
+                    };
+                    srv = device.CreateShaderResourceView(d3dTex, desc);
+                } else if (d3dTex.Description.Format == Vortice.DXGI.Format.R32_Typeless) {
+                    var desc = new Vortice.Direct3D11.ShaderResourceViewDescription {
+                        Format = Vortice.DXGI.Format.R32_Float,
+                        ViewDimension = Vortice.Direct3D.ShaderResourceViewDimension.Texture2D,
+                        Texture2D = new Vortice.Direct3D11.Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 }
+                    };
+                    srv = device.CreateShaderResourceView(d3dTex, desc);
+                } else if (d3dTex.Description.Format.ToString().Contains("Typeless")) {
+                    Vortice.DXGI.Format newFmt = d3dTex.Description.Format;
+                    if (newFmt == Vortice.DXGI.Format.R8G8B8A8_Typeless) newFmt = Vortice.DXGI.Format.R8G8B8A8_UNorm;
+                    else if (newFmt == Vortice.DXGI.Format.R16G16B16A16_Typeless) newFmt = Vortice.DXGI.Format.R16G16B16A16_Float;
+                    else if (newFmt == Vortice.DXGI.Format.R32G32B32A32_Typeless) newFmt = Vortice.DXGI.Format.R32G32B32A32_Float;
+                    else if (newFmt == Vortice.DXGI.Format.R10G10B10A2_Typeless) newFmt = Vortice.DXGI.Format.R10G10B10A2_UNorm;
+                    
+                    var desc = new Vortice.Direct3D11.ShaderResourceViewDescription {
+                        Format = newFmt,
+                        ViewDimension = Vortice.Direct3D.ShaderResourceViewDimension.Texture2D,
+                        Texture2D = new Vortice.Direct3D11.Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 }
+                    };
+                    srv = device.CreateShaderResourceView(d3dTex, desc);
+                } else {
+                    srv = device.CreateShaderResourceView(d3dTex);
+                }
+            } catch (Exception ex) {
+                // Ignore
+            } finally {
+                device?.Dispose();
+                d3dTex?.Dispose();
+            }
+        }
+        return srv;
+    }
+
     /// <summary>
     /// GPU-accelerated per-pixel depth occlusion. Uses WorldToScreen for positioning
     /// and view-space Z (dot with camera forward) for depth thresholds.
     /// </summary>
-    private void RenderWithOcclusion(IntPtr textureSrv, DepthBufferCapture depthCapture,
+    private unsafe void RenderWithOcclusion(IntPtr textureSrv, DepthBufferCapture depthCapture,
       Vector3 cameraPos, Vector3 cameraForward, Vector3 cameraRight, Vector3 cameraUp, float fovY, float aspectRatio, UILayerCapture uiCapture,
       float nearPlane, float farPlane, Vector2? hoverUV, float progress, bool isPlaying, float lockState, float volume, IntPtr titleSrvPtr, bool isLooping, bool isShuffle, float time, float showScreensaver, float videoAspectRatio, bool allCornersInFront) {
       var (tl, tr, br, bl) = _transform.Corners;
+      
+      var rtm = FFXIVClientStructs.FFXIV.Client.Graphics.Render.RenderTargetManager.Instance();
+      if (rtm != null) {
+          GetOrCreateSRV(rtm->GBuffers[2].Value, ref _lastGBuffer2Tex, ref _gbuffer2Srv);
+          GetOrCreateSRV(rtm->GBuffers[3].Value, ref _lastGBuffer3Tex, ref _gbuffer3Srv);
+      }
 
       // WorldToScreen is the source of truth for screen positions
       WorldToScreenClamped(tl, out var sTL, out _);
@@ -236,7 +294,6 @@ namespace XivMediaPlayer.Compositing {
         if (_depthRenderer == null) {
           _depthRenderer = new DepthTestedRenderer();
         }
-        _depthRenderer.UseDepthBasedUIMask = UseDepthBasedUIMask;
         if (!_depthRenderer.IsInitialized) {
           if (!_depthRenderer.Initialize()) {
             DepthRendererError = $"Init failed: {_depthRenderer.InitError}";
@@ -269,6 +326,8 @@ namespace XivMediaPlayer.Compositing {
 
         depthCapture.GetMinMaxDepth(out float minDepth, out float maxDepth);
 
+        var transparentUiSrvPtr = SceneColorProbe.GetToneAdjustSourceSrvPtr();
+
         // Per-corner depths interpolated in shader for correct angled-view occlusion
         bool success = _depthRenderer.Render(
           (localTL, localTR, localBR, localBL),
@@ -284,7 +343,10 @@ namespace XivMediaPlayer.Compositing {
           hoverUV, progress, isPlaying, lockState,
           minDepth, maxDepth, volume,
           depthCapture.RenderWidth, depthCapture.RenderHeight,
-          uiCapture?.LastAddonRects, titleSrvPtr, isLooping, isShuffle, time, showScreensaver, videoAspectRatio);
+          uiCapture?.LastAddonRects, titleSrvPtr, isLooping, isShuffle, time, showScreensaver, videoAspectRatio,
+          _gbuffer2Srv?.NativePointer ?? IntPtr.Zero,
+          _gbuffer3Srv?.NativePointer ?? IntPtr.Zero,
+          transparentUiSrvPtr);
 
         DepthDebugInfo = $"Cam: {cameraPos:F1}\nFwd: {cameraForward:F2}\nFov: {fovY:F3}\nAspect: {aspectRatio:F3}";
 
@@ -545,6 +607,8 @@ namespace XivMediaPlayer.Compositing {
 
     public void Dispose() {
       _disposed = true;
+      _gbuffer2Srv?.Dispose();
+      _gbuffer3Srv?.Dispose();
       _depthRenderer?.Dispose();
       _glowRenderer?.Dispose();
     }

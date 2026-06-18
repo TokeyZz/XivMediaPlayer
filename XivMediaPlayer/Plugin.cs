@@ -222,36 +222,6 @@ namespace XivMediaPlayer
                  ?? new Configuration();
             _config.Initialize(_pluginInterface);
 
-        if (!_config.HasAutoDetectedAMD_v2) {
-            Task.Run(() => {
-                try {
-                    var proc = new System.Diagnostics.Process {
-                        StartInfo = new System.Diagnostics.ProcessStartInfo {
-                            FileName = "powershell",
-                            Arguments = "-Command \"(Get-CimInstance Win32_VideoController).Name\"",
-                            UseShellExecute = false,
-                            RedirectStandardOutput = true,
-                            CreateNoWindow = true
-                        }
-                    };
-                    proc.Start();
-                    string output = proc.StandardOutput.ReadToEnd();
-                    proc.WaitForExit();
-                    if (output.Contains("AMD") || output.Contains("Radeon")) {
-                        _config.UIBlendThreshold = 171.0f / 255.0f;
-                    } else {
-                        _config.UIBlendThreshold = 0.0f;
-                    }
-                    if (_worldRenderer != null) {
-                        _worldRenderer.UIBlendThreshold = _config.UIBlendThreshold;
-                    }
-                    _config.HasAutoDetectedAMD_v2 = true;
-                    _config.Save();
-                } catch {
-                    // Ignore if PS query fails, fallback to standard alpha
-                }
-            });
-        }
             // Initialize yt-dlp manager
             _ytDlpManager = new YtDlpManager(pluginDir, _config.PreferredQuality);
             _ytDlpManager.OnStatusUpdate += (s, msg) => _pluginLog.Info("[yt-dlp] " + msg);
@@ -2358,13 +2328,7 @@ namespace XivMediaPlayer
                         int physX = (int)(mousePos.X * scaleX);
                         int physY = (int)(mousePos.Y * scaleY);
 
-                        float gameDepth = 0f;
-                        if (_config.ReShadeCompatibilityMode && _depthCapture != null && _depthCapture.ReadDepthEnabled)
-                        {
-                            gameDepth = _depthCapture.GetDepthAt(physX, physY);
-                        }
-
-                        bool isOccluding = _uiCapture.IsPixelOccluding(physX, physY, _config.ReShadeCompatibilityMode, gameDepth, _config.UIBlendThreshold);
+                        bool isOccluding = _uiCapture.IsPixelOccluding(physX, physY);
                         if (isOccluding)
                         {
                             uv = new System.Numerics.Vector2(-1, -1);
@@ -2683,8 +2647,7 @@ namespace XivMediaPlayer
                         srvPtr = IntPtr.Zero;
                     }
 
-                    _worldRenderer.UIBlendThreshold = _config.UIBlendThreshold;
-                    _worldRenderer.UseDepthBasedUIMask = _config.ReShadeCompatibilityMode;
+                    _worldRenderer.EnableGlow = _config.DepthOcclusionEnabled && _config.LivestreamVolume > 0;
                     _worldRenderer.Render(videoSrv, videoWidth, videoHeight, _depthCapture, cameraPos, cameraForward, cameraRight, cameraUp, fovY, aspectRatio, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, lockState, volume, srvPtr, _config.LoopEnabled, _config.ShuffleEnabled, timeSeconds, showScreensaver);
                 }
                 

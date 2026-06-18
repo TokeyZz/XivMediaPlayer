@@ -55,7 +55,6 @@ namespace XivMediaPlayer.Compositing {
         var contextPtr = (IntPtr)ffxivDevice->D3D11DeviceContext;
         Marshal.AddRef(contextPtr);
         _context = new ID3D11DeviceContext(contextPtr);
-        Marshal.AddRef(_context.Device.NativePointer);
         _device = _context.Device;
 
         
@@ -180,7 +179,7 @@ namespace XivMediaPlayer.Compositing {
     /// Reads the pixel from the captured backbuffer to determine if the game UI is occluding this point.
     /// Accounts for AMD driver blending which blends greyscale world data into the UI mask, and ReShade which breaks the UI mask entirely.
     /// </summary>
-    public bool IsPixelOccluding(int x, int y, bool reshadeCompat = false, float gameDepth = 0f, float uiBlendThreshold = 0f) {
+    public bool IsPixelOccluding(int x, int y) {
       if (_disposed || !_initialized || !_frameCaptured || _backBufferCopy == null || _stagingTexture == null) return false;
       if (x < 0 || y < 0 || x >= _width || y >= _height) return false;
 
@@ -191,37 +190,13 @@ namespace XivMediaPlayer.Compositing {
         bool isOccluding = false;
         unsafe {
             byte* ptr = (byte*)mapped.DataPointer;
-            float b = ptr[0] / 255f;
-            float g = ptr[1] / 255f;
-            float r = ptr[2] / 255f;
             float alpha = ptr[3] / 255f; // BGRA or RGBA, alpha is the 4th byte
-            float luminance = r * 0.299f + g * 0.587f + b * 0.114f;
             
-            if (reshadeCompat) {
-                // ReShade breaks the alpha channel, so we must guess UI occlusion by comparing the color to the depth buffer
-                float invertedColor = 1.0f - luminance;
-                float diff = Math.Abs(invertedColor - gameDepth);
-                float invertedDiff = 1.0f - diff;
-                
-                float uiAlpha = Math.Clamp(invertedDiff, 0f, 1f);
-                if (uiAlpha >= 130.0f / 255.0f) {
-                    isOccluding = true;
-                }
-            } else {
-                // Typical UI has distinct black and white masking. AMD UI masks add world render noise that breaks this.
-                if (uiBlendThreshold > 0.5f) {
-                    // Strict Mode (AMD Fix) parity. Our shader uses smoothstep(UIBlendThreshold - 0.05, 1.0, bbAlpha).
-                    if (alpha > uiBlendThreshold - 0.05f) {
-                        isOccluding = true;
-                    }
-                } else {
-                    // Standard Mode
-                    // Ignore anything below ~0.1 alpha to cut out minor noise. The shader blends this smoothly,
-                    // but for clicking, a 10% opaque UI element shouldn't block the mouse.
-                    if (alpha > 0.1f) {
-                        isOccluding = true;
-                    }
-                }
+            // Standard Mode
+            // Ignore anything below ~0.1 alpha to cut out minor noise. The shader blends this smoothly,
+            // but for clicking, a 10% opaque UI element shouldn't block the mouse.
+            if (alpha > 0.1f) {
+                isOccluding = true;
             }
         }
         
