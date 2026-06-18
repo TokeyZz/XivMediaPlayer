@@ -357,7 +357,7 @@ namespace XivMediaPlayer.Windows {
         var currentPlacement = _plugin.CurrentTvPlacement;
         var serverLocationKey = string.IsNullOrEmpty(currentPlacement.LocationKey) ? locationKey : currentPlacement.LocationKey;
         
-        _statusMessage = "Deleting TV from server...";
+        _statusMessage = "正在从服务器删除电视...";
         _statusColor = new Vector4(1, 1, 1, 1);
         
         try {
@@ -371,27 +371,27 @@ namespace XivMediaPlayer.Windows {
                 _transform.Enabled = false;
                 _enabled = false;
                 _plugin.Config.Save();
-                _statusMessage = "Successfully removed TV from the room!";
+                _statusMessage = "成功移除房间内的电视!";
                 _statusColor = new Vector4(0.3f, 1f, 0.3f, 1);
-                _plugin.Chat.Print("[Media Player] " + _statusMessage);
+                _plugin.PrintChat("[媒体播放器] " + _statusMessage);
                 return true;
             } else {
                 RestoreEnabledAfterDeleteFailure(restoreOnFailure);
-                _statusMessage = "Failed to remove TV.";
+                _statusMessage = "移除电视失败";
                 _statusColor = new Vector4(1, 0.3f, 0.3f, 1);
-                _plugin.Chat.PrintError("[Media Player] " + _statusMessage);
+                _plugin.PrintChatError("[媒体播放器] " + _statusMessage);
                 return false;
             }
         } catch (UnauthorizedAccessException) {
             RestoreEnabledAfterDeleteFailure(restoreOnFailure);
-            _statusMessage = "Cannot delete TV: It is locked by its owner.";
+            _statusMessage = "无法删除电视: 已被房主锁定";
             _statusColor = new Vector4(1, 0.3f, 0.3f, 1);
-            _plugin.Chat.PrintError("[Media Player] " + _statusMessage);
+            _plugin.PrintChatError("[媒体播放器] " + _statusMessage);
         } catch (Exception) {
             RestoreEnabledAfterDeleteFailure(restoreOnFailure);
-            _statusMessage = "Network error while deleting TV.";
+            _statusMessage = "删除电视时发生网络错误";
             _statusColor = new Vector4(1, 0.3f, 0.3f, 1);
-            _plugin.Chat.PrintError("[Media Player] " + _statusMessage);
+            _plugin.PrintChatError("[媒体播放器] " + _statusMessage);
         }
 
         return false;
@@ -447,7 +447,7 @@ namespace XivMediaPlayer.Windows {
 
     public async void RegisterTvAsync(string locationKey) {
       if (!_enabled) {
-        _statusMessage = "World screen is not enabled!";
+        _statusMessage = "室外屏幕未启用!";
         _statusColor = new Vector4(1, 0.3f, 0.3f, 1);
         return;
       }
@@ -457,7 +457,7 @@ namespace XivMediaPlayer.Windows {
       }
       _lastRegistrationTime = DateTime.UtcNow;
 
-      _statusMessage = "Registering TV on server...";
+      _statusMessage = "正在向服务器注册电视...";
       _statusColor = new Vector4(1, 1, 1, 1);
 
       var placement = new TvPlacement {
@@ -483,26 +483,26 @@ namespace XivMediaPlayer.Windows {
         var result = await _plugin.ServerClient.RegisterTvAsync(locationKey, placement);
         if (result != null) {
           _plugin.CurrentTvPlacement = result;
-          _statusMessage = "Successfully registered TV for all visitors!";
+          _statusMessage = "已成功为所有访客注册电视!";
           _statusColor = new Vector4(0.3f, 1f, 0.3f, 1);
-          _plugin.Chat.Print("[Media Player] " + _statusMessage);
+          _plugin.PrintChat("[媒体播放器] " + _statusMessage);
         } else {
-          _statusMessage = "Saved locally, but failed to reach the sync server.";
+          _statusMessage = "已本地保存, 但无法连接到同步服务器";
           _statusColor = new Vector4(1, 0.6f, 0.2f, 1);
-          _plugin.Chat.PrintError("[Media Player] " + _statusMessage);
+          _plugin.PrintChatError("[媒体播放器] " + _statusMessage);
         }
-      } 
-      catch (UnauthorizedAccessException) 
+      }
+      catch (UnauthorizedAccessException)
       {
-        _statusMessage = "Cannot move TV: It is locked by its owner.";
+        _statusMessage = "无法移动电视: 已被房主锁定";
         _statusColor = new Vector4(1, 0.3f, 0.3f, 1);
-        _plugin.Chat.PrintError("[Media Player] " + _statusMessage);
+        _plugin.PrintChatError("[媒体播放器] " + _statusMessage);
       }
       catch (Exception)
       {
-        _statusMessage = "Network error while syncing TV.";
+        _statusMessage = "同步电视时发生网络错误";
         _statusColor = new Vector4(1, 0.3f, 0.3f, 1);
-        _plugin.Chat.PrintError("[Media Player] " + _statusMessage);
+        _plugin.PrintChatError("[媒体播放器] " + _statusMessage);
       }
     }
 

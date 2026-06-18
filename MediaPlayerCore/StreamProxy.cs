@@ -15,6 +15,12 @@ namespace MediaPlayerCore
         private static readonly Lazy<StreamProxy> _instance = new Lazy<StreamProxy>(() => new StreamProxy());
         public static StreamProxy Instance => _instance.Value;
 
+        /// <summary>
+        /// WebProxy to use for all outbound HttpClient requests.
+        /// Set from plugin config. Null = use system default.
+        /// </summary>
+        public static System.Net.IWebProxy? OutboundProxy { get; set; }
+
         private HttpListener _listener;
         private int _port;
         private CancellationTokenSource _cts;
@@ -57,6 +63,7 @@ namespace MediaPlayerCore
             
             var handler = new HttpClientHandler();
             handler.UseCookies = false; // We are manually injecting the Cookie header
+            if (OutboundProxy != null) handler.Proxy = OutboundProxy;
             if (handler.SupportsAutomaticDecompression)
             {
                 handler.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
@@ -101,8 +108,9 @@ namespace MediaPlayerCore
         {
             if (string.IsNullOrEmpty(mediaUrl)) return string.Empty;
             string sessionId = Guid.NewGuid().ToString("N");
-            
+
             var handler = new HttpClientHandler { UseCookies = true, AutomaticDecompression = DecompressionMethods.All };
+            if (OutboundProxy != null) handler.Proxy = OutboundProxy;
             var client = new HttpClient(handler);
             bool hasUserAgent = false;
             bool hasAccept = false;

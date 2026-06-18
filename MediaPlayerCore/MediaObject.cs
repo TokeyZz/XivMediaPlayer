@@ -221,9 +221,17 @@ namespace MediaPlayerCore {
               string userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
               var vlcArgs = new List<string> {
-                "--vout=none", 
+                "--vout=none",
                 "--http-reconnect"
               };
+
+              if (!string.IsNullOrEmpty(_parent.VlcProxyArgs))
+              {
+                  foreach (var arg in _parent.VlcProxyArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                  {
+                      vlcArgs.Add(arg);
+                  }
+              }
 
               libVLC = new LibVLC(vlcArgs.ToArray());
 

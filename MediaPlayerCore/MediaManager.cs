@@ -23,6 +23,7 @@ namespace MediaPlayerCore {
     private float _cameraAndPlayerPositionSlider;
 
     public float LiveStreamVolume { get => _livestreamVolume; set => _livestreamVolume = value; }
+    public string VlcProxyArgs { get; set; } = "";
     public byte[] LastFrame { get => _lastFrame; set => _lastFrame = value; }
     public object FrameLock { get; } = new object();
     public ulong LastFrameCount { get; set; } = 0;

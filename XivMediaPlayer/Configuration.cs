@@ -4,6 +4,12 @@ using System;
 using System.Collections.Generic;
 
 namespace XivMediaPlayer {
+  public enum ChatMessageLevel {
+      All,        // 显示全部消息
+      Important,  // 仅显示重要消息（错误、播放状态变更）
+      Mute        // 屏蔽全部聊天消息
+  }
+
   [Serializable]
   public class RoomMediaState {
       public string CurrentUrl { get; set; } = "";
@@ -48,6 +54,8 @@ namespace XivMediaPlayer {
     public bool DepthOcclusionEnabled { get; set; } = true;
     public bool DisableUIBlockDetection { get; set; } = false;
     public bool AutoResumeMedia { get; set; } = true;
+    public bool SyncWithRoom { get; set; } = false;
+    public ChatMessageLevel ChatMessageFilter { get; set; } = ChatMessageLevel.All;
 
     // yt-dlp settings
     public int PreferredQuality { get; set; } = 720;
@@ -71,6 +79,13 @@ namespace XivMediaPlayer {
     public int SeekIncrementSeconds { get; set; } = 10;
     public bool LoopEnabled { get; set; } = false;
     public bool ShuffleEnabled { get; set; } = false;
+
+    // Proxy settings
+    public string ProxyType { get; set; } = "";         // "socks5" / "http" / "https" / ""
+    public string ProxyHost { get; set; } = "";
+    public int ProxyPort { get; set; } = 1080;
+    public string ProxyUsername { get; set; } = "";
+    public string ProxyPassword { get; set; } = "";
 
     #endregion
 

@@ -693,11 +693,23 @@ namespace MediaPlayerCore.YtDlp
         public string? CookieBrowser { get; set; }
 
         /// <summary>
-        /// Builds the common argument prefix (cookies, etc.) for all yt-dlp calls.
+        /// Proxy URL to pass to yt-dlp via --proxy (e.g. socks5://user:pass@host:port).
+        /// Set this from plugin config before running any yt-dlp operations.
+        /// </summary>
+        public string? YtDlpProxy { get; set; }
+
+        /// <summary>
+        /// Builds the common argument prefix (cookies, proxy, etc.) for all yt-dlp calls.
         /// </summary>
         private string BuildCommonArgs()
         {
             string args = $"--impersonate chrome --js-runtimes \"deno:{DenoPath.Replace(".zip", ".exe")}\" --socket-timeout 30 ";
+
+            // Proxy injection
+            if (!string.IsNullOrEmpty(YtDlpProxy))
+            {
+                args += $"--proxy \"{YtDlpProxy}\" ";
+            }
 
             // Cookie injection
             if (!string.IsNullOrEmpty(CookieBrowser))

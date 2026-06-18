@@ -303,9 +303,9 @@ namespace XivMediaPlayer.Windows {
                   
                   string dmcaText = $"Content URL: {url}\n\nPlease contact {domain} to report this content.";
                   ImGui.SetClipboardText(dmcaText);
-                  _plugin.Chat.Print("[Media Player] DMCA contact info and URL copied to clipboard.");
+                  _plugin.PrintChat("[媒体播放器] DMCA 联系信息和链接已复制到剪贴板", Plugin.ChatSeverity.Info);
               } else {
-                  _plugin.Chat.PrintError("[Media Player] No active media URL to copy.");
+                  _plugin.PrintChatError("[媒体播放器] 没有可复制的媒体链接");
               }
           }
           if (ImGui.IsItemHovered()) ImGui.SetTooltip("Copy DMCA info & media URL to clipboard");
