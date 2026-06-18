@@ -329,7 +329,6 @@ namespace XivMediaPlayer
                 " /media play <url> — Play a media URL\n" +
                 " /media stop — Stop current stream\n" +
                 " /media video — Toggle video window\n" +
-                " /media browse — Open media browser\n" +
                 " /media emulate <ip> <session> — Connect to emulation server",
                 ShowInHelp = true,
             });
@@ -884,7 +883,6 @@ namespace XivMediaPlayer
                       " /media play <url> — Play a media URL\n" +
                       " /media stop — Stop current stream\n" +
                       " /media video — Toggle video window\n" +
-                      " /media browse — Open media browser\n" +
                       " /media emulate <ip> <session> — Connect to emulation server\n" +
                       " /media screen [place|move|rotate|scale|reset|save] — 3D screen\n" +
                       " /media listen — Tune into a shared stream\n" +
