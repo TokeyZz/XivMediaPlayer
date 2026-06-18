@@ -42,8 +42,9 @@ namespace XivMediaPlayer.Windows {
 
     public VideoWindow(Plugin plugin, IDalamudPluginInterface pluginInterface, ITextureProvider textureProvider, IPluginLog pluginLog) :
       base("Media Player", ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoBringToFrontOnFocus | ImGuiWindowFlags.NoFocusOnAppearing, false) {
-      windowSize = Size = new Vector2(640, 360);
-      this.SizeCondition = ImGuiCond.Always;
+      windowSize = Size = new Vector2(640, 360 + 60);
+      this.SizeCondition = ImGuiCond.FirstUseEver;
+      this.SizeConstraints = new WindowSizeConstraints() { MinimumSize = new Vector2(360, 260), MaximumSize = new Vector2(3840, 2160) };
       initialSize = Size;
       _plugin = plugin;
       _pluginInterface = pluginInterface;
@@ -134,10 +135,8 @@ namespace XivMediaPlayer.Windows {
       }
       if (IsOpen && betweenAreas && !_disposed) {
         float uiHeight = ImGui.GetTextLineHeightWithSpacing() * 3 + 24; // Allocate space for controls
-        Size = new Vector2(ImGui.GetWindowSize().X, ImGui.GetWindowSize().X * 0.5625f + uiHeight);
-        SizeConstraints = new WindowSizeConstraints() { MaximumSize = ImGui.GetMainViewport().Size, MinimumSize = new Vector2(360, 480) };
         
-        float availWidth = ImGui.GetContentRegionAvail().X;
+        Vector2 avail = ImGui.GetContentRegionAvail();
         IntPtr currentSrv = IntPtr.Zero;
         Dalamud.Bindings.ImGui.ImTextureID currentId = default;
         lock (_textureLock) {
@@ -153,7 +152,25 @@ namespace XivMediaPlayer.Windows {
         
         if (currentSrv != IntPtr.Zero) {
           Vector2 p0 = ImGui.GetCursorScreenPos();
-          Vector2 imageSize = new Vector2(availWidth, availWidth * 0.5625f);
+          
+          float maxVidWidth = avail.X;
+          float maxVidHeight = Math.Max(10f, avail.Y - uiHeight);
+
+          float targetWidth = maxVidWidth;
+          float targetHeight = targetWidth * 0.5625f;
+
+          if (targetHeight > maxVidHeight) {
+              // Pillarbox: video is too tall for the available width, shrink width to fit height
+              targetHeight = maxVidHeight;
+              targetWidth = targetHeight / 0.5625f;
+          }
+
+          float offsetX = (maxVidWidth - targetWidth) / 2.0f;
+          if (offsetX > 0) {
+              ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
+          }
+
+          Vector2 imageSize = new Vector2(targetWidth, targetHeight);
           ImGui.Image(currentId, imageSize);
 
           if (ImGui.IsItemHovered()) {
