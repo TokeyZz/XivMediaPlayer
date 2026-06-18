@@ -2356,22 +2356,22 @@ namespace XivMediaPlayer
                             if (isMouseReleased)
                             {
                             // Handle Volume Slider Drag
-                            if (uv.Y > 0.95f && uv.Y < 0.97f && uv.X > 0.28f && uv.X < 0.58f)
+                            if (uv.Y > 0.95f && uv.Y < 0.97f && uv.X > 0.32f && uv.X < 0.60f)
                             {
                                 if (_mediaManager != null)
                                 {
-                                    float volProgress = (uv.X - 0.28f) / 0.30f;
+                                    float volProgress = (uv.X - 0.32f) / 0.28f;
                                     _mediaManager.LiveStreamVolume = Math.Clamp(volProgress * 3f, 0f, 3f);
                                     _config.LivestreamVolume = _mediaManager.LiveStreamVolume;
                                 }
                             }
                             
-                            // Seek Bar Drag (0.28 - 0.58)
-                            if (uv.Y > 0.88f && uv.Y < 0.95f && uv.X >= 0.28f && uv.X <= 0.58f)
+                            // Seek Bar Drag (0.32 - 0.60)
+                            if (uv.Y > 0.88f && uv.Y < 0.95f && uv.X >= 0.32f && uv.X <= 0.60f)
                             {
                                 if (activeStream != null)
                                 {
-                                    float seekProgress = (uv.X - 0.28f) / 0.30f;
+                                    float seekProgress = (uv.X - 0.32f) / 0.28f;
                                     activeStream.Time = (long)(seekProgress * activeStream.Length);
                                     _isLocalDj = true;
                                     _ = PushMediaToServerAsync(isBackgroundSync: false);
