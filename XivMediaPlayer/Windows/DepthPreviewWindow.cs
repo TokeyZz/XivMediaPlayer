@@ -89,8 +89,8 @@ namespace XivMediaPlayer.Windows {
               _sceneRenderer.Initialize();
           }
           
-          if (rtm->GBuffers[0].Value != null && rtm->GBuffers[1].Value != null && rtm->GBuffers[2].Value != null && rtm->GBuffers[3].Value != null) {
-              _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value);
+          if (rtm->GBuffers[0].Value != null && rtm->GBuffers[1].Value != null && rtm->GBuffers[2].Value != null && rtm->GBuffers[3].Value != null && rtm->GBuffers[4].Value != null && UICapture?.BackBufferSRV != null) {
+              _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value, rtm->GBuffers[4].Value, UICapture.BackBufferSRV);
           }
           
           if (_sceneRenderer.PreviewTextureHandle != IntPtr.Zero) {

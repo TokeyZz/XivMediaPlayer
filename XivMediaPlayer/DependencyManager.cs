@@ -92,7 +92,17 @@ namespace XivMediaPlayer
                 }
 
                 if (!success) {
-                    throw new Exception("Failed to download dependencies from all available URLs.");
+                    _pluginLog.Information("Direct fallback failed. Attempting to resolve via GitHub API...");
+                    string apiUrl = "https://api.github.com/repos/Sebane1/XivMediaPlayer/releases/latest";
+                    string actualUrl = await ResolveLatestAssetUrl(apiUrl, "XivMediaPlayer-Dependencies.zip");
+                    if (!string.IsNullOrEmpty(actualUrl)) {
+                        _pluginLog.Information($"Resolved latest asset URL: {actualUrl}");
+                        success = await TryDownloadDependencies(actualUrl, zipPath);
+                    }
+                }
+
+                if (!success) {
+                    throw new Exception("Failed to download dependencies. The server returned 404 Not Found for all available URLs. Please try downloading manually from the GitHub releases page.");
                 }
 
                 Status = "Extracting dependencies... (This may take a minute)";
@@ -146,6 +156,41 @@ namespace XivMediaPlayer
             }
         }
 
+        private async Task<string> ResolveLatestAssetUrl(string apiUrl, string assetName)
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    client.DefaultRequestHeaders.UserAgent.ParseAdd("XivMediaPlayer-Plugin");
+                    var json = await client.GetStringAsync(apiUrl);
+                    
+                    // Simple string search to avoid adding Newtonsoft.Json dependency if not already present in this file
+                    string searchStr = $"\"name\":\"{assetName}\"";
+                    int nameIdx = json.IndexOf(searchStr);
+                    if (nameIdx > 0)
+                    {
+                        // Look for browser_download_url nearby
+                        int urlIdx = json.IndexOf("\"browser_download_url\":\"", nameIdx);
+                        if (urlIdx > 0)
+                        {
+                            urlIdx += 24; // length of key
+                            int endIdx = json.IndexOf("\"", urlIdx);
+                            if (endIdx > urlIdx)
+                            {
+                                return json.Substring(urlIdx, endIdx - urlIdx);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _pluginLog.Warning(ex, "Failed to resolve latest asset URL from GitHub API.");
+            }
+            return string.Empty;
+        }
+
         private async Task<bool> TryDownloadDependencies(string url, string zipPath)
         {
             try
@@ -157,6 +202,7 @@ namespace XivMediaPlayer
                     using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
                     {
                         if (!response.IsSuccessStatusCode) {
+                            _pluginLog.Warning($"URL returned {(int)response.StatusCode} {response.ReasonPhrase}: {url}");
                             return false;
                         }
 

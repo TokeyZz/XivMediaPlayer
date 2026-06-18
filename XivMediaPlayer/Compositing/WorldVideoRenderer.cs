@@ -34,11 +34,6 @@ namespace XivMediaPlayer.Compositing {
     /// </summary>
     public bool EnableGlow { get => _enableGlow; set => _enableGlow = value; }
 
-    public float UIBlendThreshold {
-      get => _depthRenderer?.UIBlendThreshold ?? 0.95f;
-      set { if (_depthRenderer != null) _depthRenderer.UIBlendThreshold = value; }
-    }
-
     public WorldScreenTransform Transform => _transform;
 
     /// <summary>
@@ -157,7 +152,6 @@ namespace XivMediaPlayer.Compositing {
     /// Debug info: per-corner depth thresholds and sampled game depths at corners.
     /// </summary>
     public string DepthDebugInfo { get; private set; }
-    public bool UseDepthBasedUIMask { get; set; } = false;
 
     private (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl)? _lastCorners;
 
@@ -300,7 +294,6 @@ namespace XivMediaPlayer.Compositing {
         if (_depthRenderer == null) {
           _depthRenderer = new DepthTestedRenderer();
         }
-        _depthRenderer.UseDepthBasedUIMask = UseDepthBasedUIMask;
         if (!_depthRenderer.IsInitialized) {
           if (!_depthRenderer.Initialize()) {
             DepthRendererError = $"Init failed: {_depthRenderer.InitError}";
@@ -333,6 +326,8 @@ namespace XivMediaPlayer.Compositing {
 
         depthCapture.GetMinMaxDepth(out float minDepth, out float maxDepth);
 
+        var transparentUiSrvPtr = SceneColorProbe.GetToneAdjustSourceSrvPtr();
+
         // Per-corner depths interpolated in shader for correct angled-view occlusion
         bool success = _depthRenderer.Render(
           (localTL, localTR, localBR, localBL),
@@ -350,7 +345,8 @@ namespace XivMediaPlayer.Compositing {
           depthCapture.RenderWidth, depthCapture.RenderHeight,
           uiCapture?.LastAddonRects, titleSrvPtr, isLooping, isShuffle, time, showScreensaver, videoAspectRatio,
           _gbuffer2Srv?.NativePointer ?? IntPtr.Zero,
-          _gbuffer3Srv?.NativePointer ?? IntPtr.Zero);
+          _gbuffer3Srv?.NativePointer ?? IntPtr.Zero,
+          transparentUiSrvPtr);
 
         DepthDebugInfo = $"Cam: {cameraPos:F1}\nFwd: {cameraForward:F2}\nFov: {fovY:F3}\nAspect: {aspectRatio:F3}";
 
