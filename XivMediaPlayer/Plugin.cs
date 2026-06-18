@@ -161,6 +161,7 @@ namespace XivMediaPlayer
 
         // Input tracking
         private bool _wasLeftMousePressed = false;
+        private bool _clickStartedOnTv = false;
         private DependencyManager _dependencyManager;
 
         public Plugin(
@@ -2399,7 +2400,13 @@ namespace XivMediaPlayer
                     bool isMouseReleased = !isLeftMousePressed && _wasLeftMousePressed;
                     _wasLeftMousePressed = isLeftMousePressed;
 
-                    if (uv.X >= 0 && uv.X <= 1 && uv.Y >= 0 && uv.Y <= 1)
+                    bool isOnTv = uv.X >= 0 && uv.X <= 1 && uv.Y >= 0 && uv.Y <= 1;
+                    if (isMouseClicked)
+                    {
+                        _clickStartedOnTv = isOnTv;
+                    }
+
+                    if (isOnTv)
                     {
                         hoverUV = uv;
                         
@@ -2408,7 +2415,7 @@ namespace XivMediaPlayer
 
                         if (_currentStreamer != "Emulation" && _currentStreamer != "Camera")
                         {
-                            if (isMouseReleased)
+                            if (isMouseReleased && _clickStartedOnTv)
                             {
                             // Handle Volume Slider Drag
                             if (uv.Y > 0.95f && uv.Y < 0.97f && uv.X > 0.32f && uv.X < 0.60f)
@@ -2439,7 +2446,7 @@ namespace XivMediaPlayer
                             _config.Save(); // Save volume if it changed
                         }
 
-                        if (isMouseClicked)
+                        if (isMouseReleased && _clickStartedOnTv)
                         {
                             _pluginLog.Information($"Media Control Clicked at UV: {uv.X:F2}, {uv.Y:F2}");
 
