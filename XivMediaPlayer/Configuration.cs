@@ -48,6 +48,7 @@ namespace XivMediaPlayer {
     public bool HasAutoDetectedAMD_v2 { get; set; } = false;
     public bool DepthOcclusionEnabled { get; set; } = true;
     public bool ReShadeCompatibilityMode { get; set; } = false;
+    public bool DisableUIBlockDetection { get; set; } = false;
 
     // yt-dlp settings
     public int PreferredQuality { get; set; } = 720;

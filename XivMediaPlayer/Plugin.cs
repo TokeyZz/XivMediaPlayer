@@ -2348,7 +2348,7 @@ namespace XivMediaPlayer
                     }
 
                     // UI Alpha Mask Check
-                    if (_uiCapture != null && uv.X >= 0 && uv.Y >= 0)
+                    if (!_config.DisableUIBlockDetection && _uiCapture != null && uv.X >= 0 && uv.Y >= 0)
                     {
                         var io = ImGui.GetIO();
                         float scaleX = io.DisplaySize.X > 0 ? _uiCapture.Width / io.DisplaySize.X : 1.0f;
@@ -2356,8 +2356,14 @@ namespace XivMediaPlayer
                         int physX = (int)(mousePos.X * scaleX);
                         int physY = (int)(mousePos.Y * scaleY);
 
-                        float alpha = _uiCapture.GetPixelAlpha(physX, physY);
-                        if (alpha > 0f)
+                        float gameDepth = 0f;
+                        if (_config.ReShadeCompatibilityMode && _depthCapture != null && _depthCapture.ReadDepthEnabled)
+                        {
+                            gameDepth = _depthCapture.GetDepthAt(physX, physY);
+                        }
+
+                        bool isOccluding = _uiCapture.IsPixelOccluding(physX, physY, _config.ReShadeCompatibilityMode, gameDepth, _config.UIBlendThreshold);
+                        if (isOccluding)
                         {
                             uv = new System.Numerics.Vector2(-1, -1);
                         }

@@ -87,6 +87,15 @@ namespace XivMediaPlayer.Windows {
         ImGui.SetTooltip("Enable this if you use ReShade and the TV disapears using the lightroom effect.\nThis bypasses the UI alpha channel it breaks by comparing game depth to a grayscale game render to mask out the UI. This fix is very rough.");
       }
 
+      bool disableUiBlock = _plugin.Config.DisableUIBlockDetection;
+      if (ImGui.Checkbox("Disable UI Block Detection", ref disableUiBlock)) {
+        _plugin.Config.DisableUIBlockDetection = disableUiBlock;
+        _plugin.Config.Save();
+      }
+      if (ImGui.IsItemHovered()) {
+        ImGui.SetTooltip("Allows clicking the TV even if the game UI overlaps it. Useful if your visual mods heavily interfere with UI mask detection.");
+      }
+
       ImGui.Spacing();
       ImGui.Spacing();
 
