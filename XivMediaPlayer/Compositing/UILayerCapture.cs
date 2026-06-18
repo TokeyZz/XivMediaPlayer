@@ -40,6 +40,8 @@ namespace XivMediaPlayer.Compositing {
     public byte[] LastColorData { get; private set; }
     public int CaptureWidth { get; private set; }
     public int CaptureHeight { get; private set; }
+    public int Width => _width;
+    public int Height => _height;
     public bool Initialize() {
       if (_initialized || _disposed) return _initialized;
 
@@ -53,7 +55,6 @@ namespace XivMediaPlayer.Compositing {
         var contextPtr = (IntPtr)ffxivDevice->D3D11DeviceContext;
         Marshal.AddRef(contextPtr);
         _context = new ID3D11DeviceContext(contextPtr);
-        Marshal.AddRef(_context.Device.NativePointer);
         _device = _context.Device;
 
         
@@ -175,27 +176,34 @@ namespace XivMediaPlayer.Compositing {
     }
 
     /// <summary>
-    /// Reads the alpha value of a single pixel from the captured backbuffer.
-    /// Returns 0 if coordinates are out of bounds or capture failed.
+    /// Reads the pixel from the captured backbuffer to determine if the game UI is occluding this point.
+    /// Accounts for AMD driver blending which blends greyscale world data into the UI mask, and ReShade which breaks the UI mask entirely.
     /// </summary>
-    public float GetPixelAlpha(int x, int y) {
-      if (_disposed || !_initialized || !_frameCaptured || _backBufferCopy == null || _stagingTexture == null) return 0f;
-      if (x < 0 || y < 0 || x >= _width || y >= _height) return 0f;
+    public bool IsPixelOccluding(int x, int y) {
+      if (_disposed || !_initialized || !_frameCaptured || _backBufferCopy == null || _stagingTexture == null) return false;
+      if (x < 0 || y < 0 || x >= _width || y >= _height) return false;
 
       try {
         _context.CopySubresourceRegion(_stagingTexture, 0, 0, 0, 0, _backBufferCopy, 0, new Vortice.Mathematics.Box(x, y, 0, x + 1, y + 1, 1));
         var mapped = _context.Map(_stagingTexture, 0, Vortice.Direct3D11.MapMode.Read, Vortice.Direct3D11.MapFlags.None);
         
-        float alpha = 0f;
+        bool isOccluding = false;
         unsafe {
             byte* ptr = (byte*)mapped.DataPointer;
-            alpha = ptr[3] / 255f; // BGRA or RGBA, alpha is the 4th byte
+            float alpha = ptr[3] / 255f; // BGRA or RGBA, alpha is the 4th byte
+            
+            // Standard Mode
+            // Ignore anything below ~0.1 alpha to cut out minor noise. The shader blends this smoothly,
+            // but for clicking, a 10% opaque UI element shouldn't block the mouse.
+            if (alpha > 0.1f) {
+                isOccluding = true;
+            }
         }
         
         _context.Unmap(_stagingTexture, 0);
-        return alpha;
+        return isOccluding;
       } catch {
-        return 0f;
+        return false;
       }
     }
 

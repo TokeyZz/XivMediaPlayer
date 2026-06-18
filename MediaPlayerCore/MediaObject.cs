@@ -417,6 +417,7 @@ namespace MediaPlayerCore {
             if (playerToStop != null) {
                 try { playerToStop.Stop(); } catch { }
                 _bufferedWaveProvider?.ClearBuffer();
+                await Task.Delay(250); // Allow LibVLC background thread to complete teardown
             }
 
             lock (_disposeLock) {

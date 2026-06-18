@@ -630,6 +630,8 @@ namespace MediaPlayerCore.YtDlp
             return null;
         }
 
+        public bool HasCookiesFile => FindCookiesFile() != null;
+
         /// <summary>
         /// Returns the path where cookies.txt will be saved (plugin directory).
         /// </summary>

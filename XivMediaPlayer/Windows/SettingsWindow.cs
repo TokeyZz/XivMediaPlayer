@@ -66,6 +66,14 @@ namespace XivMediaPlayer.Windows {
         _plugin.Config.Save();
       }
 
+      bool autoResume = _plugin.Config.AutoResumeMedia;
+      if (ImGui.Checkbox("Auto-resume media when entering locations", ref autoResume)) {
+        _plugin.Config.AutoResumeMedia = autoResume;
+        _plugin.Config.Save();
+      }
+
+
+      /*
       bool strictMasking = _plugin.Config.UIBlendThreshold > 0.5f;
       if (ImGui.Checkbox("Strict UI Masking (AMD Fix / Invisible Drop Shadows)", ref strictMasking)) {
         _plugin.Config.UIBlendThreshold = strictMasking ? (171.0f / 255.0f) : 0.0f;
@@ -85,6 +93,22 @@ namespace XivMediaPlayer.Windows {
       }
       if (ImGui.IsItemHovered()) {
         ImGui.SetTooltip("Enable this if you use ReShade and the TV disapears using the lightroom effect.\nThis bypasses the UI alpha channel it breaks by comparing game depth to a grayscale game render to mask out the UI. This fix is very rough.");
+      }
+      */
+
+      bool disableUiBlock = _plugin.Config.DisableUIBlockDetection;
+      if (ImGui.Checkbox("Disable UI Block Detection", ref disableUiBlock)) {
+        _plugin.Config.DisableUIBlockDetection = disableUiBlock;
+        _plugin.Config.Save();
+      }
+      if (ImGui.IsItemHovered()) {
+        ImGui.SetTooltip("Allows clicking the TV even if the game UI overlaps it. Useful if your visual mods heavily interfere with UI mask detection.");
+      }
+
+      if (ImGui.Button("Clear Watch History")) {
+        _plugin.Config.WatchHistory.Clear();
+        _plugin.Config.Save();
+        _plugin.Chat.Print("[Media Player] Watch history cleared.");
       }
 
       ImGui.Spacing();
@@ -188,6 +212,30 @@ namespace XivMediaPlayer.Windows {
 
       ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f),
         "yt-dlp is automatically downloaded and updated.");
+
+      if (_plugin.YtDlpManager != null && !_plugin.YtDlpManager.HasCookiesFile) {
+        ImGui.Spacing();
+        ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "Warning: No cookies.txt found!");
+        ImGui.TextWrapped("YouTube now heavily blocks players without cookies. To fix this, you must install the VRCVideoCacher extension in your browser, which locally syncs your cookie data.");
+        
+        if (ImGui.Button("Chrome/Edge/Brave Extension")) {
+            try {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+                    FileName = "https://chromewebstore.google.com/detail/vrcvideocacher-cookies-ex/kfgelknbegappcajiflgfbjbdpbpokge",
+                    UseShellExecute = true
+                });
+            } catch { }
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Firefox Extension")) {
+            try {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+                    FileName = "https://addons.mozilla.org/en-US/firefox/addon/vrcvideocachercookiesexporter/",
+                    UseShellExecute = true
+                });
+            } catch { }
+        }
+      }
 
       ImGui.Spacing();
       ImGui.Spacing();
