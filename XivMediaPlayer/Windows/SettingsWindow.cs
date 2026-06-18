@@ -198,6 +198,30 @@ namespace XivMediaPlayer.Windows {
       ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f),
         "yt-dlp is automatically downloaded and updated.");
 
+      if (_plugin.MediaManager?.YtDlpManager != null && !_plugin.MediaManager.YtDlpManager.HasCookiesFile) {
+        ImGui.Spacing();
+        ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "Warning: No cookies.txt found!");
+        ImGui.TextWrapped("YouTube now heavily blocks players without cookies. To fix this, you must install the VRCVideoCacher extension in your browser, which locally syncs your cookie data.");
+        
+        if (ImGui.Button("Chrome/Edge/Brave Extension")) {
+            try {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+                    FileName = "https://chromewebstore.google.com/detail/vrcvideocacher-cookies-ex/kfgelknbegappcajiflgfbjbdpbpokge",
+                    UseShellExecute = true
+                });
+            } catch { }
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Firefox Extension")) {
+            try {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+                    FileName = "https://addons.mozilla.org/en-US/firefox/addon/vrcvideocachercookiesexporter/",
+                    UseShellExecute = true
+                });
+            } catch { }
+        }
+      }
+
       ImGui.Spacing();
       ImGui.Spacing();
 
