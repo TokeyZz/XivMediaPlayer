@@ -764,7 +764,7 @@ namespace XivMediaPlayer
                         if (YtDlpManager.IsUrlSupported(url))
                         {
                             // Invoke yt-dlp resolution
-                            _chat.Print("[Media Player] Resolving URL via yt-dlp...");
+                            PrintVerbose("[Media Player] Resolving URL via yt-dlp...");
                             PlayRouted(url, CurrentAudioSource);
                         }
                         else
@@ -782,7 +782,7 @@ namespace XivMediaPlayer
                 case "ytdlp-update":
                     if (_ytDlpManager.IsAvailable())
                     {
-                        _chat.Print("[Media Player] Updating yt-dlp...");
+                        PrintVerbose("[Media Player] Updating yt-dlp...");
                         Task.Run(async () =>
                         {
                             bool success = await _ytDlpManager.SelfUpdate();
@@ -977,7 +977,7 @@ namespace XivMediaPlayer
                 _mediaManager.PlayStream(audioGameObject, playUrl, _config.SpatialAudioEnabled, startTimeMs, httpHeaders);
                 _lastStreamURL = cleanedURL;
                 _currentStreamer = "Stream";
-                _chat.Print(@"[Media Player] Playing stream!" +
+                PrintVerbose(@"[Media Player] Playing stream!" +
                   "\r\nUse \"/media video\" to toggle the video feed." +
                   "\r\nUse \"/media stop\" to stop the stream.");
             }
@@ -1364,14 +1364,14 @@ namespace XivMediaPlayer
         private void _mediaManager_OnNewMediaTriggered(object sender, EventArgs e)
         {
             EnqueueFrameworkAction(() => {
-                _chat.Print("[Media Player] Starting Stream...");
+                PrintVerbose("[Media Player] Starting Stream...");
                 _mediaErrorCount = 0; // Reset errors on successful start
             });
         }
 
         private void _mediaManager_OnPlaybackFinished(object? sender, string e)
         {
-            _chat.Print("[Media Player] Playback finished.");
+            PrintVerbose("[Media Player] Playback finished.");
 
             if (!string.IsNullOrEmpty(_lastStreamURL))
             {
@@ -1426,6 +1426,14 @@ namespace XivMediaPlayer
         #endregion
 
         #region Chat Twitch Detection
+
+        private void PrintVerbose(string message)
+        {
+            if (_config.VerboseChatLogging)
+            {
+                _chat.Print(message);
+            }
+        }
 
         private void OnChatMessage(Dalamud.Game.Chat.IHandleableChatMessage msg)
         {
@@ -2546,7 +2554,7 @@ namespace XivMediaPlayer
                                 {
                                     if (_playerObject != null)
                                     {
-                                        _chat.Print("[Media Player] Reading clipboard...");
+                                        PrintVerbose("[Media Player] Reading clipboard...");
                                         Thread thread = new Thread(() =>
                                         {
                                             string clip = "";
@@ -2559,7 +2567,7 @@ namespace XivMediaPlayer
                                             {
                                                 EnqueueFrameworkAction(() =>
                                                 {
-                                                    _chat.Print("[Media Player] Loading URL from clipboard...");
+                                                    PrintVerbose("[Media Player] Loading URL from clipboard...");
                                                     PlayRouted(clip, CurrentAudioSource);
                                                 });
                                             }
@@ -3240,7 +3248,7 @@ namespace XivMediaPlayer
             var activeStream = _mediaManager?.ActiveStream;
             int currentTimeMs = activeStream != null ? (int)activeStream.Time : 0;
 
-            _chat.Print("[Media Player] Refreshing media...");
+            PrintVerbose("[Media Player] Refreshing media...");
             _mediaManager?.StopStream();
             
             if (YtDlpManager.IsUrlSupported(_lastStreamURL) && _ytDlpManager.IsAvailable())
@@ -3275,7 +3283,7 @@ namespace XivMediaPlayer
 
         private void DoKillAndRestart()
         {
-            _chat.Print("[Media Player] Killing media pipeline and restarting...");
+            PrintVerbose("[Media Player] Killing media pipeline and restarting...");
 
             // Save what we were playing
             string savedUrl = _lastStreamURL;
@@ -3309,7 +3317,7 @@ namespace XivMediaPlayer
             }
             else
             {
-                _chat.Print("[Media Player] Media pipeline restarted.");
+                PrintVerbose("[Media Player] Media pipeline restarted.");
             }
         }
 

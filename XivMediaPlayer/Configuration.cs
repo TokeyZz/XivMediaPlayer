@@ -48,6 +48,7 @@ namespace XivMediaPlayer {
     public bool DepthOcclusionEnabled { get; set; } = true;
     public bool DisableUIBlockDetection { get; set; } = false;
     public bool AutoResumeMedia { get; set; } = true;
+    public bool VerboseChatLogging { get; set; } = false;
 
     // yt-dlp settings
     public int PreferredQuality { get; set; } = 720;

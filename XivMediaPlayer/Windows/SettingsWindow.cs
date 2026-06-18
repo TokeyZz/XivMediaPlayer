@@ -197,6 +197,21 @@ namespace XivMediaPlayer.Windows {
       ImGui.Spacing();
       ImGui.Spacing();
 
+      // Debug
+      ImGui.TextColored(new Vector4(0.7f, 0.9f, 1.0f, 1.0f), "Debug");
+      ImGui.Separator();
+
+      bool verboseChat = _plugin.Config.VerboseChatLogging;
+      if (ImGui.Checkbox("Enable Verbose Chat Logging", ref verboseChat)) {
+        _plugin.Config.VerboseChatLogging = verboseChat;
+        _plugin.Config.Save();
+      }
+      ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f),
+        "Shows detailed plugin status messages in the chat.");
+
+      ImGui.Spacing();
+      ImGui.Spacing();
+
       // yt-dlp quality
       ImGui.TextColored(new Vector4(0.7f, 0.9f, 1.0f, 1.0f), "yt-dlp");
       ImGui.Separator();
