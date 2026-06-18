@@ -125,6 +125,7 @@ namespace XivMediaPlayer
         private DateTime? _deferredTerritoryChangeTime = null;
         private DateTime _lastServerSyncFetch = DateTime.MinValue;
         private string _lastGridLocationKey = string.Empty;
+        private DateTime _lastGridChangeTime = DateTime.MinValue;
         private long _serverTimeOffsetMs = 0;
         private bool _hasFetchedServerTime = false;
         private int _cachedRealPlayerCount = 0;
@@ -537,13 +538,18 @@ namespace XivMediaPlayer
             string currentLocKey = LocationKey;
             if (_lastGridLocationKey != currentLocKey)
             {
-                _lastGridLocationKey = currentLocKey;
-                // If it changed purely due to grid crossing, not territory
-                if (!string.IsNullOrEmpty(currentLocKey) && currentLocKey.StartsWith("zone_"))
+                if ((DateTime.UtcNow - _lastGridChangeTime).TotalSeconds >= 3)
                 {
-                    RestoreScreenForCurrentLocation();
-                    RestoreMediaForCurrentLocation();
-                    _ = FetchServerDataForCurrentLocationAsync();
+                    _lastGridLocationKey = currentLocKey;
+                    _lastGridChangeTime = DateTime.UtcNow;
+
+                    // If it changed purely due to grid crossing, not territory
+                    if (!string.IsNullOrEmpty(currentLocKey) && currentLocKey.StartsWith("zone_"))
+                    {
+                        RestoreScreenForCurrentLocation();
+                        RestoreMediaForCurrentLocation();
+                        _ = FetchServerDataForCurrentLocationAsync();
+                    }
                 }
             }
 
@@ -1339,7 +1345,10 @@ namespace XivMediaPlayer
                 }
                 finally
                 {
-                    _isResolvingMedia = false;
+                    if (resolutionId == _currentResolutionId)
+                    {
+                        _isResolvingMedia = false;
+                    }
                 }
             });
         }
@@ -1428,6 +1437,8 @@ namespace XivMediaPlayer
             {
                 _deferredBgmRestoreTime = DateTime.UtcNow.AddSeconds(1);
             }
+
+            _ = PushMediaToServerAsync(isBackgroundSync: false);
         }
 
         #endregion
@@ -1503,6 +1514,7 @@ namespace XivMediaPlayer
             if (_screenSettingsWindow != null) _screenSettingsWindow.IsOpen = false;
             _mediaManager?.CleanSounds();
             ResetStreamValues();
+            CurrentTvPlacement = null;
 
             _deferredTerritoryChangeTime = DateTime.UtcNow.AddSeconds(3);
         }
@@ -1537,7 +1549,7 @@ namespace XivMediaPlayer
                     var tv = tvs[0];
                     CurrentTvPlacement = tv;
                     
-                    // Apply to the ACTIVE renderer transform ONLY if we aren't actively editing it.
+                    // Apply to the active renderer transform only if we aren't actively editing it.
                     // Server placement state is authoritative, if a TV exists on the server,
                     // render it unless the owner removes it from the area.
                     if (_worldRenderer != null && !IsHousingMenuOpen && !(_screenSettingsWindow?.IsOpen == true))
@@ -1581,6 +1593,11 @@ namespace XivMediaPlayer
                 // Automatically sync the media playback from the server upon entering the room
                 await FetchMediaFromServerAsync();
             }
+            else if (isZone)
+            {
+                // If outdoor screens are disabled, ensure we don't hold onto a stale TV placement
+                CurrentTvPlacement = null;
+            }
         }
 
         /// <summary>
@@ -1613,6 +1630,9 @@ namespace XivMediaPlayer
             }
             else
             {
+                _worldRenderer.Transform.Position = System.Numerics.Vector3.Zero;
+                _worldRenderer.Transform.RotationDegrees = System.Numerics.Vector3.Zero;
+                _worldRenderer.Transform.Scale = new System.Numerics.Vector2(3.0f, 1.6875f);
                 _worldRenderer.Transform.Enabled = false; // Turn off 3D screen in new zones by default
             }
         }
@@ -1710,8 +1730,9 @@ namespace XivMediaPlayer
                 // Don't push local StreamProxy URLs to the sync server
                 if (!string.IsNullOrEmpty(lastUrl) && lastUrl.Contains("127.0.0.1")) return;
                 
-                // Don't push if there's literally no stream URL and we aren't loading one
-                if (string.IsNullOrEmpty(lastUrl) && string.IsNullOrEmpty(soundPath) && !_isResolvingMedia) return;
+                // Only return early if we are doing a background sync and have nothing to push.
+                // If it's a foreground sync (e.g. user pressed stop, or video finished), WE MUST push the empty state!
+                if (isBackgroundSync && string.IsNullOrEmpty(lastUrl) && string.IsNullOrEmpty(soundPath) && !_isResolvingMedia) return;
 
                 var sync = new Networking.Models.RoomMediaStateSync
                 {
@@ -1939,33 +1960,9 @@ namespace XivMediaPlayer
         {
             var keys = new List<string>();
             var key = GetLocationKey();
-            if (string.IsNullOrEmpty(key)) return keys;
-
-            if (key.StartsWith("house_"))
+            if (!string.IsNullOrEmpty(key))
             {
                 keys.Add(key);
-            }
-            else if (key.StartsWith("zone_"))
-            {
-                var playerPos = _cachedLocalPlayerPosition;
-                if (playerPos != null && key.Contains("_grid_"))
-                {
-                    string baseKey = key.Substring(0, key.IndexOf("_grid_"));
-                    int currentGridX = (int)Math.Floor(playerPos.Value.X / 50.0f);
-                    int currentGridZ = (int)Math.Floor(playerPos.Value.Z / 50.0f);
-
-                    for (int dx = -1; dx <= 1; dx++)
-                    {
-                        for (int dz = -1; dz <= 1; dz++)
-                        {
-                            keys.Add($"{baseKey}_grid_{currentGridX + dx}_{currentGridZ + dz}");
-                        }
-                    }
-                }
-                else
-                {
-                    keys.Add(key); // Fallback
-                }
             }
             return keys;
         }
