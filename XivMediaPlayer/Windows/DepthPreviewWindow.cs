@@ -6,6 +6,9 @@ using Dalamud.Bindings.ImGui;
 using System;
 using System.Numerics;
 using XivMediaPlayer.Compositing;
+using FFXIVClientStructs.FFXIV.Client.Graphics.Render;
+using FFXIVClientStructs.FFXIV.Client.Graphics.Kernel;
+using Vortice.Direct3D11;
 
 namespace XivMediaPlayer.Windows {
   /// <summary>
@@ -20,8 +23,29 @@ namespace XivMediaPlayer.Windows {
     private int _lastDataHash;
     private int _lastUiDataHash;
     private bool _disposed;
-    private string _rtmProbeResult;
-    private string _sceneProbeResult;
+    
+    private int _selectedPreviewMode = 0;
+    private readonly string[] _previewModes = {
+        "Depth Buffer (Raw Capture)",
+        "UI BackBuffer (Raw Capture)",
+        "RTM: DepthStencil",
+        "RTM: GBuffer 0 (Normal)",
+        "RTM: GBuffer 1",
+        "RTM: GBuffer 2 (Diffuse)",
+        "RTM: GBuffer 3",
+        "RTM: GBuffer 4",
+        "RTM: SemiTransparent GBuffer 0",
+        "RTM: SemiTransparent GBuffer 1",
+        "RTM: SemiTransparent GBuffer 2",
+        "RTM: SemiTransparent GBuffer 3",
+        "RTM: SemiTransparent GBuffer 4",
+        "Reconstructed Scene (GBuffer2 * GBuffer3)"
+    };
+
+    private ID3D11ShaderResourceView _dynamicSrv;
+    private IntPtr _dynamicSrvTexPtr;
+    private SceneReconstructionPreviewRenderer _sceneRenderer;
+    private XivMediaPlayer.Utils.TextureDumper _dumper;
 
     /// <summary>
     /// The shared depth capture instance. Initialized externally.
@@ -38,42 +62,158 @@ namespace XivMediaPlayer.Windows {
       SizeCondition = ImGuiCond.FirstUseEver;
     }
 
-    public override void Draw() {
+    public override unsafe void Draw() {
       if (_disposed) return;
 
-      // Show capture debug info
+      ImGui.Combo("Preview Mode", ref _selectedPreviewMode, _previewModes, _previewModes.Length);
+      ImGui.SameLine();
+      if (ImGui.Button("Copy to Clipboard")) {
+          CopyToClipboard();
+      }
+      ImGui.Separator();
+
+      if (_selectedPreviewMode == 0 || _selectedPreviewMode == 1) {
+          DrawStandardPreviews();
+          return;
+      }
+
+      var rtm = RenderTargetManager.Instance();
+      if (rtm == null) {
+        ImGui.TextColored(new Vector4(1, 0, 0, 1), "RenderTargetManager is null");
+        return;
+      }
+
+      if (_selectedPreviewMode == 13) {
+          if (_sceneRenderer == null) {
+              _sceneRenderer = new SceneReconstructionPreviewRenderer();
+              _sceneRenderer.Initialize();
+          }
+          
+          if (rtm->GBuffers[0].Value != null && rtm->GBuffers[1].Value != null && rtm->GBuffers[2].Value != null && rtm->GBuffers[3].Value != null) {
+              _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value);
+          }
+          
+          if (_sceneRenderer.PreviewTextureHandle != IntPtr.Zero) {
+              var avail = ImGui.GetContentRegionAvail();
+              float drawH = avail.Y;
+              float drawW = drawH * (16.0f / 9.0f); // Default wide aspect
+              if (drawW > avail.X) {
+                drawW = avail.X;
+                drawH = drawW / (16.0f / 9.0f);
+              }
+
+              var srvHandle = _sceneRenderer.PreviewTextureHandle;
+              var textureId = System.Runtime.CompilerServices.Unsafe.As<IntPtr, Dalamud.Bindings.ImGui.ImTextureID>(ref srvHandle);
+              ImGui.Image(textureId, new Vector2(drawW, drawH));
+          } else {
+              ImGui.TextColored(new Vector4(1, 0, 0, 1), "Failed to render reconstructed scene.");
+          }
+          return;
+      }
+
+      Texture* tex = null;
+      switch (_selectedPreviewMode) {
+        case 2: tex = rtm->DepthStencil; break;
+        case 3: tex = rtm->GBuffers[0].Value; break;
+        case 4: tex = rtm->GBuffers[1].Value; break;
+        case 5: tex = rtm->GBuffers[2].Value; break;
+        case 6: tex = rtm->GBuffers[3].Value; break;
+        case 7: tex = rtm->GBuffers[4].Value; break;
+        case 8: tex = rtm->SemitransparentGBuffers[0].Value; break;
+        case 9: tex = rtm->SemitransparentGBuffers[1].Value; break;
+        case 10: tex = rtm->SemitransparentGBuffers[2].Value; break;
+        case 11: tex = rtm->SemitransparentGBuffers[3].Value; break;
+        case 12: tex = rtm->SemitransparentGBuffers[4].Value; break;
+      }
+
+      if (tex == null || tex->D3D11Texture2D == null) {
+        ImGui.TextColored(new Vector4(1, 1, 0, 1), "Selected texture is null or not initialized.");
+        return;
+      }
+
+      var srv = GetOrCreateSRV(tex);
+      if (srv == null) {
+        ImGui.TextColored(new Vector4(1, 0, 0, 1), "Failed to create ShaderResourceView for this texture.");
+        return;
+      }
+
+      var availMode = ImGui.GetContentRegionAvail();
+      var texPtr = (IntPtr)tex->D3D11Texture2D;
+      System.Runtime.InteropServices.Marshal.AddRef(texPtr);
+      using var d3dTex = new Vortice.Direct3D11.ID3D11Texture2D(texPtr);
+      float aspect = (float)d3dTex.Description.Width / d3dTex.Description.Height;
+      float drawHMode = availMode.Y;
+      float drawWMode = drawHMode * aspect;
+      if (drawWMode > availMode.X) {
+        drawWMode = availMode.X;
+        drawHMode = drawWMode / aspect;
+      }
+
+      var srvHandleMode = srv.NativePointer;
+      var textureIdMode = System.Runtime.CompilerServices.Unsafe.As<IntPtr, Dalamud.Bindings.ImGui.ImTextureID>(ref srvHandleMode);
+      ImGui.Image(textureIdMode, new Vector2(drawWMode, drawHMode));
+    }
+
+    private unsafe ID3D11ShaderResourceView GetOrCreateSRV(Texture* tex) {
+        if (tex == null || tex->D3D11Texture2D == null) return null;
+        var texPtr = (IntPtr)tex->D3D11Texture2D;
+        if (_dynamicSrvTexPtr == texPtr && _dynamicSrv != null) {
+            return _dynamicSrv;
+        }
+        
+        _dynamicSrv?.Dispose();
+        _dynamicSrv = null;
+        _dynamicSrvTexPtr = texPtr;
+        
+        System.Runtime.InteropServices.Marshal.AddRef(texPtr);
+        using var d3dTex = new Vortice.Direct3D11.ID3D11Texture2D(texPtr);
+        try {
+            if ((d3dTex.Description.BindFlags & BindFlags.ShaderResource) != 0) {
+                using var device = d3dTex.Device;
+                
+                // For depth buffers, we need a specific format
+                if (d3dTex.Description.Format == Vortice.DXGI.Format.R24G8_Typeless) {
+                    var desc = new ShaderResourceViewDescription {
+                        Format = Vortice.DXGI.Format.R24_UNorm_X8_Typeless,
+                        ViewDimension = Vortice.Direct3D.ShaderResourceViewDimension.Texture2D,
+                        Texture2D = new Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 }
+                    };
+                    _dynamicSrv = device.CreateShaderResourceView(d3dTex, desc);
+                } else if (d3dTex.Description.Format == Vortice.DXGI.Format.R32_Typeless) {
+                    var desc = new ShaderResourceViewDescription {
+                        Format = Vortice.DXGI.Format.R32_Float,
+                        ViewDimension = Vortice.Direct3D.ShaderResourceViewDimension.Texture2D,
+                        Texture2D = new Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 }
+                    };
+                    _dynamicSrv = device.CreateShaderResourceView(d3dTex, desc);
+                } else if (d3dTex.Description.Format.ToString().Contains("Typeless")) {
+                    Vortice.DXGI.Format newFmt = d3dTex.Description.Format;
+                    if (newFmt == Vortice.DXGI.Format.R8G8B8A8_Typeless) newFmt = Vortice.DXGI.Format.R8G8B8A8_UNorm;
+                    else if (newFmt == Vortice.DXGI.Format.R16G16B16A16_Typeless) newFmt = Vortice.DXGI.Format.R16G16B16A16_Float;
+                    else if (newFmt == Vortice.DXGI.Format.R32G32B32A32_Typeless) newFmt = Vortice.DXGI.Format.R32G32B32A32_Float;
+                    else if (newFmt == Vortice.DXGI.Format.R10G10B10A2_Typeless) newFmt = Vortice.DXGI.Format.R10G10B10A2_UNorm;
+                    
+                    var desc = new ShaderResourceViewDescription {
+                        Format = newFmt,
+                        ViewDimension = Vortice.Direct3D.ShaderResourceViewDimension.Texture2D,
+                        Texture2D = new Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 }
+                    };
+                    _dynamicSrv = device.CreateShaderResourceView(d3dTex, desc);
+                } else {
+                    _dynamicSrv = device.CreateShaderResourceView(d3dTex);
+                }
+            }
+        } catch (Exception ex) {
+            _pluginLog.Warning(ex, "[Depth Preview] Failed to create SRV.");
+        }
+        
+        return _dynamicSrv;
+    }
+
+    private void DrawStandardPreviews() {
       if (Capture != null) {
-        Capture.GeneratePreview();
-        ImGui.TextWrapped(Capture.DebugInfo);
+          Capture.ReadDepthEnabled = true;
       }
-
-      ImGui.Separator();
-
-      // RTM probe section
-      if (ImGui.CollapsingHeader("Depth Texture Scan", ImGuiTreeNodeFlags.DefaultOpen)) {
-        if (_rtmProbeResult == null) {
-          _rtmProbeResult = DepthBufferProbe.ProbeAllDepthTextures();
-        }
-        if (ImGui.Button("Rescan")) {
-          _rtmProbeResult = DepthBufferProbe.ProbeAllDepthTextures();
-        }
-        ImGui.TextWrapped(_rtmProbeResult);
-      }
-
-      // Scene color probe
-      if (ImGui.CollapsingHeader("Scene Color RTs")) {
-        if (_sceneProbeResult == null) {
-          _sceneProbeResult = SceneColorProbe.ProbeAllColorTextures();
-        }
-        if (ImGui.Button("Rescan Color RTs")) {
-          _sceneProbeResult = SceneColorProbe.ProbeAllColorTextures();
-        }
-        ImGui.TextWrapped(_sceneProbeResult);
-      }
-
-      ImGui.Separator();
-
-      // Update the preview texture from captured data
       var data = Capture?.LastRgbaData;
       if (data != null && data.Length > 0) {
         try {
@@ -118,44 +258,6 @@ namespace XivMediaPlayer.Windows {
         
         var uiData = UICapture.LastAlphaData;
         
-        if (Config != null && Config.ReShadeCompatibilityMode && Capture != null && Capture.LastDepthData != null && UICapture.LastColorData != null) {
-          int w = Math.Min(Capture.CaptureWidth, UICapture.CaptureWidth);
-          int h = Math.Min(Capture.CaptureHeight, UICapture.CaptureHeight);
-          if (w > 0 && h > 0) {
-            var experimentalData = new byte[w * h * 4];
-            var depthData = Capture.LastDepthData;
-            var colorData = UICapture.LastColorData;
-            for (int y = 0; y < h; y++) {
-              for (int x = 0; x < w; x++) {
-                int idx = (y * w + x) * 4;
-                int depthIdx = y * Capture.CaptureWidth + x;
-                int colorIdx = (y * UICapture.CaptureWidth + x) * 4;
-                
-                float gameDepth = depthData[depthIdx];
-                float r = colorData[colorIdx + 0] / 255f;
-                float g = colorData[colorIdx + 1] / 255f;
-                float b = colorData[colorIdx + 2] / 255f;
-                
-                float luminance = r * 0.299f + g * 0.587f + b * 0.114f;
-                float invertedColor = 1.0f - luminance;
-                float diff = Math.Abs(invertedColor - gameDepth);
-                float invertedDiff = 1.0f - diff;
-                float uiAlpha = Math.Clamp(invertedDiff, 0f, 1f);
-                byte alphaByte = (byte)(uiAlpha * 255f);
-                if (alphaByte < 130) {
-                    alphaByte = 0;
-                }
-                
-                experimentalData[idx + 0] = alphaByte;
-                experimentalData[idx + 1] = alphaByte;
-                experimentalData[idx + 2] = alphaByte;
-                experimentalData[idx + 3] = 255;
-              }
-            }
-            uiData = experimentalData;
-          }
-        }
-
         if (uiData != null && uiData.Length > 0) {
           try {
             int hash = uiData.Length;
@@ -203,6 +305,76 @@ namespace XivMediaPlayer.Windows {
       _disposed = true;
       _previewTexture?.Dispose();
       _uiPreviewTexture?.Dispose();
+      _dynamicSrv?.Dispose();
+      _sceneRenderer?.Dispose();
+      _dumper?.Dispose();
+    }
+
+    private unsafe void CopyToClipboard() {
+        byte[] rgbaData = null;
+        int w = 0, h = 0;
+
+        try {
+            if (_selectedPreviewMode == 0 && Capture != null) {
+                rgbaData = Capture.LastRgbaData;
+                w = Capture.CaptureWidth;
+                h = Capture.CaptureHeight;
+            } else if (_selectedPreviewMode == 1 && UICapture != null) {
+                rgbaData = UICapture.LastColorData;
+                w = UICapture.CaptureWidth;
+                h = UICapture.CaptureHeight;
+            } else if (_selectedPreviewMode == 13) {
+                _pluginLog.Warning("[Depth Preview] Copying reconstructed scene not supported yet.");
+                return;
+            } else {
+                var rtm = RenderTargetManager.Instance();
+                if (rtm == null) return;
+
+                Texture* tex = null;
+                switch (_selectedPreviewMode) {
+                  case 2: tex = rtm->DepthStencil; break;
+                  case 3: tex = rtm->GBuffers[0].Value; break;
+                  case 4: tex = rtm->GBuffers[1].Value; break;
+                  case 5: tex = rtm->GBuffers[2].Value; break;
+                  case 6: tex = rtm->GBuffers[3].Value; break;
+                  case 7: tex = rtm->GBuffers[4].Value; break;
+                  case 8: tex = rtm->SemitransparentGBuffers[0].Value; break;
+                  case 9: tex = rtm->SemitransparentGBuffers[1].Value; break;
+                  case 10: tex = rtm->SemitransparentGBuffers[2].Value; break;
+                  case 11: tex = rtm->SemitransparentGBuffers[3].Value; break;
+                  case 12: tex = rtm->SemitransparentGBuffers[4].Value; break;
+                }
+
+                if (tex == null || tex->D3D11Texture2D == null) return;
+
+                var srv = GetOrCreateSRV(tex);
+                if (srv == null) return;
+
+                if (_dumper == null) {
+                    _dumper = new XivMediaPlayer.Utils.TextureDumper();
+                    _dumper.Initialize();
+                }
+
+                // Get dimensions
+                var texPtr = (IntPtr)tex->D3D11Texture2D;
+                System.Runtime.InteropServices.Marshal.AddRef(texPtr);
+                using var d3dTex = new Vortice.Direct3D11.ID3D11Texture2D(texPtr);
+                w = d3dTex.Description.Width;
+                h = d3dTex.Description.Height;
+
+                rgbaData = _dumper.DumpTextureToRgba(srv, w, h);
+            }
+
+            if (rgbaData != null && w > 0 && h > 0) {
+                if (XivMediaPlayer.Utils.ClipboardHelper.CopyBgraToClipboard(w, h, rgbaData)) {
+                    _pluginLog.Info($"[Depth Preview] Copied {w}x{h} texture to clipboard.");
+                } else {
+                    _pluginLog.Warning("[Depth Preview] Failed to set clipboard data.");
+                }
+            }
+        } catch (Exception ex) {
+            _pluginLog.Error(ex, "[Depth Preview] Error copying to clipboard.");
+        }
     }
   }
 }

@@ -55,7 +55,6 @@ namespace XivMediaPlayer.Compositing {
         var contextPtr = (IntPtr)ffxivDevice->D3D11DeviceContext;
         Marshal.AddRef(contextPtr);
         _context = new ID3D11DeviceContext(contextPtr);
-        Marshal.AddRef(_context.Device.NativePointer);
         _device = _context.Device;
 
         

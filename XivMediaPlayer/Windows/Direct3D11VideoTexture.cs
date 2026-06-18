@@ -28,7 +28,6 @@ namespace XivMediaPlayer.Windows {
             var contextPtr = (IntPtr)ffxivDevice->D3D11DeviceContext;
             System.Runtime.InteropServices.Marshal.AddRef(contextPtr);
             _context = new ID3D11DeviceContext(contextPtr);
-            System.Runtime.InteropServices.Marshal.AddRef(_context.Device.NativePointer);
             _device = _context.Device;
             
             var desc = new Texture2DDescription {
@@ -82,6 +81,7 @@ namespace XivMediaPlayer.Windows {
             _texture?.Dispose();
             _context?.Dispose();
             
+            _device?.Dispose();
             _device = null;
             _context = null;
             _srv = null;

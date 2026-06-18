@@ -165,7 +165,8 @@ float4 PS(VS_OUT input) : SV_TARGET {
           _context.OMSetBlendState(_blendState);
 
           // Bind video texture as input
-          var videoSRV = new ID3D11ShaderResourceView(videoSrvPtr);
+          System.Runtime.InteropServices.Marshal.AddRef(videoSrvPtr);
+          using var videoSRV = new ID3D11ShaderResourceView(videoSrvPtr);
           _context.PSSetShaderResource(0, videoSRV);
           _context.PSSetSampler(0, _sampler);
 

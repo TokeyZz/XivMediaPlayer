@@ -83,49 +83,16 @@ namespace XivMediaPlayer
                 
                 _pluginLog.Information($"Downloading dependencies from: {url}");
 
-                using (var client = new HttpClient())
-                {
-                    client.DefaultRequestHeaders.UserAgent.ParseAdd("XivMediaPlayer-Plugin");
-                    
-                    using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
-                    {
-                        response.EnsureSuccessStatusCode();
+                bool success = await TryDownloadDependencies(url, zipPath);
+                
+                if (!success) {
+                    string fallbackUrl = "https://github.com/Sebane1/XivMediaPlayer/releases/latest/download/XivMediaPlayer-Dependencies.zip";
+                    _pluginLog.Information($"Version {_version} not found. Falling back to latest release: {fallbackUrl}");
+                    success = await TryDownloadDependencies(fallbackUrl, zipPath);
+                }
 
-                        var totalBytes = response.Content.Headers.ContentLength ?? -1L;
-                        var canReportProgress = totalBytes != -1;
-
-                        using (var stream = await response.Content.ReadAsStreamAsync())
-                        using (var fileStream = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
-                        {
-                            var buffer = new byte[8192];
-                            var totalRead = 0L;
-                            var isMoreToRead = true;
-
-                            do
-                            {
-                                var read = await stream.ReadAsync(buffer, 0, buffer.Length);
-                                if (read == 0)
-                                {
-                                    isMoreToRead = false;
-                                }
-                                else
-                                {
-                                    await fileStream.WriteAsync(buffer, 0, read);
-                                    totalRead += read;
-
-                                    if (canReportProgress)
-                                    {
-                                        DownloadProgress = (float)totalRead / totalBytes;
-                                        Status = $"Downloading: {(totalRead / 1024 / 1024)}MB / {(totalBytes / 1024 / 1024)}MB";
-                                    }
-                                    else
-                                    {
-                                        Status = $"Downloading: {(totalRead / 1024 / 1024)}MB";
-                                    }
-                                }
-                            } while (isMoreToRead);
-                        }
-                    }
+                if (!success) {
+                    throw new Exception("Failed to download dependencies from all available URLs.");
                 }
 
                 Status = "Extracting dependencies... (This may take a minute)";
@@ -176,6 +143,62 @@ namespace XivMediaPlayer
             if (!File.Exists(Path.Combine(DependenciesDir, "ffmpeg.exe")))
             {
                 await DownloadFFmpegAsync();
+            }
+        }
+
+        private async Task<bool> TryDownloadDependencies(string url, string zipPath)
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    client.DefaultRequestHeaders.UserAgent.ParseAdd("XivMediaPlayer-Plugin");
+                    
+                    using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
+                    {
+                        if (!response.IsSuccessStatusCode) {
+                            return false;
+                        }
+
+                        var totalBytes = response.Content.Headers.ContentLength ?? -1L;
+                        var canReportProgress = totalBytes != -1;
+
+                        using (var stream = await response.Content.ReadAsStreamAsync())
+                        using (var fileStream = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
+                        {
+                            var buffer = new byte[8192];
+                            var totalRead = 0L;
+                            var isMoreToRead = true;
+
+                            do
+                            {
+                                var read = await stream.ReadAsync(buffer, 0, buffer.Length);
+                                if (read == 0)
+                                {
+                                    isMoreToRead = false;
+                                }
+                                else
+                                {
+                                    await fileStream.WriteAsync(buffer, 0, read);
+                                    totalRead += read;
+
+                                    if (canReportProgress)
+                                    {
+                                        DownloadProgress = (float)totalRead / totalBytes;
+                                        Status = $"Downloading: {(totalRead / 1024 / 1024)}MB / {(totalBytes / 1024 / 1024)}MB";
+                                    }
+                                    else
+                                    {
+                                        Status = $"Downloading: {(totalRead / 1024 / 1024)}MB";
+                                    }
+                                }
+                            } while (isMoreToRead);
+                        }
+                    }
+                }
+                return true;
+            } catch (HttpRequestException) {
+                return false;
             }
         }
 

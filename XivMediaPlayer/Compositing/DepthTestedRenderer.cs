@@ -754,7 +754,6 @@ float4 PS(VS_OUT input) : SV_TARGET {
         var contextPtr = (IntPtr)ffxivDevice->D3D11DeviceContext;
         System.Runtime.InteropServices.Marshal.AddRef(contextPtr);
         _context = new ID3D11DeviceContext(contextPtr);
-        System.Runtime.InteropServices.Marshal.AddRef(_context.Device.NativePointer);
         _device = _context.Device;
 
         // Compile shaders
@@ -852,7 +851,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
       float renderWidth, float renderHeight,
       List<(int X, int Y, int W, int H, string Name)> uiRects, IntPtr titleSrvPtr = default,
       bool isLooping = false, bool isShuffle = false, float time = 0, float showScreensaver = 0,
-      float videoAspectRatio = 0) {
+      float videoAspectRatio = 0, IntPtr gbuffer2SrvPtr = default, IntPtr gbuffer3SrvPtr = default) {
 
       if (!_initialized || _disposed || videoSrvPtr == IntPtr.Zero || depthSrv == null) return false;
 
@@ -941,14 +940,20 @@ float4 PS(VS_OUT input) : SV_TARGET {
         _context.PSSetShader(_pixelShader);
         _context.PSSetConstantBuffer(0, _constantBuffer);
         _context.PSSetConstantBuffer(1, _uiRectBuffer);
-        var srvs = new ID3D11ShaderResourceView[5];
-        srvs[0] = new ID3D11ShaderResourceView(videoSrvPtr);
+        var srvs = new ID3D11ShaderResourceView[7];
+        if (videoSrvPtr != IntPtr.Zero) System.Runtime.InteropServices.Marshal.AddRef(videoSrvPtr);
+        srvs[0] = videoSrvPtr != IntPtr.Zero ? new ID3D11ShaderResourceView(videoSrvPtr) : null;
         srvs[1] = depthSrv;
         srvs[2] = uiLayerSrv;
+        if (titleSrvPtr != IntPtr.Zero) System.Runtime.InteropServices.Marshal.AddRef(titleSrvPtr);
         srvs[3] = titleSrvPtr != IntPtr.Zero ? new ID3D11ShaderResourceView(titleSrvPtr) : null;
-
+        srvs[4] = null; // previously PreUITexture
+        if (gbuffer2SrvPtr != IntPtr.Zero) System.Runtime.InteropServices.Marshal.AddRef(gbuffer2SrvPtr);
+        srvs[5] = gbuffer2SrvPtr != IntPtr.Zero ? new ID3D11ShaderResourceView(gbuffer2SrvPtr) : null;
+        if (gbuffer3SrvPtr != IntPtr.Zero) System.Runtime.InteropServices.Marshal.AddRef(gbuffer3SrvPtr);
+        srvs[6] = gbuffer3SrvPtr != IntPtr.Zero ? new ID3D11ShaderResourceView(gbuffer3SrvPtr) : null;
         
-        _context.PSSetShaderResources(0, 5, srvs);
+        _context.PSSetShaderResources(0, 7, srvs);
         _context.PSSetSampler(0, _videoSampler);
         _context.PSSetSampler(1, _depthSampler);
 
@@ -986,6 +991,10 @@ float4 PS(VS_OUT input) : SV_TARGET {
       _uiRectBuffer?.Dispose();
       _pixelShader?.Dispose();
       _vertexShader?.Dispose();
+      _device?.Dispose();
+      _context?.Dispose();
+      _device = null;
+      _context = null;
     }
   }
 }
