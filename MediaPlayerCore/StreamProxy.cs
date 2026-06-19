@@ -136,7 +136,7 @@ namespace MediaPlayerCore
             var handler = new HttpClientHandler { UseCookies = false };
             if (OutboundProxy != null) handler.Proxy = OutboundProxy;
             handler.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
-            var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
+            var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
             bool hasUA = false, hasAccept = false;
             if (headers != null)
             {

@@ -20,7 +20,7 @@ namespace XivMediaPlayer.Networking
         {
             _baseUrl = baseUrl;
             _log = log;
-            _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         }
 
         public async Task<long?> GetServerTimeAsync()
