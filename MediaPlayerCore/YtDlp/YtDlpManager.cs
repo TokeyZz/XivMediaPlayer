@@ -639,7 +639,10 @@ namespace MediaPlayerCore.YtDlp
             return await Task.Run(() =>
             {
                 // Inject cookies if available (e.g. from VRCVideoCacher browser extension)
-                string fullArgs = (withCommonArgs ? BuildCommonArgs() : "") + arguments;
+                string commonArgs = withCommonArgs ? BuildCommonArgs() : "";
+                string fullArgs = commonArgs + arguments;
+                Debug.WriteLine($"[yt-dlp] RunYtDlp: EXE={_ytDlpPath}");
+                Debug.WriteLine($"[yt-dlp] RunYtDlp: ARGS={fullArgs}");
                 var psi = new ProcessStartInfo
                 {
                     FileName = _ytDlpPath,
@@ -680,6 +683,8 @@ namespace MediaPlayerCore.YtDlp
 
                 timer.Change(Timeout.Infinite, Timeout.Infinite);
 
+                Debug.WriteLine($"[yt-dlp] RunYtDlp: exitCode={process.ExitCode}, outputLen={output.Length}, errorLen={error.Length}");
+
                 if (timedOut)
                 {
                     throw new TimeoutException("yt-dlp timed out after 30 seconds");
@@ -687,7 +692,7 @@ namespace MediaPlayerCore.YtDlp
 
                 if (process.ExitCode != 0 && string.IsNullOrEmpty(output))
                 {
-                    throw new Exception($"yt-dlp exited with code {process.ExitCode}: {error}");
+                    throw new Exception($"[CMD] {_ytDlpPath} {fullArgs}\n[EXIT] code={process.ExitCode}\n[STDERR] {error}");
                 }
 
                 lock (_runningProcesses)
@@ -791,22 +796,40 @@ namespace MediaPlayerCore.YtDlp
         /// </summary>
         private string BuildCommonArgs()
         {
-            string args = $"--impersonate chrome --js-runtimes \"deno:{DenoPath.Replace(".zip", ".exe")}\" --socket-timeout 30 ";
+            string denoExe = DenoPath.Replace(".zip", ".exe");
+            bool denoExists = File.Exists(denoExe);
+            string args = $"--impersonate chrome --js-runtimes \"deno:{denoExe}\" --socket-timeout 30 ";
 
             // Proxy injection
             if (!string.IsNullOrEmpty(YtDlpProxy))
             {
                 args += $"--proxy \"{YtDlpProxy}\" ";
+                Debug.WriteLine($"[yt-dlp] BuildCommonArgs: proxy={YtDlpProxy}");
+            }
+            else
+            {
+                Debug.WriteLine("[yt-dlp] BuildCommonArgs: no proxy configured");
             }
 
             // Cookie injection
             if (!string.IsNullOrEmpty(CookieBrowser))
             {
                 args += $"--cookies-from-browser {CookieBrowser} ";
-            } else if (HasCookies)
-             {
-                args += $"--cookies \"{_cookiesPath}\" ";
+                Debug.WriteLine($"[yt-dlp] BuildCommonArgs: cookies-from-browser={CookieBrowser}");
             }
+            else if (HasCookies)
+            {
+                bool cookieExists = File.Exists(_cookiesPath);
+                args += $"--cookies \"{_cookiesPath}\" ";
+                Debug.WriteLine($"[yt-dlp] BuildCommonArgs: cookies={_cookiesPath}, exists={cookieExists}");
+            }
+            else
+            {
+                Debug.WriteLine("[yt-dlp] BuildCommonArgs: no cookies configured");
+            }
+
+            Debug.WriteLine($"[yt-dlp] BuildCommonArgs: deno={denoExe}, exists={denoExists}");
+            Debug.WriteLine($"[yt-dlp] BuildCommonArgs: final args prefix = {args.Trim()}");
 
             return args;
         }

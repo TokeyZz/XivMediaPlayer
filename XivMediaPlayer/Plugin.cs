@@ -3297,10 +3297,15 @@ namespace XivMediaPlayer
                 auth = $"{Uri.EscapeDataString(_config.ProxyUsername)}:{Uri.EscapeDataString(_config.ProxyPassword)}@";
             }
 
-            string proxyUrl = $"{_config.ProxyType}://{auth}{_config.ProxyHost}:{_config.ProxyPort}";
+            // yt-dlp proxy URL: both "http" and "https" config types map to http://
+            // because "https://" means "connect to proxy over TLS" (not "proxy HTTPS targets")
+            // and local proxies (Clash/V2Ray) speak plain HTTP, not HTTPS.
+            string ytDlpProxyScheme = _config.ProxyType.ToLowerInvariant() == "socks5" ? "socks5" : "http";
+            string ytDlpProxyUrl = $"{ytDlpProxyScheme}://{auth}{_config.ProxyHost}:{_config.ProxyPort}";
 
             // yt-dlp: just pass the proxy URL
-            _ytDlpManager.YtDlpProxy = proxyUrl;
+            _ytDlpManager.YtDlpProxy = ytDlpProxyUrl;
+            Debug.WriteLine($"[Proxy] ApplyProxySettings: yt-dlp proxy = {ytDlpProxyUrl}");
 
             // VLC proxy args
             string vlcArgs = "";
@@ -3312,7 +3317,8 @@ namespace XivMediaPlayer
                     break;
                 case "http":
                 case "https":
-                    vlcArgs = $"--http-proxy={proxyUrl}";
+                    // VLC --http-proxy also expects http:// not https://
+                    vlcArgs = $"--http-proxy={ytDlpProxyUrl}";
                     break;
             }
             if (_mediaManager != null) _mediaManager.VlcProxyArgs = vlcArgs;
