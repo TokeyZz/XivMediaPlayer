@@ -19,7 +19,13 @@ builder.Services.AddDbContext<XivMediaPlayer.Server.Models.AppDbContext>(options
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
+// Background service for DJ timeout detection
+builder.Services.AddHostedService<XivMediaPlayer.Server.DjTimeoutService>();
+
 var app = builder.Build();
+
+var logger = app.Services.GetRequiredService<ILogger<Program>>();
+logger.LogInformation("[Server] XivMediaPlayer Server v2 starting on port {Port}", port);
 
 // Ensure database is created and apply migrations safely
 using (var scope = app.Services.CreateScope())

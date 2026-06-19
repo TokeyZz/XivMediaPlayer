@@ -149,6 +149,9 @@ namespace XivMediaPlayer.Server.Controllers
                     await _db.SaveChangesAsync();
                 }
             }
+            _logger.LogDebug(
+                "[Media] GetState (legacy): locationKey={Key}, url={Url}, playing={Playing}, timecode={Time}ms, duration={Dur}ms, dataAge={Age}ms, queueRemaining={QRemain}",
+                locationKey, state.CurrentUrl, state.IsPlaying, state.TimecodeMs, state.DurationMs, state.DataAgeMs, state.PlaylistJson);
             return Ok(state);
         }
 
@@ -156,7 +159,10 @@ namespace XivMediaPlayer.Server.Controllers
         public async Task<IActionResult> UpdateMediaState(string locationKey, [FromBody] RoomMediaStateSync state)
         {
             if (IsUrlBlacklisted(state.CurrentUrl))
+            {
+                _logger.LogWarning("[Media] UpdateMedia REJECTED: blacklisted URL, locationKey={Key}, url={Url}", locationKey, state.CurrentUrl);
                 return BadRequest("The provided URL is blacklisted.");
+            }
             if (!string.IsNullOrEmpty(state.PlaylistJson))
             {
                 try
@@ -199,8 +205,42 @@ namespace XivMediaPlayer.Server.Controllers
                 await RecordMediaPlay(state.CurrentUrl, locationKey, state.OwnerId);
             await _db.SaveChangesAsync();
             if (!state.IsBackgroundSync)
-                _logger.LogInformation("MEDIA UPDATE: Room '{LocationKey}' is now playing '{CurrentUrl}' (DJ: {OwnerId})", locationKey, state.CurrentUrl, state.OwnerId);
+                _logger.LogInformation(
+                    "[Media] UpdateMedia (legacy): locationKey={Key}, url={Url}, playing={Playing}, ownerId={OwnerId}, isNewPlay={New}, duration={Dur}ms, queueSize={QSize}",
+                    locationKey, state.CurrentUrl, state.IsPlaying, state.OwnerId, isNewPlay, state.DurationMs, state.PlaylistJson);
             return Ok(state);
+        }
+
+        [HttpGet("health")]
+        public async Task<IActionResult> Health()
+        {
+            var allRooms = await _db.RoomStates
+                .Where(r => r.DjOwnerId != "")
+                .Select(r => new { r.LocationKey, r.DjOwnerId, r.StateVersion, r.IsPlaying, r.DjHeartbeatUtc })
+                .ToListAsync();
+
+            var now = DateTime.UtcNow;
+            var activeDjs = allRooms
+                .Where(r => (now - r.DjHeartbeatUtc).TotalSeconds <= 10)
+                .Select(r => new { r.LocationKey, r.DjOwnerId, r.StateVersion, r.IsPlaying })
+                .ToList();
+            var staleDjs = allRooms
+                .Where(r => (now - r.DjHeartbeatUtc).TotalSeconds > 10)
+                .Select(r => new { r.LocationKey, r.DjOwnerId, r.StateVersion, Age = (now - r.DjHeartbeatUtc).TotalSeconds })
+                .ToList();
+
+            _logger.LogInformation(
+                "[Room] Health check: totalRooms={Total}, activeDjs={Active}, staleDjs={Stale}",
+                allRooms.Count, activeDjs.Count, staleDjs.Count);
+
+            return Ok(new
+            {
+                TotalRooms = allRooms.Count,
+                ActiveDjs = activeDjs,
+                StaleDjs = staleDjs,
+                ServerTime = DateTime.UtcNow,
+                Uptime = Environment.TickCount64 / 1000
+            });
         }
 
         // Phase 1: confirm-then-push protocol endpoints
@@ -208,15 +248,16 @@ namespace XivMediaPlayer.Server.Controllers
         [HttpPost("{locationKey}/claim-dj")]
         public async Task<IActionResult> ClaimDj(string locationKey, [FromBody] ClaimDjRequest request)
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             var state = await _db.RoomStates.FindAsync(locationKey);
             if (state != null && !string.IsNullOrEmpty(state.DjOwnerId))
             {
                 var heartbeatAge = (DateTime.UtcNow - state.DjHeartbeatUtc).TotalSeconds;
                 if (heartbeatAge <= 10 && state.DjOwnerId != request.OwnerId)
                 {
-                    _logger.LogInformation(
-                        "[Room] Claim DJ REJECTED: room has active DJ, ownerId={RequestOwner}, locationKey={Key}, currentDj={CurrentDj}, version={Ver}",
-                        request.OwnerId, locationKey, state.DjOwnerId, state.StateVersion);
+                    _logger.LogWarning(
+                        "[Room] Claim DJ REJECTED: active DJ exists, requestOwner={RequestOwner}, currentDj={CurrentDj}, djAge={Age:F1}s, locationKey={Key}, oldVersion={Ver}",
+                        request.OwnerId, state.DjOwnerId, heartbeatAge, locationKey, state.StateVersion);
                     var rejectResult = ApiResult<ClaimDjResponse>.Fail("Room already has an active DJ");
                     rejectResult.Data = new ClaimDjResponse
                     {
@@ -228,6 +269,10 @@ namespace XivMediaPlayer.Server.Controllers
                     return Conflict(rejectResult);
                 }
             }
+            bool isNewRoom = state == null;
+            bool isTakeover = state != null && !string.IsNullOrEmpty(state.DjOwnerId);
+            string prevDj = state?.DjOwnerId ?? "";
+            string inheritedUrl = state?.CurrentUrl ?? "";
             if (state == null)
             {
                 state = new RoomState
@@ -248,9 +293,10 @@ namespace XivMediaPlayer.Server.Controllers
             state.DjOwnerId = request.OwnerId;
             state.DjHeartbeatUtc = DateTime.UtcNow;
             await _db.SaveChangesAsync();
+            sw.Stop();
             _logger.LogInformation(
-                "[Room] Claim DJ: ownerId={OwnerId}, locationKey={Key}, version={Ver}",
-                request.OwnerId, locationKey, state.StateVersion);
+                "[Room] Claim DJ OK: ownerId={OwnerId}, locationKey={Key}, version={Ver}, isNew={New}, isTakeover={Takeover}, prevDj={PrevDj}, inheritedUrl={Url}, elapsed={Elapsed}ms",
+                request.OwnerId, locationKey, state.StateVersion, isNewRoom, isTakeover, prevDj, inheritedUrl, sw.ElapsedMilliseconds);
             return Ok(ApiResult<ClaimDjResponse>.Ok(new ClaimDjResponse
             {
                 Success = true,
@@ -263,21 +309,25 @@ namespace XivMediaPlayer.Server.Controllers
         [HttpPost("{locationKey}/heartbeat")]
         public async Task<IActionResult> Heartbeat(string locationKey, [FromBody] HeartbeatRequest request)
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             var state = await _db.RoomStates.FindAsync(locationKey);
             if (state == null)
+            {
+                _logger.LogWarning("[Room] Heartbeat FAIL: no room state, locationKey={Key}", locationKey);
                 return NotFound(ApiResult<HeartbeatResponse>.Fail("Room state not found"));
+            }
             if (request.OwnerId != state.DjOwnerId)
             {
-                _logger.LogInformation(
+                _logger.LogWarning(
                     "[Room] Heartbeat REJECTED: owner mismatch, requestOwner={RequestOwner}, actualDj={ActualDj}, locationKey={Key}",
                     request.OwnerId, state.DjOwnerId, locationKey);
                 return StatusCode(403, ApiResult<HeartbeatResponse>.Fail("Not the active DJ"));
             }
             if (request.StateVersion != state.StateVersion)
             {
-                _logger.LogInformation(
-                    "[Room] Heartbeat VERSION CONFLICT: locationKey={Key}, requestVersion={ReqVer}, currentVersion={CurVer}",
-                    locationKey, request.StateVersion, state.StateVersion);
+                _logger.LogWarning(
+                    "[Room] Heartbeat VERSION CONFLICT: locationKey={Key}, reqVersion={ReqVer}, curVersion={CurVer}, ownerId={OwnerId}",
+                    locationKey, request.StateVersion, state.StateVersion, request.OwnerId);
                 var conflictResult = ApiResult<HeartbeatResponse>.Fail("Version conflict");
                 conflictResult.Data = new HeartbeatResponse
                 {
@@ -287,6 +337,12 @@ namespace XivMediaPlayer.Server.Controllers
                 };
                 return Conflict(conflictResult);
             }
+
+            bool urlChanged = state.CurrentUrl != request.CurrentUrl;
+            bool playingChanged = state.IsPlaying != request.IsPlaying;
+            int queueCount = request.Queue?.Count ?? 0;
+            long timeDelta = request.TimecodeMs - state.TimecodeMs;
+
             state.CurrentUrl = request.CurrentUrl;
             state.TimecodeMs = request.TimecodeMs;
             state.IsPlaying = request.IsPlaying;
@@ -295,6 +351,20 @@ namespace XivMediaPlayer.Server.Controllers
             state.DjHeartbeatUtc = DateTime.UtcNow;
             state.StateVersion++;
             await _db.SaveChangesAsync();
+            sw.Stop();
+
+            if (urlChanged || playingChanged)
+            {
+                _logger.LogInformation(
+                    "[Room] Heartbeat OK (changed): locationKey={Key}, version={Ver}, url={Url}, playing={Playing}, time={Time}ms, queue={QCount}, urlChanged={UrlChg}, playingChanged={PlayChg}, elapsed={Elapsed}ms",
+                    locationKey, state.StateVersion, request.CurrentUrl, request.IsPlaying, request.TimecodeMs, queueCount, urlChanged, playingChanged, sw.ElapsedMilliseconds);
+            }
+            else
+            {
+                _logger.LogDebug(
+                    "[Room] Heartbeat OK: locationKey={Key}, version={Ver}, time={Time}ms, timeDelta={Delta}ms, queue={QCount}, elapsed={Elapsed}ms",
+                    locationKey, state.StateVersion, request.TimecodeMs, timeDelta, queueCount, sw.ElapsedMilliseconds);
+            }
             return Ok(ApiResult<HeartbeatResponse>.Ok(new HeartbeatResponse
             {
                 Accepted = true,
@@ -308,14 +378,20 @@ namespace XivMediaPlayer.Server.Controllers
         {
             var state = await _db.RoomStates.FindAsync(locationKey);
             if (state == null)
+            {
+                _logger.LogWarning("[Room] Release DJ FAIL: no room state, locationKey={Key}", locationKey);
                 return NotFound(ApiResult<ClaimDjResponse>.Fail("Room state not found"));
+            }
             if (request.OwnerId != state.DjOwnerId)
             {
-                _logger.LogInformation(
+                _logger.LogWarning(
                     "[Room] Release DJ REJECTED: owner mismatch, requestOwner={RequestOwner}, actualDj={ActualDj}, locationKey={Key}",
                     request.OwnerId, state.DjOwnerId, locationKey);
                 return StatusCode(403, ApiResult<ClaimDjResponse>.Fail("Not the active DJ"));
             }
+            string lastUrl = state.CurrentUrl;
+            bool wasPlaying = state.IsPlaying;
+            long lastVersion = state.StateVersion;
             state.CurrentUrl = "";
             state.IsPlaying = false;
             state.DjOwnerId = "";
@@ -323,8 +399,8 @@ namespace XivMediaPlayer.Server.Controllers
             state.StateVersion++;
             await _db.SaveChangesAsync();
             _logger.LogInformation(
-                "[Room] Release DJ: ownerId={OwnerId}, locationKey={Key}, version={Ver}",
-                request.OwnerId, locationKey, state.StateVersion);
+                "[Room] Release DJ OK: ownerId={OwnerId}, locationKey={Key}, version={Ver}, lastUrl={Url}, wasPlaying={Playing}, prevVersion={PrevVer}",
+                request.OwnerId, locationKey, state.StateVersion, lastUrl, wasPlaying, lastVersion);
             return Ok(ApiResult<ClaimDjResponse>.Ok(new ClaimDjResponse
             {
                 Success = true,
@@ -336,9 +412,13 @@ namespace XivMediaPlayer.Server.Controllers
         [HttpGet("{locationKey}/state")]
         public async Task<IActionResult> GetState(string locationKey)
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             var state = await _db.RoomStates.FindAsync(locationKey);
             if (state == null)
+            {
+                _logger.LogDebug("[Room] GetState: no state for locationKey={Key}", locationKey);
                 return NotFound();
+            }
             var djHeartbeatAge = (DateTime.UtcNow - state.DjHeartbeatUtc).TotalSeconds;
             var djDisconnected = djHeartbeatAge > 10;
             List<string> queue;
@@ -350,6 +430,10 @@ namespace XivMediaPlayer.Server.Controllers
             {
                 queue = new List<string>();
             }
+            sw.Stop();
+            _logger.LogDebug(
+                "[Room] GetState: locationKey={Key}, version={Ver}, dj={DjId}, djAge={Age:F1}s, djOff={Offline}, url={Url}, playing={Playing}, queue={QCount}, elapsed={Elapsed}ms",
+                locationKey, state.StateVersion, state.DjOwnerId, djHeartbeatAge, djDisconnected, state.CurrentUrl, state.IsPlaying, queue.Count, sw.ElapsedMilliseconds);
             var response = new RoomStateResponse
             {
                 CurrentUrl = state.CurrentUrl,
