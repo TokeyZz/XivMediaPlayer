@@ -56,18 +56,21 @@ namespace MediaPlayerCore
             _cts = new CancellationTokenSource();
         }
 
+        private bool _acceptLoopRunning;
+
         public void Start()
         {
-            if (_listener.IsListening) return;
-            try
+            if (_acceptLoopRunning) return;
+            lock (_listener)
             {
-                _listener.Start();
+                if (_acceptLoopRunning) return;
+                if (!_listener.IsListening)
+                {
+                    try { _listener.Start(); } catch (Exception ex) { Debug.WriteLine($"[StreamProxy] Listener start failed: {ex.Message}"); return; }
+                }
+                _acceptLoopRunning = true;
                 Debug.WriteLine($"[StreamProxy] AcceptLoop starting on port {_port}");
                 Task.Run(() => AcceptLoop(_cts.Token));
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[StreamProxy] Failed to start listener: {ex.Message}");
             }
         }
 
