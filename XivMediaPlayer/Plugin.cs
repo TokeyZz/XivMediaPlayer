@@ -2083,11 +2083,14 @@ namespace XivMediaPlayer
                     {
                         _consecutiveSyncFailures = 0;
                         _isSyncing = true;
-                        Debug.WriteLine("[Sync] Follow: reason=" + (urlChanged ? "urlChanged" : "versionChanged") + ", action=play");
-                        PlayRouted(state.CurrentUrl, CurrentAudioSource, (int)state.TimecodeMs, isAutoSync: true);
+                        int syncStartMs = _config.ForceSyncProgress ? (int)state.TimecodeMs : 0;
+                        Debug.WriteLine("[Sync] Follow: reason=" + (urlChanged ? "urlChanged" : "versionChanged") + ", action=play, forceSyncProgress=" + _config.ForceSyncProgress);
+                        PlayRouted(state.CurrentUrl, CurrentAudioSource, syncStartMs, isAutoSync: true);
                     }
                     else
                     {
+                        if (!_config.ForceSyncProgress) continue;
+
                         var active = _mediaManager?.GetActiveStream();
                         if (active == null) continue;
 

@@ -54,7 +54,8 @@ namespace XivMediaPlayer {
     public bool DepthOcclusionEnabled { get; set; } = true;
     public bool DisableUIBlockDetection { get; set; } = false;
     public bool AutoResumeMedia { get; set; } = true;
-    public bool SyncWithRoom { get; set; } = false;
+    public bool SyncWithRoom { get; set; } = true;
+    public bool ForceSyncProgress { get; set; } = false;
     public ChatMessageLevel ChatMessageFilter { get; set; } = ChatMessageLevel.All;
     public bool VerboseChatLogging { get; set; } = false;
 

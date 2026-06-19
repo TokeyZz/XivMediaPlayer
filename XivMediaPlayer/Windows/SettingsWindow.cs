@@ -277,12 +277,26 @@ namespace XivMediaPlayer.Windows {
         "用于同步电视的后端服务器地址。");
 
       bool syncWithRoom = _plugin.Config.SyncWithRoom;
-      if (ImGui.Checkbox("跟随房间播放", ref syncWithRoom)) {
+      if (ImGui.Checkbox("启用服务器同步模式", ref syncWithRoom)) {
         _plugin.Config.SyncWithRoom = syncWithRoom;
         _plugin.Config.Save();
       }
       if (ImGui.IsItemHovered()) {
-        ImGui.SetTooltip("开启后会自动同步本房间 DJ 播放的媒体。关闭后不会自动跟随。");
+        ImGui.SetTooltip("开启后自动同步房间 DJ 的播放。关闭后完全独立播放，不上传/不接收同步数据。");
+      }
+
+      if (syncWithRoom)
+      {
+          ImGui.Indent();
+          bool forceSync = _plugin.Config.ForceSyncProgress;
+          if (ImGui.Checkbox("强制同步视频进度", ref forceSync)) {
+            _plugin.Config.ForceSyncProgress = forceSync;
+            _plugin.Config.Save();
+          }
+          if (ImGui.IsItemHovered()) {
+            ImGui.SetTooltip("跟随 DJ 的视频播放位置 (seek/pause/resume)。关闭后仅在 DJ 切换新 URL 时跟随，播放进度保持本地独立。");
+          }
+          ImGui.Unindent();
       }
 
       ImGui.Spacing();
