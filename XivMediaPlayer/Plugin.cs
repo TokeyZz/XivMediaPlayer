@@ -248,21 +248,13 @@ namespace XivMediaPlayer
             ServerClient = new Networking.ServerClient(_config.ServerUrl, _pluginLog);
             _config.OnConfigurationChanged += (s, e) =>
             {
-                // Only recreate ServerClient if the ServerUrl actually changed!
-                // Otherwise we constantly dispose the HttpClient while requests are in flight!
-                if (ServerClient.BaseUrl != _config.ServerUrl)
-                {
-
-                // Handle SyncWithRoom toggle
+                // Handle SyncWithRoom toggle (independent of ServerUrl)
                 if (_config.SyncWithRoom != _lastSyncWithRoom)
                 {
                     _lastSyncWithRoom = _config.SyncWithRoom;
                     if (_config.SyncWithRoom)
                     {
-                        if (!_isLocalDj)
-                        {
-                            StartFetchLoop();
-                        }
+                        if (!_isLocalDj) StartFetchLoop();
                     }
                     else
                     {
@@ -270,8 +262,20 @@ namespace XivMediaPlayer
                         StopHeartbeatLoop();
                     }
                 }
+
+                // Only recreate ServerClient if the ServerUrl actually changed
+                if (ServerClient.BaseUrl != _config.ServerUrl)
+                {
+                    StopHeartbeatLoop();
+                    StopFetchLoop();
                     ServerClient?.Dispose();
                     ServerClient = new Networking.ServerClient(_config.ServerUrl, _pluginLog);
+                    if (_config.SyncWithRoom && !_isLocalDj) StartFetchLoop();
+                    if (_isLocalDj)
+                    {
+                        _isLocalDj = false;
+                        if (_config.SyncWithRoom) StartFetchLoop();
+                    }
                 }
                 ApplyProxySettings();
             };

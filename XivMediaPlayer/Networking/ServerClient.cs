@@ -228,6 +228,7 @@ namespace XivMediaPlayer.Networking
                         ?? ApiResult<ClaimDjResponse>.Fail("DJ conflict");
                 return ApiResult<ClaimDjResponse>.Fail($"Unexpected status: {response.StatusCode}");
             }
+            catch (ObjectDisposedException) { return ApiResult<ClaimDjResponse>.Fail("[Net] Client disposed"); }
             catch (Exception ex) { _log.Error(ex, $"[Net] ClaimDj failed for {locationKey}"); return ApiResult<ClaimDjResponse>.Fail(ex.Message); }
         }
 
@@ -251,6 +252,7 @@ namespace XivMediaPlayer.Networking
                 return ApiResult<HeartbeatResponse>.Fail($"Unexpected status: {response.StatusCode}");
             }
             catch (TaskCanceledException) { return ApiResult<HeartbeatResponse>.Fail("[Net] Heartbeat timeout"); }
+            catch (ObjectDisposedException) { return ApiResult<HeartbeatResponse>.Fail("[Net] Client disposed"); }
             catch (Exception ex) { return ApiResult<HeartbeatResponse>.Fail(ex.Message); }
         }
 
@@ -267,6 +269,7 @@ namespace XivMediaPlayer.Networking
                         ?? ApiResult<ClaimDjResponse>.Fail("Empty response");
                 return ApiResult<ClaimDjResponse>.Fail($"Unexpected status: {response.StatusCode}");
             }
+            catch (ObjectDisposedException) { return ApiResult<ClaimDjResponse>.Fail("[Net] Client disposed"); }
             catch (Exception ex) { _log.Error(ex, $"[Net] ReleaseDj failed for {locationKey}"); return ApiResult<ClaimDjResponse>.Fail(ex.Message); }
         }
 
@@ -278,6 +281,7 @@ namespace XivMediaPlayer.Networking
                 if (response.IsSuccessStatusCode)
                     return await response.Content.ReadFromJsonAsync<RoomStateResponse>();
             }
+            catch (ObjectDisposedException) { return null; }
             catch (Exception ex) { _log.Error(ex, $"[Net] GetState failed for {locationKey}"); }
             return null;
         }
