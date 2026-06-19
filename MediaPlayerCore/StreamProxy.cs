@@ -37,16 +37,18 @@ namespace MediaPlayerCore
             var rng = new Random();
             for (int attempt = 0; attempt < 5; attempt++)
             {
-                _port = 40000 + rng.Next(1000, 5000);
+                _port = 40000 + rng.Next(1000);
                 _listener = new HttpListener();
                 _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
                 try
                 {
                     _listener.Start();
+                    Debug.WriteLine($"[StreamProxy] Started on port {_port} (attempt {attempt})");
                     break;
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Debug.WriteLine($"[StreamProxy] Port {_port} failed: {ex.Message}");
                     _listener.Close();
                     if (attempt == 4) throw;
                 }
@@ -60,6 +62,7 @@ namespace MediaPlayerCore
             try
             {
                 _listener.Start();
+                Debug.WriteLine($"[StreamProxy] AcceptLoop starting on port {_port}");
                 Task.Run(() => AcceptLoop(_cts.Token));
             }
             catch (Exception ex)
