@@ -1907,7 +1907,7 @@ namespace XivMediaPlayer
             bool isLocalEnded = activeStream != null && activeStream.VlcState == LibVLCSharp.Shared.VLCState.Ended;
             bool isDifferentUrl = activeStream == null || (!string.IsNullOrEmpty(_lastStreamURL) && _lastStreamURL != sync.CurrentUrl) || (isLocalEnded && sync.IsPlaying);
             // Only sync VODs. Live streams cannot be reliably timecode-synced.
-            bool isOutofSync = !_lastStreamIsLive && activeStream != null && activeStream.Length > 0 && Math.Abs(activeStream.Time - targetTimeMs) > 2500;
+            bool isOutofSync = !_lastStreamIsLive && activeStream != null && Math.Abs(activeStream.Time - targetTimeMs) > 2500;
             bool localIsPlaying = activeStream != null && activeStream.PlaybackState == NAudio.Wave.PlaybackState.Playing;
 
             if (isDifferentUrl)
