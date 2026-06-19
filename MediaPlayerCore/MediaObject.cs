@@ -274,6 +274,9 @@ namespace MediaPlayerCore {
               if (httpHeaders != null && httpHeaders.TryGetValue("Referer", out string mediaReferer)) {
                   media.AddOption($":http-referrer={mediaReferer}");
               }
+              if (httpHeaders != null && httpHeaders.TryGetValue("Cookie", out string mediaCookie)) {
+                  media.AddOption($":http-cookie={mediaCookie}");
+              }
 
               Debug.WriteLine("[MediaObject] Creating Media, about to Parse...");
               var parseSw = System.Diagnostics.Stopwatch.StartNew();
@@ -418,6 +421,9 @@ namespace MediaPlayerCore {
 
             if (httpHeaders != null && httpHeaders.TryGetValue("Referer", out string mediaReferer)) {
                 media.AddOption($":http-referrer={mediaReferer}");
+            }
+            if (httpHeaders != null && httpHeaders.TryGetValue("Cookie", out string mediaCookie)) {
+                media.AddOption($":http-cookie={mediaCookie}");
             }
 
             await media.Parse(soundPath.StartsWith("http") || soundPath.StartsWith("rtmp") || soundPath.StartsWith("rtsp")

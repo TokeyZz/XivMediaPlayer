@@ -1297,6 +1297,20 @@ namespace XivMediaPlayer
                     bool isLive = (metadata?.IsLive == true) || (metadata != null && metadata.Duration == null) || isTwitchLive;
                     var resolvedStreamUrl = streamUrl;
                     var resolvedHeaders = metadata?.HttpHeaders;
+
+                    // Cookie fallback: if yt-dlp didn't return headers but we have local cookies, inject them
+                    if ((resolvedHeaders == null || !resolvedHeaders.ContainsKey("Cookie"))
+                        && _ytDlpManager.HasCookies)
+                    {
+                        string cookies = _ytDlpManager.LoadCookiesForUrl(url);
+                        if (!string.IsNullOrEmpty(cookies))
+                        {
+                            resolvedHeaders ??= new Dictionary<string, string>();
+                            resolvedHeaders["Cookie"] = cookies;
+                            _pluginLog.Information($"[yt-dlp] Injected {cookies.Split(';').Length} cookies from local file for {new Uri(url).Host}");
+                        }
+                    }
+
                     var resolvedDurationMs = metadata?.Duration * 1000.0;
                     string statusMsg = isLive ? "LIVE" : (metadata?.Duration.HasValue == true
                       ? TimeSpan.FromSeconds(metadata.Duration.Value).ToString(@"mm\:ss") : "");

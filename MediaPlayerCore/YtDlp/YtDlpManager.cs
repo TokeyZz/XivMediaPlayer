@@ -237,6 +237,36 @@ namespace MediaPlayerCore.YtDlp
         /// </summary>
         public bool HasCookies => !string.IsNullOrEmpty(_cookiesPath) && File.Exists(_cookiesPath);
 
+        /// <summary>Path to the cookies file, or null if none.</summary>
+        public string? CookiesPath => _cookiesPath;
+
+        /// <summary>Read netscape cookies.txt and extract Cookie header value matching the URL's domain.</summary>
+        public string LoadCookiesForUrl(string url)
+        {
+            if (!HasCookies || _cookiesPath == null) return "";
+            try
+            {
+                string? domain = null;
+                try { domain = new Uri(url).Host; } catch { return ""; }
+
+                var lines = File.ReadAllLines(_cookiesPath);
+                var cookies = new List<string>();
+                foreach (var line in lines)
+                {
+                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#")) continue;
+                    var parts = line.Split('\t');
+                    if (parts.Length < 7) continue;
+                    var cookieDomain = parts[0].TrimStart('.');
+                    var name = parts[5];
+                    var value = parts[6];
+                    if (domain.EndsWith(cookieDomain, StringComparison.OrdinalIgnoreCase))
+                        cookies.Add($"{name}={value}");
+                }
+                return string.Join("; ", cookies);
+            }
+            catch { return ""; }
+        }
+
         /// <summary>
         /// Returns true if the yt-dlp binary exists at the configured path.
         /// </summary>
