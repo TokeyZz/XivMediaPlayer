@@ -990,7 +990,10 @@ namespace XivMediaPlayer
                 string playUrl = ((int)_videoWindow.FeedType < _streamURLs.Length) ? _streamURLs[(int)_videoWindow.FeedType] : _streamURLs[0];
                 if (playUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase) && !playUrl.Contains("127.0.0.1"))
                 {
-                    playUrl = MediaPlayerCore.StreamProxy.Instance.RegisterDirectMediaSession(playUrl, httpHeaders);
+                    if (playUrl.Contains(".m3u8") || playUrl.Contains(".mpd"))
+                        playUrl = MediaPlayerCore.StreamProxy.Instance.RegisterStream(playUrl, httpHeaders);
+                    else
+                        playUrl = MediaPlayerCore.StreamProxy.Instance.RegisterDirectMediaSession(playUrl, httpHeaders);
                 }
                 _mediaManager.PlayStream(audioGameObject, playUrl, _config.SpatialAudioEnabled, startTimeMs, httpHeaders);
                 _lastStreamURL = cleanedURL;
@@ -1132,7 +1135,10 @@ namespace XivMediaPlayer
                 string playUrl = url;
                 if (playUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 {
-                    playUrl = MediaPlayerCore.StreamProxy.Instance.RegisterDirectMediaSession(url, null);
+                    if (playUrl.Contains(".m3u8") || playUrl.Contains(".mpd"))
+                        playUrl = MediaPlayerCore.StreamProxy.Instance.RegisterStream(url, null);
+                    else
+                        playUrl = MediaPlayerCore.StreamProxy.Instance.RegisterDirectMediaSession(url, null);
                 }
 
                 _mediaManager.PlayStream(audioGameObject, playUrl, _config.SpatialAudioEnabled, startTimeMs, null);
@@ -1327,7 +1333,11 @@ namespace XivMediaPlayer
                         string playUrl = resolvedStreamUrl;
                         if (playUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase) && !playUrl.Contains("127.0.0.1"))
                         {
-                            playUrl = MediaPlayerCore.StreamProxy.Instance.RegisterDirectMediaSession(resolvedStreamUrl, resolvedHeaders);
+                            // m3u8 playlists need segment rewriting so VLC hits all segments through the proxy
+                            if (playUrl.Contains(".m3u8") || playUrl.Contains(".mpd"))
+                                playUrl = MediaPlayerCore.StreamProxy.Instance.RegisterStream(resolvedStreamUrl, resolvedHeaders);
+                            else
+                                playUrl = MediaPlayerCore.StreamProxy.Instance.RegisterDirectMediaSession(resolvedStreamUrl, resolvedHeaders);
                         }
 
                         int finalStartTimeMs = startTimeMs;
