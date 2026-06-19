@@ -11,7 +11,7 @@ namespace MediaPlayerCore {
     private bool _invalidated = false;
     private ConcurrentDictionary<string, MediaObject> _playbackStreams = new ConcurrentDictionary<string, MediaObject>();
     private FFmpegMediaObject _ffmpegStream;
-    private LibVLC? _sharedLibVLC;
+    private bool _vlcCoreInitialized;
     private readonly object _vlcInitLock = new();
 
     public event EventHandler<MediaError> OnErrorReceived;
@@ -33,38 +33,35 @@ namespace MediaPlayerCore {
     public int LastFrameWidth { get; set; } = 0;
     public int LastFrameHeight { get; set; } = 0;
     public bool Invalidated { get => _invalidated; set => _invalidated = value; }
-    
+
     public MediaObject? GetActiveStream() {
       var stream = _playbackStreams.Values.FirstOrDefault();
       if (stream == null || stream.IsDisposed) return null;
       return stream;
     }
 
-    public LibVLC SharedLibVLC {
-      get {
-        if (_sharedLibVLC == null) {
-          lock (_vlcInitLock) {
-            if (_sharedLibVLC == null) {
-              try {
-                var vlcPath = Path.Combine(_libVLCPath, "libvlc", "win-x64");
-                System.Diagnostics.Debug.WriteLine($"[MediaManager] Initializing LibVLC from: {vlcPath}");
-                Core.Initialize(vlcPath);
-                var vlcArgs = new List<string> { "--vout=none", "--http-reconnect" };
-                if (!string.IsNullOrEmpty(VlcProxyArgs)) {
-                  foreach (var arg in VlcProxyArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                    vlcArgs.Add(arg);
-                }
-                _sharedLibVLC = new LibVLC(vlcArgs.ToArray());
-                System.Diagnostics.Debug.WriteLine("[MediaManager] LibVLC initialized successfully");
-              } catch (Exception ex) {
-                System.Diagnostics.Debug.WriteLine($"[MediaManager] LibVLC init FAILED: {ex.Message}");
-                throw;
-              }
-            }
-          }
-        }
-        return _sharedLibVLC;
+    /// <summary>Call once to set up native libvlc path. Thread-safe.</summary>
+    public void EnsureCoreInitialized() {
+      if (_vlcCoreInitialized) return;
+      lock (_vlcInitLock) {
+        if (_vlcCoreInitialized) return;
+        var vlcPath = Path.Combine(_libVLCPath, "libvlc", "win-x64");
+        Debug.WriteLine($"[MediaManager] Core.Initialize from: {vlcPath} (exists={Directory.Exists(vlcPath)})");
+        Core.Initialize(vlcPath);
+        _vlcCoreInitialized = true;
+        Debug.WriteLine("[MediaManager] Core.Initialize done");
       }
+    }
+
+    /// <summary>Create a fresh LibVLC instance with the configured arguments.</summary>
+    public LibVLC CreateLibVLC() {
+      EnsureCoreInitialized();
+      var vlcArgs = new List<string> { "--vout=none", "--http-reconnect" };
+      if (!string.IsNullOrEmpty(VlcProxyArgs)) {
+        foreach (var arg in VlcProxyArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+          vlcArgs.Add(arg);
+      }
+      return new LibVLC(vlcArgs.ToArray());
     }
 
     public event EventHandler OnNewMediaTriggered;
@@ -334,7 +331,6 @@ namespace MediaPlayerCore {
       try {
         _updateLoop?.Wait(TimeSpan.FromSeconds(2));
       } catch { }
-      try { _sharedLibVLC?.Dispose(); } catch { }
     }
 
     public void SeekStream(long timeMs) {

@@ -30,6 +30,7 @@ namespace MediaPlayerCore {
     private VolumeSampleProvider _volumeProvider;
     private bool _isPlayingAudio = false;
 
+    private LibVLC? _ownedLibVLC;
     private EventHandler<LogEventArgs>? _vlcLogHandler;
     private byte[] _audioBuffer = Array.Empty<byte>();
 
@@ -225,8 +226,9 @@ namespace MediaPlayerCore {
               _parent.LastFrameCount++;
             }
 
-            var libVLC = _parent.SharedLibVLC;
-            Debug.WriteLine($"[MediaObject] Got SharedLibVLC: {libVLC.GetHashCode()}, took {sw.ElapsedMilliseconds}ms");
+            _ownedLibVLC = _parent.CreateLibVLC();
+            var libVLC = _ownedLibVLC;
+            Debug.WriteLine($"[MediaObject] Created LibVLC: {libVLC.GetHashCode()}, took {sw.ElapsedMilliseconds}ms");
               string userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
               _vlcLogHandler = (s, e) => {
@@ -378,7 +380,8 @@ namespace MediaPlayerCore {
       Task.Run(async delegate {
         try {
           if (_vlcPlayer != null) {
-            var libVLC = _parent.SharedLibVLC;
+            var libVLC = _ownedLibVLC ?? _parent.CreateLibVLC();
+            _ownedLibVLC = libVLC;
             var media = new Media(libVLC, soundPath, soundPath.StartsWith("http") || soundPath.StartsWith("rtmp") || soundPath.StartsWith("rtsp")
                      ? FromType.FromLocation : FromType.FromPath);
             
@@ -583,8 +586,8 @@ namespace MediaPlayerCore {
           playerToStop = _vlcPlayer;
       }
 
-      if (_vlcLogHandler != null && _parent?.SharedLibVLC != null) {
-          try { _parent.SharedLibVLC.Log -= _vlcLogHandler; } catch { }
+      if (_vlcLogHandler != null && _ownedLibVLC != null) {
+          try { _ownedLibVLC.Log -= _vlcLogHandler; } catch { }
       }
 
       if (playerToStop != null) {
@@ -592,13 +595,17 @@ namespace MediaPlayerCore {
           try { playerToStop.Stop(); } catch { }
           try { playerToStop.Dispose(); } catch { }
       }
+      if (_ownedLibVLC != null) {
+          try { _ownedLibVLC.Dispose(); } catch { }
+      }
 
       lock (_disposeLock) {
           if (_disposed) return;
           _disposed = true;
           _parent.OnCleanupTime -= _parent_OnCleanupTime;
-          
+
           _vlcPlayer = null;
+          _ownedLibVLC = null;
 
           if (_vlcMappedViewAccessor != null) {
               _vlcMappedViewAccessor.Dispose();
