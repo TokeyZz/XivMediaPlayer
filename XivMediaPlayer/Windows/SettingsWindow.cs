@@ -3,7 +3,9 @@ using Dalamud.Bindings.ImGui;
 using System;
 using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Numerics;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace XivMediaPlayer.Windows {
@@ -346,17 +348,43 @@ namespace XivMediaPlayer.Windows {
         _proxyTestColor = new Vector4(1, 1, 1, 1);
         Task.Run(async () => {
           try {
-            var handler = new HttpClientHandler();
-            if (proxyEnabled)
+            if (!proxyEnabled)
             {
-              handler.Proxy = new WebProxy($"{_plugin.Config.ProxyType}://{_plugin.Config.ProxyHost}:{_plugin.Config.ProxyPort}");
-              if (!string.IsNullOrEmpty(_plugin.Config.ProxyUsername) && !string.IsNullOrEmpty(_plugin.Config.ProxyPassword))
-              {
-                handler.Proxy.Credentials = new NetworkCredential(_plugin.Config.ProxyUsername, _plugin.Config.ProxyPassword);
-              }
+              _proxyTestResult = "代理未启用";
+              _proxyTestColor = new Vector4(1, 0.8f, 0.3f, 1);
+              return;
             }
+
+            // Step 1: TCP connectivity test
+            using var tcp = new System.Net.Sockets.TcpClient();
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await tcp.ConnectAsync(_plugin.Config.ProxyHost, _plugin.Config.ProxyPort, cts.Token);
+            if (!tcp.Connected)
+            {
+              _proxyTestResult = $"TCP 连接失败: {_plugin.Config.ProxyHost}:{_plugin.Config.ProxyPort}";
+              _proxyTestColor = new Vector4(1, 0.3f, 0.3f, 1);
+              return;
+            }
+            tcp.Close();
+
+            // Step 2: HTTP test (only for http/https proxies; SOCKS5 can't be tested with HttpClient)
+            string proxyType = _plugin.Config.ProxyType?.ToLowerInvariant() ?? "";
+            if (proxyType == "socks5")
+            {
+              _proxyTestResult = $"SOCKS5 TCP 连接成功: {_plugin.Config.ProxyHost}:{_plugin.Config.ProxyPort}";
+              _proxyTestColor = new Vector4(0.3f, 1f, 0.3f, 1);
+              return;
+            }
+
+            var handler = new HttpClientHandler
+            {
+              Proxy = new WebProxy(_plugin.Config.ProxyHost, _plugin.Config.ProxyPort)
+            };
+            if (!string.IsNullOrEmpty(_plugin.Config.ProxyUsername) && !string.IsNullOrEmpty(_plugin.Config.ProxyPassword))
+              handler.Proxy.Credentials = new NetworkCredential(_plugin.Config.ProxyUsername, _plugin.Config.ProxyPassword);
+
             using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
-            var response = await client.GetAsync("https://x.com");
+            var response = await client.GetAsync("https://www.google.com");
             if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.Redirect) {
               _proxyTestResult = "连接成功";
               _proxyTestColor = new Vector4(0.3f, 1f, 0.3f, 1);
@@ -364,6 +392,9 @@ namespace XivMediaPlayer.Windows {
               _proxyTestResult = $"连接失败: HTTP {(int)response.StatusCode}";
               _proxyTestColor = new Vector4(1, 0.3f, 0.3f, 1);
             }
+          } catch (OperationCanceledException) {
+            _proxyTestResult = $"连接超时: {_plugin.Config.ProxyHost}:{_plugin.Config.ProxyPort}";
+            _proxyTestColor = new Vector4(1, 0.3f, 0.3f, 1);
           } catch (Exception ex) {
             _proxyTestResult = $"连接失败: {ex.Message}";
             _proxyTestColor = new Vector4(1, 0.3f, 0.3f, 1);
