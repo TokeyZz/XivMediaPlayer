@@ -900,13 +900,13 @@ namespace XivMediaPlayer
             _ = PushMediaToServerAsync(isBackgroundSync: false);
         }
 
-        internal void SendEmulationMouseState(float normX, float normY, bool lmb, bool rmb)
+        internal void SendEmulationMouseState(float normX, float normY, float scroll, bool lmb, bool rmb)
         {
             if (_emulationClient != null)
             {
                 byte xByte = (byte)(Math.Clamp(normX, 0f, 1f) * 255f);
                 byte yByte = (byte)(Math.Clamp(1f - normY, 0f, 1f) * 255f);
-                _emulationClient.SendMouseState(xByte, yByte, lmb, rmb);
+                _emulationClient.SendMouseState(xByte, yByte, scroll, lmb, rmb);
             }
         }
 
@@ -2433,9 +2433,14 @@ namespace XivMediaPlayer
                     if (isOnTv)
                     {
                         hoverUV = uv;
+                        float scroll = ImGui.GetIO().MouseWheel;
+                        if (Math.Abs(scroll) > 0.01f)
+                        {
+                            ImGui.GetIO().WantCaptureMouse = true;
+                        }
                         
                         // Pass native mouse state to Emulation Server if active
-                        SendEmulationMouseState(uv.X, uv.Y, isLeftMousePressed, isRightMousePressed);
+                        SendEmulationMouseState(uv.X, uv.Y, scroll, isLeftMousePressed, isRightMousePressed);
 
                         if (_currentStreamer != "Emulation" && _currentStreamer != "Camera")
                         {

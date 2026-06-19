@@ -180,8 +180,9 @@ namespace XivMediaPlayer.Windows {
               
               bool lmb = ImGui.IsMouseDown(Dalamud.Bindings.ImGui.ImGuiMouseButton.Left);
               bool rmb = ImGui.IsMouseDown(Dalamud.Bindings.ImGui.ImGuiMouseButton.Right);
+              float scroll = ImGui.GetIO().MouseWheel;
               
-              _plugin.SendEmulationMouseState(normX, normY, lmb, rmb);
+              _plugin.SendEmulationMouseState(normX, normY, scroll, lmb, rmb);
           }
         }
 
