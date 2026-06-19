@@ -2256,6 +2256,8 @@ namespace XivMediaPlayer
         private int _mediaErrorCount = 0;
         private DateTime _lastMediaErrorTime = DateTime.MinValue;
 
+        private DateTime _lastMediaRefreshTime = DateTime.MinValue;
+
         private void OnMediaError(object? sender, MediaError e)
         {
             string errorMsg = e.Exception?.Message ?? string.Empty;
@@ -2263,12 +2265,20 @@ namespace XivMediaPlayer
             // Log ALL errors — never silently discard them
             _pluginLog.Warning(e.Exception, $"[VLC] Error: {errorMsg}");
 
-            if ((DateTime.UtcNow - _lastMediaErrorTime).TotalMilliseconds < 500)
-            {
+            // Ignore harmless VLC internal warnings that don't affect playback
+            if (errorMsg.Contains("Failed to set on top", StringComparison.OrdinalIgnoreCase))
                 return;
-            }
+
+            if ((DateTime.UtcNow - _lastMediaErrorTime).TotalMilliseconds < 500)
+                return;
 
             _lastMediaErrorTime = DateTime.UtcNow;
+
+            // Cooldown: don't retry more than once every 10 seconds
+            if ((DateTime.UtcNow - _lastMediaRefreshTime).TotalSeconds < 10)
+                return;
+            _lastMediaRefreshTime = DateTime.UtcNow;
+
             _mediaErrorCount++;
             if (_mediaErrorCount < 5)
             {
