@@ -1602,8 +1602,9 @@ namespace XivMediaPlayer
                     }
                 }
 
-                // Automatically sync the media playback from the server upon entering the room
-                await FetchMediaFromServerAsync();
+                // v2: Start fetch loop on room entry if not DJ and sync is enabled
+                if (!_isLocalDj && _config.SyncWithRoom)
+                    StartFetchLoop();
             }
             else if (isZone)
             {

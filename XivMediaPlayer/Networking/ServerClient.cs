@@ -183,14 +183,21 @@ namespace XivMediaPlayer.Networking
             return new List<RoomMediaStateSync>();
         }
 
-        private async Task<HttpResponseMessage?> SendWithRetryAsync(HttpRequestMessage request, int maxRetries = 2)
+        /// <summary>
+        /// POST with retry. Takes a factory function so each attempt creates a fresh HttpRequestMessage.
+        /// </summary>
+        private async Task<HttpResponseMessage?> SendPostWithRetryAsync(string url, object body, int maxRetries = 2)
         {
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
                 try
                 {
                     if (attempt > 0)
-                        _log.Warning($"[Net] Retry: attempt={attempt}, url={request.RequestUri}");
+                        _log.Warning($"[Net] Retry: attempt={attempt}, url={url}");
+                    var request = new HttpRequestMessage(HttpMethod.Post, url)
+                    {
+                        Content = JsonContent.Create(body)
+                    };
                     var response = await _httpClient.SendAsync(request);
                     if ((int)response.StatusCode == 429 || (int)response.StatusCode >= 500)
                     {
@@ -209,12 +216,8 @@ namespace XivMediaPlayer.Networking
         {
             try
             {
-                var httpRequest = new HttpRequestMessage(HttpMethod.Post,
-                    $"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/claim-dj")
-                {
-                    Content = JsonContent.Create(request)
-                };
-                var response = await SendWithRetryAsync(httpRequest);
+                var url = $"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/claim-dj";
+                var response = await SendPostWithRetryAsync(url, request);
                 if (response == null)
                     return ApiResult<ClaimDjResponse>.Fail("[Net] ClaimDj: no response after retries");
                 if (response.IsSuccessStatusCode)
@@ -232,12 +235,8 @@ namespace XivMediaPlayer.Networking
         {
             try
             {
-                var httpRequest = new HttpRequestMessage(HttpMethod.Post,
-                    $"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/heartbeat")
-                {
-                    Content = JsonContent.Create(request)
-                };
-                var response = await SendWithRetryAsync(httpRequest);
+                var url = $"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/heartbeat";
+                var response = await SendPostWithRetryAsync(url, request);
                 if (response == null)
                     return ApiResult<HeartbeatResponse>.Fail("[Net] Heartbeat: no response after retries");
                 if (response.IsSuccessStatusCode)
@@ -252,12 +251,8 @@ namespace XivMediaPlayer.Networking
         {
             try
             {
-                var httpRequest = new HttpRequestMessage(HttpMethod.Post,
-                    $"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/release-dj")
-                {
-                    Content = JsonContent.Create(request)
-                };
-                var response = await SendWithRetryAsync(httpRequest);
+                var url = $"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/release-dj";
+                var response = await SendPostWithRetryAsync(url, request);
                 if (response == null)
                     return ApiResult<ClaimDjResponse>.Fail("[Net] ReleaseDj: no response after retries");
                 if (response.IsSuccessStatusCode)
