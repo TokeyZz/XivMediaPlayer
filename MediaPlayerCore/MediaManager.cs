@@ -56,7 +56,7 @@ namespace MediaPlayerCore {
     /// <summary>Create a fresh LibVLC instance with the configured arguments.</summary>
     public LibVLC CreateLibVLC() {
       EnsureCoreInitialized();
-      var vlcArgs = new List<string> { "--vout=none", "--http-reconnect" };
+      var vlcArgs = new List<string> { "--vout=none", "--http-reconnect", "--no-video-on-top" };
       if (!string.IsNullOrEmpty(VlcProxyArgs)) {
         foreach (var arg in VlcProxyArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries))
           vlcArgs.Add(arg);
