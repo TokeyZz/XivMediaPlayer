@@ -56,6 +56,7 @@ namespace XivMediaPlayer {
     public bool AutoResumeMedia { get; set; } = true;
     public bool SyncWithRoom { get; set; } = false;
     public ChatMessageLevel ChatMessageFilter { get; set; } = ChatMessageLevel.All;
+    public bool VerboseChatLogging { get; set; } = false;
 
     // yt-dlp settings
     public int PreferredQuality { get; set; } = 720;

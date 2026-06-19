@@ -172,6 +172,7 @@ namespace XivMediaPlayer
 
         // Input tracking
         private bool _wasLeftMousePressed = false;
+        private bool _clickStartedOnTv = false;
         private DependencyManager _dependencyManager;
 
         public Plugin(
@@ -912,13 +913,13 @@ namespace XivMediaPlayer
             // Deprecated: v2 heartbeat handles pushing state
         }
 
-        internal void SendEmulationMouseState(float normX, float normY, bool lmb, bool rmb)
+        internal void SendEmulationMouseState(float normX, float normY, float scroll, bool lmb, bool rmb)
         {
             if (_emulationClient != null)
             {
                 byte xByte = (byte)(Math.Clamp(normX, 0f, 1f) * 255f);
                 byte yByte = (byte)(Math.Clamp(1f - normY, 0f, 1f) * 255f);
-                _emulationClient.SendMouseState(xByte, yByte, lmb, rmb);
+                _emulationClient.SendMouseState(xByte, yByte, scroll, lmb, rmb);
             }
         }
 
@@ -1049,6 +1050,10 @@ namespace XivMediaPlayer
         private void PlayRouted(string url, IMediaGameObject audioGameObject, int startTimeMs = 0, bool isAutoSync = false)
         {
             _isTransitioning = true;
+
+            if (startTimeMs == 0 && (url.Contains("youtube.com") || url.Contains("youtu.be")))
+                startTimeMs = ExtractYouTubeStartTimeMs(url);
+
             url = CleanUrl(url);
             if (YtDlpManager.IsUrlSupported(url) && _ytDlpManager.IsAvailable())
             {
@@ -1063,6 +1068,7 @@ namespace XivMediaPlayer
         {
             if (_disposed) return;
             UpdateWatchHistory();
+            DateTime resolutionStartTime = DateTime.UtcNow;
 
             url = CleanUrl(url);
 
@@ -1306,7 +1312,11 @@ namespace XivMediaPlayer
                             playUrl = MediaPlayerCore.StreamProxy.Instance.RegisterDirectMediaSession(resolvedStreamUrl, resolvedHeaders);
                         }
 
-                        _mediaManager.PlayStream(audioGameObject, playUrl, _config.SpatialAudioEnabled, startTimeMs, resolvedHeaders);
+                        int finalStartTimeMs = startTimeMs;
+                        if (isAutoSync && !isLive)
+                            finalStartTimeMs += (int)(DateTime.UtcNow - resolutionStartTime).TotalMilliseconds;
+
+                        _mediaManager.PlayStream(audioGameObject, playUrl, _config.SpatialAudioEnabled, finalStartTimeMs, resolvedHeaders);
                         _lastStreamURL = url;
                         _currentMediaDurationMs = resolvedDurationMs;
                         _currentStreamer = !string.IsNullOrEmpty(uploader) ? uploader : title;
@@ -2564,16 +2574,27 @@ namespace XivMediaPlayer
                     bool isMouseReleased = !isLeftMousePressed && _wasLeftMousePressed;
                     _wasLeftMousePressed = isLeftMousePressed;
 
-                    if (uv.X >= 0 && uv.X <= 1 && uv.Y >= 0 && uv.Y <= 1)
+                    bool isOnTv = uv.X >= 0 && uv.X <= 1 && uv.Y >= 0 && uv.Y <= 1;
+                    if (isMouseClicked)
+                    {
+                        _clickStartedOnTv = isOnTv;
+                    }
+
+                    if (_clickStartedOnTv && isLeftMousePressed)
+                    {
+                        ImGui.GetIO().WantCaptureMouse = true;
+                    }
+
+                    if (isOnTv)
                     {
                         hoverUV = uv;
-                        
+
                         // Pass native mouse state to Emulation Server if active
-                        SendEmulationMouseState(uv.X, uv.Y, isLeftMousePressed, isRightMousePressed);
+                        SendEmulationMouseState(uv.X, uv.Y, 0, isLeftMousePressed, isRightMousePressed);
 
                         if (_currentStreamer != "Emulation" && _currentStreamer != "Camera")
                         {
-                            if (isMouseReleased)
+                            if (isMouseReleased && _clickStartedOnTv)
                             {
                             // Handle Volume Slider Drag
                             if (uv.Y > 0.95f && uv.Y < 0.97f && uv.X > 0.32f && uv.X < 0.60f)
@@ -2602,7 +2623,7 @@ namespace XivMediaPlayer
                             _config.Save(); // Save volume if it changed
                         }
 
-                        if (isMouseClicked)
+                        if (isMouseReleased && _clickStartedOnTv)
                         {
                             _pluginLog.Information($"Media Control Clicked at UV: {uv.X:F2}, {uv.Y:F2}");
 
@@ -3109,7 +3130,76 @@ namespace XivMediaPlayer
                 catch { }
             }
 
+            // Clean YouTube tracking noise (si, feature, pp, etc.)
+            if (url.Contains("youtube.com") || url.Contains("youtu.be"))
+            {
+                try
+                {
+                    var ytUri = new Uri(url);
+                    if (ytUri.Host.Contains("youtu.be"))
+                    {
+                        url = ytUri.GetLeftPart(UriPartial.Path);
+                    }
+                    else if (ytUri.Host.Contains("youtube.com") && ytUri.AbsolutePath.Contains("/watch"))
+                    {
+                        string q = ytUri.Query;
+                        if (q.StartsWith("?")) q = q.Substring(1);
+                        var parts = q.Split('&');
+                        var keep = new List<string>();
+                        foreach (var part in parts)
+                        {
+                            if (part.StartsWith("v=") || part.StartsWith("list=") || part.StartsWith("t="))
+                                keep.Add(part);
+                        }
+                        url = ytUri.GetLeftPart(UriPartial.Path) + (keep.Count > 0 ? "?" + string.Join("&", keep) : "");
+                    }
+                }
+                catch { }
+            }
+
             return url;
+        }
+
+        private static int ExtractYouTubeStartTimeMs(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return 0;
+            try
+            {
+                var uri = new Uri(url);
+                string q = uri.Query;
+                if (q.StartsWith("?")) q = q.Substring(1);
+                var parts = q.Split('&');
+                foreach (var part in parts)
+                {
+                    if (part.StartsWith("t="))
+                    {
+                        string tVal = part.Substring(2);
+                        return ParseYouTubeTime(tVal);
+                    }
+                }
+            }
+            catch { }
+            return 0;
+        }
+
+        private static int ParseYouTubeTime(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return 0;
+            value = Uri.UnescapeDataString(value);
+            int totalSeconds = 0;
+            if (int.TryParse(value, out int secs)) return secs * 1000;
+            foreach (var part in value.Split('h', 'H', 'm', 'M', 's', 'S'))
+            {
+                if (string.IsNullOrEmpty(part)) continue;
+                if (!int.TryParse(part, out int num)) return 0;
+            }
+            var matchH = System.Text.RegularExpressions.Regex.Match(value, @"(\d+)\s*h", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var matchM = System.Text.RegularExpressions.Regex.Match(value, @"(\d+)\s*m", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var matchS = System.Text.RegularExpressions.Regex.Match(value, @"(\d+)\s*s", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (matchH.Success) totalSeconds += int.Parse(matchH.Groups[1].Value) * 3600;
+            if (matchM.Success) totalSeconds += int.Parse(matchM.Groups[1].Value) * 60;
+            if (matchS.Success) totalSeconds += int.Parse(matchS.Groups[1].Value);
+            return totalSeconds * 1000;
         }
 
         private static string RemoveSpecialSymbols(string value)

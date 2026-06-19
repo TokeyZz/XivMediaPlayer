@@ -82,7 +82,7 @@ namespace XivMediaPlayer.Networking
             catch { }
         }
 
-        public void SendMouseState(byte x, byte y, bool lmb, bool rmb)
+        public void SendMouseState(byte x, byte y, float scroll, bool lmb, bool rmb)
         {
             if (_disposed) return;
 
@@ -99,10 +99,11 @@ namespace XivMediaPlayer.Networking
             
             packet[8] = 4; // 4 is Mouse
 
-            // Payload: data[4] = X, data[5] = Y, data[7] = buttons
+            // Payload: data[4] = X, data[5] = Y, data[6] = Scroll, data[7] = buttons
             // Inside packet: bytes 9-16 correspond to data[0-7]
             packet[9 + 4] = x;
             packet[9 + 5] = y;
+            packet[9 + 6] = unchecked((byte)((sbyte)Math.Clamp(scroll * 127f, -128f, 127f)));
 
             byte btnMask = 0;
             if (lmb) btnMask |= 0x01;

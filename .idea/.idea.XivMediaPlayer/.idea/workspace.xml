@@ -9,7 +9,14 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="0ef52b20-39d8-41ed-8ac7-98baee6e657c" name="更改" comment="">
-      <change beforePath="$PROJECT_DIR$/XivMediaPlayer/XivMediaPlayer.json" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer/XivMediaPlayer.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/MediaPlayerCore/MediaManager.cs" beforeDir="false" afterPath="$PROJECT_DIR$/MediaPlayerCore/MediaManager.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/MediaPlayerCore/MediaObject.cs" beforeDir="false" afterPath="$PROJECT_DIR$/MediaPlayerCore/MediaObject.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/MediaPlayerCore/YtDlp/YtDlpManager.cs" beforeDir="false" afterPath="$PROJECT_DIR$/MediaPlayerCore/YtDlp/YtDlpManager.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/XivMediaPlayer/Configuration.cs" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer/Configuration.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/XivMediaPlayer/Networking/EmulationClient.cs" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer/Networking/EmulationClient.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/XivMediaPlayer/Plugin.cs" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer/Plugin.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/XivMediaPlayer/Windows/SettingsWindow.cs" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer/Windows/SettingsWindow.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/XivMediaPlayer/Windows/VideoWindow.cs" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer/Windows/VideoWindow.cs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -44,22 +51,23 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;com.poratu.idea.plugins.tomcat.setting.TomcatServersConfigurable&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "copilot.chat.legacySessionMetadata.migrated": "true",
+    "git-widget-placeholder": "正在合并 main",
+    "ignore.virus.scanning.warn.message": "true",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "com.poratu.idea.plugins.tomcat.setting.TomcatServersConfigurable",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RunManager" selected=".NET 启动设置配置文件.XivMediaPlayer.Server: http">
     <configuration name="XivMediaPlayer.Server: http" type="LaunchSettings" factoryName=".NET Launch Settings Profile">
       <option name="LAUNCH_PROFILE_PROJECT_FILE_PATH" value="$PROJECT_DIR$/XivMediaPlayer.Server/XivMediaPlayer.Server.csproj" />
@@ -107,6 +115,7 @@
       <workItem from="1781668914184" duration="30761000" />
       <workItem from="1781713064780" duration="6052000" />
       <workItem from="1781788440710" duration="4993000" />
+      <workItem from="1781854051092" duration="326000" />
     </task>
     <servers />
   </component>

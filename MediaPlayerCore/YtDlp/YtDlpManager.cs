@@ -406,7 +406,7 @@ namespace MediaPlayerCore.YtDlp
             try
             {
                 OnStatusUpdate?.Invoke(this, "Updating yt-dlp...");
-                string result = await RunYtDlp("-U");
+                string result = await RunYtDlp("-U", withCommonArgs: false);
                 OnStatusUpdate?.Invoke(this, "yt-dlp update complete.");
                 return true;
             } catch (Exception e)
@@ -421,7 +421,7 @@ namespace MediaPlayerCore.YtDlp
         private const string Deno =
             "https://github.com/denoland/deno/releases/download/v2.8.2/deno-x86_64-pc-windows-msvc.zip";
         private const string YtDlpDownloadUrl =
-          "https://github.com/yt-dlp/yt-dlp/releases/download/2026.03.17/yt-dlp.exe";
+          "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
         private const string ChromeCookieUnlockUrl =
           "https://github.com/seproDev/yt-dlp-ChromeCookieUnlock/releases/latest/download/yt-dlp-ChromeCookieUnlock.zip";
 
@@ -546,12 +546,12 @@ namespace MediaPlayerCore.YtDlp
             }
         }
 
-        private async Task<string> RunYtDlp(string arguments)
+        private async Task<string> RunYtDlp(string arguments, bool withCommonArgs = true)
         {
             return await Task.Run(() =>
             {
                 // Inject cookies if available (e.g. from VRCVideoCacher browser extension)
-                string fullArgs = BuildCommonArgs() + arguments;
+                string fullArgs = (withCommonArgs ? BuildCommonArgs() : "") + arguments;
                 var psi = new ProcessStartInfo
                 {
                     FileName = _ytDlpPath,

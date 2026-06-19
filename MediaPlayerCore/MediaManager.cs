@@ -184,6 +184,14 @@ namespace MediaPlayerCore {
           bool isNew = false;
           
           lock (_playbackStreams) {
+              // Ensure we only ever have ONE active video stream decoding to the LastFrame buffer.
+              foreach (var kvp in _playbackStreams.ToList()) {
+                  if (kvp.Key != playerObject.Name) {
+                      kvp.Value.Stop();
+                      _playbackStreams.TryRemove(kvp.Key, out _);
+                  }
+              }
+
               if (!_playbackStreams.TryGetValue(playerObject.Name, out stream)) {
                   stream = new MediaObject(this, playerObject, _camera, SoundType.Livestream, audioPath, spatialAllowed, audioOnly);
                   _playbackStreams[playerObject.Name] = stream;
