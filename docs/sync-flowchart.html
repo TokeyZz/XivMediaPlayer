@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XivMediaPlayer 播放同步架构</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  body { font-family: 'Microsoft YaHei', sans-serif; background: #1a1a2e; color: #eee; max-width: 1200px; margin: 0 auto; padding: 20px; }
+  h1 { text-align: center; color: #e94560; }
+  h2 { color: #0f3460; background: #16213e; padding: 10px 20px; border-left: 4px solid #e94560; margin-top: 40px; }
+  .mermaid { background: #16213e; padding: 20px; border-radius: 8px; margin: 20px 0; }
+  .legend { display: flex; gap: 20px; flex-wrap: wrap; margin: 20px 0; }
+  .legend span { padding: 4px 12px; border-radius: 4px; font-size: 14px; }
+  .leg-green { background: #0f3460; color: #00ff88; }
+  .leg-red { background: #0f3460; color: #ff6b6b; }
+  .leg-yellow { background: #0f3460; color: #ffd93d; }
+  .leg-blue { background: #0f3460; color: #6bc5ff; }
+  .problem-solved { background: #0f3460; padding: 10px 20px; border-radius: 8px; margin: 5px 0; border-left: 4px solid #00ff88; }
+  .problem-solved strong { color: #00ff88; }
+  table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+  th { background: #0f3460; text-align: left; padding: 10px; }
+  td { padding: 10px; border-bottom: 1px solid #333; }
+  tr:hover { background: #16213e; }
+</style>
+</head>
+<body>
+
+<h1>XivMediaPlayer 播放同步架构 v2</h1>
+
+<div class="legend">
+  <span class="leg-green">■ DJ 客户端</span>
+  <span class="leg-blue">■ 非 DJ 客户端</span>
+  <span class="leg-red">■ 拒绝响应</span>
+  <span class="leg-yellow">■ 服务端逻辑</span>
+</div>
+
+<h2>1. 整体架构</h2>
+<div class="mermaid">
+graph TB
+    subgraph DJ["🎵 DJ 客户端"]
+        D1[用户播放/暂停/切歌]
+        D2[每2秒心跳推送状态]
+        D3[本地 VLC 播放]
+    end
+
+    subgraph SRV["🖥️ 服务端 (纯状态存储)"]
+        S1[(RoomState)]
+        S2[版本号递增]
+        S3[心跳超时检测]
+    end
+
+    subgraph FOL["👥 非 DJ 客户端"]
+        F1[每5秒拉取状态]
+        F2{跟随房间?}
+        F3[同步播放/暂停/seek]
+        F4[本地独立播放]
+    end
+
+    D1 --> D3
+    D1 --> D2
+    D2 -->|POST /heartbeat| S2
+    S2 --> S1
+    S3 --> S1
+
+    F1 -->|GET /state| S1
+    F1 --> F2
+    F2 -->|是| F3
+    F2 -->|否| F4
+
+    style DJ fill:#0f3460,stroke:#00ff88,color:#eee
+    style SRV fill:#0f3460,stroke:#ffd93d,color:#eee
+    style FOL fill:#0f3460,stroke:#6bc5ff,color:#eee
+</div>
+
+<h2>2. DJ 声明流程</h2>
+<div class="mermaid">
+sequenceDiagram
+    participant C as 🎵 客户端
+    participant S as 🖥️ 服务端
+
+    C->>S: POST /claim-dj<br/>{ownerId, expectedVersion}
+    alt 房间无 DJ 或 DJ 超时 (10s)
+        S-->>C: 200 {roomState, newVersion}
+        Note over C: 成为 DJ<br/>开始 2s 心跳
+    else 已有活跃 DJ
+        S-->>C: 409 {currentVersion, djOwnerId}
+        Note over C: 提示 "房间已有 DJ"<br/>可选择强占或取消
+    end
+</div>
+
+<h2>3. DJ 心跳循环 (每 2 秒)</h2>
+<div class="mermaid">
+sequenceDiagram
+    participant C as 🎵 DJ 客户端
+    participant S as 🖥️ 服务端
+
+    loop 每 2 秒
+        C->>S: POST /heartbeat<br/>{ownerId, stateVersion,<br/>currentUrl, timecodeMs,<br/>isPlaying, speedRate, queue[]}
+        alt 版本匹配 & ownerId 匹配
+            S->>S: stateVersion++<br/>更新心跳时间戳
+            S-->>C: 200 {acceptedVersion}
+        else 版本冲突 / 不是当前 DJ
+            S-->>C: 409 {currentVersion}
+            Note over C: 失去 DJ 身份<br/>拉取服务端状态同步
+        end
+    end
+</div>
+
+<h2>4. 非 DJ 拉取同步 (每 5 秒)</h2>
+<div class="mermaid">
+flowchart TD
+    A[GET /state] --> B{djDisconnected?}
+    B -->|是, DJ 离线| C[忽略状态<br/>停止跟随]
+    B -->|否, DJ 在线| D{URL 变化<br/>或 version 变化?}
+    D -->|是| E{本地 VLC 状态?}
+    E -->|null/stopped/ended| F[播放新 URL<br/>从服务端 timecode 开始]
+    E -->|正在播放| G[切换为新 URL<br/>重新播放]
+    D -->|否, 同 URL| H{播放状态?}
+    H -->|进度偏差 > 5s| I[seek 到服务端进度]
+    H -->|服务端 Playing<br/>本地暂停| J[resume 恢复]
+    H -->|服务端暂停<br/>本地 Playing| K[pause 暂停]
+
+    style C fill:#0f3460,stroke:#ff6b6b,color:#eee
+    style F fill:#0f3460,stroke:#00ff88,color:#eee
+    style G fill:#0f3460,stroke:#00ff88,color:#eee
+    style I fill:#0f3460,stroke:#ffd93d,color:#eee
+    style J fill:#0f3460,stroke:#6bc5ff,color:#eee
+    style K fill:#0f3460,stroke:#6bc5ff,color:#eee
+</div>
+
+<h2>5. DJ 释放 & 接管</h2>
+<div class="mermaid">
+sequenceDiagram
+    participant D1 as 🎵 DJ (离线)
+    participant S as 🖥️ 服务端
+    participant D2 as 🎵 新 DJ
+
+    Note over D1: 离开房间 / 断网 / 崩溃
+    loop 心跳停止
+        S->>S: 超过 10s 无心跳
+        S->>S: djDisconnected = true
+    end
+
+    D2->>S: POST /claim-dj<br/>{ownerId, expectedVersion}
+    S->>S: 检查 DjHeartbeatAge > 10s
+    S-->>D2: 200 {roomState, newVersion}
+    Note over D2: 新 DJ 接管成功
+
+    rect rgb(15, 52, 96)
+        Note over D1: 旧 DJ 主动释放
+        D1->>S: POST /release-dj
+        S->>S: CurrentUrl=""<br/>IsPlaying=false<br/>DjOwnerId=""
+        S-->>D1: 200 释放成功
+    end
+</div>
+
+<h2>6. 队列消费 (客户端负责)</h2>
+<div class="mermaid">
+flowchart TD
+    A[VLC 触发 Ended 事件] --> B{我是 DJ?}
+    B -->|否| C[忽略<br/>等待服务端 state 更新]
+    B -->|是| D{队列有下一个?}
+    D -->|有| E[取出 Queue[0]<br/>PlayRouted 播放]
+    E --> F[心跳携带新 URL<br/>+ 更新的 queue]
+    F --> G[stateVersion++<br/>非 DJ 客户端自动跟随]
+    D -->|无| H[stop 播放<br/>心跳推送空状态]
+    H --> I[服务端 CurrentUrl=""<br/>IsPlaying=false]
+</div>
+
+<h2>7. 核心改动 vs 旧方案</h2>
+
+<table>
+<tr><th>场景</th><th>旧方案 (Bug)</th><th>新方案</th></tr>
+<tr>
+  <td>seek 拖拽</td>
+  <td style="color:#ff6b6b">任何人 seek 直接变成 DJ 并推送</td>
+  <td style="color:#00ff88">seek 不推送、不夺权，心跳自然携带最新进度</td>
+</tr>
+<tr>
+  <td>DJ 离开</td>
+  <td style="color:#ff6b6b">状态残留，DataAgeMs 无限增长，新客户端被强制同步过期状态</td>
+  <td style="color:#00ff88">10s 心跳超时 → djDisconnected → 客户端忽略</td>
+</tr>
+<tr>
+  <td>自动切歌</td>
+  <td style="color:#ff6b6b">服务端用 DataAgeMs + TimecodeMs 推算，暂停时也会误触发</td>
+  <td style="color:#00ff88">服务端不再切歌，DJ 客户端监听 VLC Ended 主动切</td>
+</tr>
+<tr>
+  <td>两个 DJ</td>
+  <td style="color:#ff6b6b">第二个静默覆盖第一个，无冲突检测</td>
+  <td style="color:#00ff88">stateVersion CAS 校验，409 拒绝冲突请求</td>
+</tr>
+<tr>
+  <td>非 DJ 覆盖</td>
+  <td style="color:#ff6b6b">任何客户端 POST /media 直接修改</td>
+  <td style="color:#00ff88">/heartbeat 校验 ownerId + stateVersion</td>
+</tr>
+<tr>
+  <td>同 URL 重播</td>
+  <td style="color:#ff6b6b">URL 不变 → 只 sync 分支 → 无法重启 VLC</td>
+  <td style="color:#00ff88">stateVersion 变化触发重播，不依赖 URL 比较</td>
+</tr>
+<tr>
+  <td>isLocalEnded 循环</td>
+  <td style="color:#ff6b6b">VLC 失败 → Ended → isDifferentUrl → 重播 → 再失败</td>
+  <td style="color:#00ff88">isDifferentUrl 只看 stateVersion+URL，加入重试上限</td>
+</tr>
+<tr>
+  <td>进度偏差</td>
+  <td style="color:#ff6b6b">DataAgeMs 推算，时钟漂移 + 暂停导致巨大偏差</td>
+  <td style="color:#00ff88">心跳携带真实 VLC timecode，无推算</td>
+</tr>
+<tr>
+  <td>新客户端进入</td>
+  <td style="color:#ff6b6b">TimecodeMs+DataAgeMs 推算位置，yt-dlp 解析 30s 后已过时</td>
+  <td style="color:#00ff88">心跳 2s 更新，新客户端拿到的时间码最多 2s 旧</td>
+</tr>
+</table>
+
+<h2>8. API 一览</h2>
+<div class="mermaid">
+graph LR
+    subgraph API["/api/rooms/{key}"]
+        A[POST /claim-dj]
+        B[POST /release-dj]
+        C[POST /heartbeat]
+        D[GET /state]
+    end
+
+    subgraph OLD["保留兼容 (deprecated)"]
+        E[GET /tvs]
+        F[POST /tvs]
+        G[GET /media]
+        H[POST /media]
+    end
+
+    style A fill:#00ff88,stroke:#00ff88,color:#000
+    style B fill:#ff6b6b,stroke:#ff6b6b,color:#000
+    style C fill:#6bc5ff,stroke:#6bc5ff,color:#000
+    style D fill:#ffd93d,stroke:#ffd93d,color:#000
+    style E fill:#666,stroke:#666,color:#ccc
+    style F fill:#666,stroke:#666,color:#ccc
+    style G fill:#666,stroke:#666,color:#ccc
+    style H fill:#666,stroke:#666,color:#ccc
+</div>
+
+<p style="text-align:center;margin-top:40px;color:#666">
+  XivMediaPlayer Sync v2 — 心跳驱动 + 版本控制 + 客户端权威
+</p>
+
+</body>
+</html>

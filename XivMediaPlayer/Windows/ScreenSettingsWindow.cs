@@ -5,7 +5,6 @@ using XivMediaPlayer.Compositing;
 using System;
 using System.Numerics;
 using Dalamud.Plugin.Services;
-using XivMediaPlayer.Networking.Models;
 
 namespace XivMediaPlayer.Windows {
   /// <summary>
@@ -80,10 +79,10 @@ namespace XivMediaPlayer.Windows {
       bool hasPrivileges = isOutdoors || isIsland || hasHousingMenuOpen;
 
       if (!hasPrivileges) {
-          ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), "Housing Menu Required");
-          ImGui.TextWrapped("To place or sync a screen, please open the 'Indoor Furnishings' menu in-game.");
+          ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), "需要房屋菜单");
+          ImGui.TextWrapped("要放置或同步屏幕，请在游戏中打开'室内家具'菜单。");
           ImGui.Spacing();
-          if (ImGui.Button("Tutorial Video")) {
+          if (ImGui.Button("教程视频")) {
               System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
                   FileName = "https://www.youtube.com/watch?v=ZgLs2OJQ8ks",
                   UseShellExecute = true
@@ -93,13 +92,13 @@ namespace XivMediaPlayer.Windows {
       }
 
       if (isOutdoors && !_plugin.Config.EnableOutdoorPublicScreens) {
-          ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), "Outdoor Screens Disabled");
-          ImGui.TextWrapped("You must enable 'Enable Outdoor Public Screens' in the main settings menu to place TVs outdoors.");
+          ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), "室外屏幕已禁用");
+          ImGui.TextWrapped("必须在主设置菜单中启用'允许室外公共屏幕'才能将电视放置在室外。");
           return;
       }
 
       // Enable toggle 
-      if (ImGui.Checkbox("Render in World", ref _enabled)) {
+      if (ImGui.Checkbox("在世界中渲染", ref _enabled)) {
         _transform.Enabled = _enabled;
         
         // Auto-delete from server if turning off and we own it or have privileges
@@ -113,7 +112,7 @@ namespace XivMediaPlayer.Windows {
 
       ImGui.SameLine();
       ImGui.SetCursorPosX(ImGui.GetWindowWidth() - 110);
-      if (ImGui.Button("Tutorial Video")) {
+      if (ImGui.Button("教程视频")) {
           System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
               FileName = "https://www.youtube.com/watch?v=ZgLs2OJQ8ks",
               UseShellExecute = true
@@ -122,7 +121,7 @@ namespace XivMediaPlayer.Windows {
 
       if (!_enabled) {
         ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f),
-          "Enable to place the video in the game world.");
+          "启用以在游戏世界中放置视频。");
         return;
       }
 
@@ -151,23 +150,23 @@ namespace XivMediaPlayer.Windows {
       _wasShiftPressed = isSnapKeyPressed;
 
       // Quick actions 
-      if (ImGui.Button("Place at Camera")) {
+      if (ImGui.Button("放置在摄像机位置")) {
         _onPlaceAtCamera?.Invoke();
         SyncFromTransform();
         _onSave?.Invoke();
       }
       
       ImGui.Spacing();
-      ImGui.TextColored(new Vector4(0.7f, 1f, 0.7f, 1f), "Quick Snap:");
-      ImGui.TextWrapped("Hold CTRL + SHIFT while hovering over or selecting a furnishing in Edit Mode to instantly snap the TV to it.");
+      ImGui.TextColored(new Vector4(0.7f, 1f, 0.7f, 1f), "快速吸附:");
+      ImGui.TextWrapped("在编辑模式下按住 CTRL + SHIFT 悬停或选中家具，即可将电视吸附到该位置。");
       ImGui.Spacing();
       
-      if (ImGui.Button("Save")) {
+      if (ImGui.Button("保存")) {
         SyncToTransform();
         _onSave?.Invoke();
       }
       ImGui.SameLine();
-      if (ImGui.Button("Reset")) {
+      if (ImGui.Button("重置")) {
         _transform.Enabled = false;
         _enabled = false;
         SyncFromTransform();
@@ -184,7 +183,7 @@ namespace XivMediaPlayer.Windows {
       ImGui.Separator();
 
       // Position 
-      ImGui.TextColored(new Vector4(0.7f, 0.9f, 1f, 1f), "Position");
+      ImGui.TextColored(new Vector4(0.7f, 0.9f, 1f, 1f), "位置");
 
       bool posChanged = false;
       posChanged |= ImGui.DragFloat("X##pos", ref _position.X, 0.05f, -1000f, 1000f, "%.2f");
@@ -211,15 +210,15 @@ namespace XivMediaPlayer.Windows {
       ImGui.SameLine();
       if (ImGui.Button("\u2191##posY")) { _position.Y += nudge; _transform.Position = _position; _onSave?.Invoke(); }
       ImGui.SameLine();
-      if (ImGui.Button("Near##posZ")) { _position.Z -= nudge; _transform.Position = _position; _onSave?.Invoke(); }
+      if (ImGui.Button("近##posZ")) { _position.Z -= nudge; _transform.Position = _position; _onSave?.Invoke(); }
       ImGui.SameLine();
-      if (ImGui.Button("Far##posZ")) { _position.Z += nudge; _transform.Position = _position; _onSave?.Invoke(); }
+      if (ImGui.Button("远##posZ")) { _position.Z += nudge; _transform.Position = _position; _onSave?.Invoke(); }
 
       ImGui.Spacing();
       ImGui.Separator();
 
       // Rotation 
-      ImGui.TextColored(new Vector4(0.7f, 0.9f, 1f, 1f), "Rotation");
+      ImGui.TextColored(new Vector4(0.7f, 0.9f, 1f, 1f), "旋转");
 
       bool rotChanged = false;
       rotChanged |= ImGui.SliderFloat("Yaw##rot", ref _rotation.X, -180f, 180f, "%.1f\u00b0");
@@ -234,19 +233,19 @@ namespace XivMediaPlayer.Windows {
       }
 
       // Quick rotation presets
-      if (ImGui.Button("Face North")) { _rotation.X = 0; _transform.RotationDegrees = new Vector3(_rotation.Y, 0, 0); _onSave?.Invoke(); }
+      if (ImGui.Button("朝北")) { _rotation.X = 0; _transform.RotationDegrees = new Vector3(_rotation.Y, 0, 0); _onSave?.Invoke(); }
       ImGui.SameLine();
-      if (ImGui.Button("Face East")) { _rotation.X = 90; _transform.RotationDegrees = new Vector3(_rotation.Y, 90, 0); _onSave?.Invoke(); }
+      if (ImGui.Button("朝东")) { _rotation.X = 90; _transform.RotationDegrees = new Vector3(_rotation.Y, 90, 0); _onSave?.Invoke(); }
       ImGui.SameLine();
-      if (ImGui.Button("Face South")) { _rotation.X = 180; _transform.RotationDegrees = new Vector3(_rotation.Y, 180, 0); _onSave?.Invoke(); }
+      if (ImGui.Button("朝南")) { _rotation.X = 180; _transform.RotationDegrees = new Vector3(_rotation.Y, 180, 0); _onSave?.Invoke(); }
       ImGui.SameLine();
-      if (ImGui.Button("Face West")) { _rotation.X = -90; _transform.RotationDegrees = new Vector3(_rotation.Y, -90, 0); _onSave?.Invoke(); }
+      if (ImGui.Button("朝西")) { _rotation.X = -90; _transform.RotationDegrees = new Vector3(_rotation.Y, -90, 0); _onSave?.Invoke(); }
 
       ImGui.Spacing();
       ImGui.Separator();
 
       // Scale 
-      ImGui.TextColored(new Vector4(0.7f, 0.9f, 1f, 1f), "Size (world units)");
+      ImGui.TextColored(new Vector4(0.7f, 0.9f, 1f, 1f), "大小 (世界单位)");
 
       bool aspectChanged = false;
       aspectChanged |= ImGui.RadioButton("16:9", ref _aspectRatio, 0);
@@ -254,7 +253,7 @@ namespace XivMediaPlayer.Windows {
       aspectChanged |= ImGui.RadioButton("4:3", ref _aspectRatio, 1);
       
       bool scaleChanged = false;
-      scaleChanged |= ImGui.DragFloat("Diagonal Size##scale", ref _scale.X, 0.1f, 0.5f, 200f, "%.1f");
+      scaleChanged |= ImGui.DragFloat("对角线尺寸##scale", ref _scale.X, 0.1f, 0.5f, 200f, "%.1f");
       bool saveScale = ImGui.IsItemDeactivatedAfterEdit();
 
       if (aspectChanged || scaleChanged) {
@@ -267,13 +266,13 @@ namespace XivMediaPlayer.Windows {
       }
 
       // Preset sizes
-      if (ImGui.Button("Small (2m)")) { _scale.X = 2f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
+      if (ImGui.Button("小 (2m)")) { _scale.X = 2f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
       ImGui.SameLine();
-      if (ImGui.Button("Medium (4m)")) { _scale.X = 4f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
+      if (ImGui.Button("中 (4m)")) { _scale.X = 4f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
       ImGui.SameLine();
-      if (ImGui.Button("Large (8m)")) { _scale.X = 8f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
+      if (ImGui.Button("大 (8m)")) { _scale.X = 8f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
       ImGui.SameLine();
-      if (ImGui.Button("Cinema (12m)")) { _scale.X = 12f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
+      if (ImGui.Button("影院 (12m)")) { _scale.X = 12f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
 
 
       ImGui.Spacing();
@@ -298,25 +297,25 @@ namespace XivMediaPlayer.Windows {
       ImGui.Spacing();
       ImGui.Separator();
 
-      ImGui.TextColored(new Vector4(0.7f, 0.9f, 1f, 1f), "Room Sync");
-      ImGui.TextWrapped("Saving above only saves locally. To make the TV visible to other players, you must sync it to the room.");
+      ImGui.TextColored(new Vector4(0.7f, 0.9f, 1f, 1f), "房间同步");
+      ImGui.TextWrapped("上述保存仅在本地生效。要使电视对其他玩家可见，必须将其同步到房间。");
       
       string locationKey = _plugin.LocationKey;
       bool isOutdoorsSync = !string.IsNullOrEmpty(locationKey) && locationKey.StartsWith("zone_");
       bool isIslandSync = !string.IsNullOrEmpty(locationKey) && locationKey.StartsWith("island_");
       
       if (string.IsNullOrEmpty(locationKey) || (!locationKey.StartsWith("house_") && !locationKey.StartsWith("zone_") && !locationKey.StartsWith("island_"))) {
-          ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), "You must be inside a housing area or valid outdoor zone to sync TVs.");
+          ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), "必须在房屋区域或有效的室外区域才能同步电视。");
       } else {
-          ImGui.Text($"Location Key: {locationKey}");
+          ImGui.Text($"位置密钥: {locationKey}");
           if (_plugin.CurrentTvPlacement == null || _plugin.CurrentTvPlacement.OwnerId == _plugin.Config.OwnerId) {
               bool isLocked = _plugin.CurrentTvPlacement?.IsLocked ?? !isOutdoorsSync;
               if (!isOutdoorsSync) {
-                  if (ImGui.Checkbox("Lock TV to Owner Only", ref isLocked)) {
+                  if (ImGui.Checkbox("锁定TV仅限所有者", ref isLocked)) {
                       if (_plugin.CurrentTvPlacement != null) {
                           _plugin.CurrentTvPlacement.IsLocked = isLocked;
                       } else {
-                          _plugin.CurrentTvPlacement = new Networking.Models.TvPlacement {
+                          _plugin.CurrentTvPlacement = new TvPlacement {
                               OwnerId = _plugin.Config.OwnerId,
                               IsLocked = isLocked
                           };
@@ -326,22 +325,22 @@ namespace XivMediaPlayer.Windows {
               }
               
               ImGui.Spacing();
-              if (ImGui.Button("Sync Placements to Area")) {
+              if (ImGui.Button("同步放置到区域")) {
                   RegisterTvAsync(locationKey);
               }
               ImGui.SameLine();
-              if (ImGui.Button("Remove TV from Area")) {
+              if (ImGui.Button("从区域移除电视")) {
                   _ = DeleteTvAsync(locationKey);
               }
           } else {
               if (_plugin.IsHousingMenuOpen || isOutdoorsSync || isIslandSync) {
-                  if (ImGui.Button("Take Ownership of TV")) {
+                  if (ImGui.Button("接管电视所有权")) {
                       RegisterTvAsync(locationKey);
                   }
-                  ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "You can override this locked TV because you have privileges here.");
+                  ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "由于你在此处拥有权限，可以覆盖此锁定的电视。");
               } else {
                   if (_plugin.CurrentTvPlacement.IsLocked) {
-                      ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), "This TV is locked by its owner.");
+                      ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), "此电视已被其所有者锁定。");
                   }
               }
           }

@@ -38,6 +38,7 @@ namespace XivMediaPlayer.Windows {
     private readonly object _textureLock = new object();
     
     private bool _isDraggingSeek;
+    public bool IsDraggingSeek => _isDraggingSeek;
     private float _seekDragProgress;
 
     public VideoWindow(Plugin plugin, IDalamudPluginInterface pluginInterface, ITextureProvider textureProvider, IPluginLog pluginLog) :
@@ -170,7 +171,7 @@ namespace XivMediaPlayer.Windows {
 
         // --- Seek Slider (VODs only) ---
         if (_mediaManager != null) {
-          var activeStream = _mediaManager.ActiveStream;
+          var activeStream = _mediaManager.GetActiveStream();
           if (activeStream != null && activeStream.Length > 0) {
             float progress;
             if (!_isDraggingSeek) {
@@ -220,7 +221,7 @@ namespace XivMediaPlayer.Windows {
           if (ImGui.Button(playPauseLabel, btnSize)) {
             _plugin.TogglePlayPause();
           }
-          if (ImGui.IsItemHovered()) ImGui.SetTooltip(isPaused ? "Resume" : "Pause");
+          if (ImGui.IsItemHovered()) ImGui.SetTooltip(isPaused ? "继续" : "暂停");
 
           ImGui.SameLine();
 
@@ -228,7 +229,7 @@ namespace XivMediaPlayer.Windows {
           if (ImGui.Button(">>", btnSize)) {
             _plugin.SeekRelative(_plugin.Config.SeekIncrementSeconds);
           }
-          if (ImGui.IsItemHovered()) ImGui.SetTooltip($"Fast Forward {_plugin.Config.SeekIncrementSeconds}s");
+          if (ImGui.IsItemHovered()) ImGui.SetTooltip($"快进 {_plugin.Config.SeekIncrementSeconds}秒");
 
           ImGui.SameLine();
           ImGui.Dummy(new Vector2(8, 0));
@@ -238,7 +239,7 @@ namespace XivMediaPlayer.Windows {
           if (ImGui.Button("|<", btnSize)) {
             _plugin.PlayPrevious();
           }
-          if (ImGui.IsItemHovered()) ImGui.SetTooltip("Previous Track");
+          if (ImGui.IsItemHovered()) ImGui.SetTooltip("上一首");
 
           ImGui.SameLine();
 
@@ -246,49 +247,49 @@ namespace XivMediaPlayer.Windows {
           if (ImGui.Button(">|", btnSize)) {
             _plugin.PlayNext();
           }
-          if (ImGui.IsItemHovered()) ImGui.SetTooltip("Next Track");
+          if (ImGui.IsItemHovered()) ImGui.SetTooltip("下一首");
 
           ImGui.SameLine();
           ImGui.Dummy(new Vector2(8, 0));
           ImGui.SameLine();
 
-          // Mute
-          string muteLabel = _plugin.IsMuted ? "Unmute" : "Mute";
+          // 静音
+          string muteLabel = _plugin.IsMuted ? "取消静音" : "静音";
           if (ImGui.Button(muteLabel, wideBtnSize)) {
             _plugin.ToggleMute();
           }
 
           ImGui.SameLine();
 
-          // Loop
+          // 循环
           bool loopOn = _plugin.Config.LoopEnabled;
           if (loopOn) ImGui.PushStyleColor(ImGuiCol.Button, new System.Numerics.Vector4(0.2f, 0.6f, 0.9f, 1f));
-          if (ImGui.Button("Loop", wideBtnSize)) {
+          if (ImGui.Button("循环", wideBtnSize)) {
             _plugin.Config.LoopEnabled = !_plugin.Config.LoopEnabled;
             _plugin.Config.Save();
           }
           if (loopOn) ImGui.PopStyleColor();
-          if (ImGui.IsItemHovered()) ImGui.SetTooltip(loopOn ? "Loop: ON" : "Loop: OFF");
+          if (ImGui.IsItemHovered()) ImGui.SetTooltip(loopOn ? "循环: 开" : "循环: 关");
 
           ImGui.SameLine();
 
-          // Shuffle
+          // 随机
           bool shuffleOn = _plugin.Config.ShuffleEnabled;
           if (shuffleOn) ImGui.PushStyleColor(ImGuiCol.Button, new System.Numerics.Vector4(0.2f, 0.6f, 0.9f, 1f));
-          if (ImGui.Button("Shuf", wideBtnSize)) {
+          if (ImGui.Button("随机", wideBtnSize)) {
             _plugin.Config.ShuffleEnabled = !_plugin.Config.ShuffleEnabled;
             _plugin.Config.Save();
           }
           if (shuffleOn) ImGui.PopStyleColor();
-          if (ImGui.IsItemHovered()) ImGui.SetTooltip(shuffleOn ? "Shuffle: ON" : "Shuffle: OFF");
+          if (ImGui.IsItemHovered()) ImGui.SetTooltip(shuffleOn ? "随机: 开" : "随机: 关");
 
           ImGui.SameLine();
 
-          // Refresh
-          if (ImGui.Button("Refresh", new Vector2(56, btnH))) {
+          // 刷新
+          if (ImGui.Button("刷新", new Vector2(56, btnH))) {
             _plugin.RefreshCurrentMedia();
           }
-          if (ImGui.IsItemHovered()) ImGui.SetTooltip("Re-resolve and replay the current media");
+          if (ImGui.IsItemHovered()) ImGui.SetTooltip("重新解析并播放当前媒体");
           ImGui.SameLine();
 
           // DMCA
@@ -308,24 +309,24 @@ namespace XivMediaPlayer.Windows {
                   _plugin.PrintChatError("[媒体播放器] 没有可复制的媒体链接");
               }
           }
-          if (ImGui.IsItemHovered()) ImGui.SetTooltip("Copy DMCA info & media URL to clipboard");
+          if (ImGui.IsItemHovered()) ImGui.SetTooltip("复制 DMCA 信息和媒体链接到剪贴板");
           ImGui.SameLine();
 
-          // Kill
+          // 重启
           ImGui.PushStyleColor(ImGuiCol.Button, new System.Numerics.Vector4(0.7f, 0.15f, 0.15f, 1f));
           ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new System.Numerics.Vector4(0.9f, 0.2f, 0.2f, 1f));
-          if (ImGui.Button("Kill", wideBtnSize)) {
+          if (ImGui.Button("重启", wideBtnSize)) {
             _plugin.RequestKillAndRestart();
           }
           ImGui.PopStyleColor(2);
-          if (ImGui.IsItemHovered()) ImGui.SetTooltip("Kill the media pipeline and restart it");
+          if (ImGui.IsItemHovered()) ImGui.SetTooltip("终止并重启媒体流程");
         }
 
         // --- Volume Slider ---
         if (_mediaManager != null) {
-          ImGui.SetNextItemWidth(-(ImGui.CalcTextSize("Volume").X + ImGui.GetStyle().ItemInnerSpacing.X));
+          ImGui.SetNextItemWidth(-(ImGui.CalcTextSize("音量").X + ImGui.GetStyle().ItemInnerSpacing.X));
           int vol = (int)(_mediaManager.LiveStreamVolume * 100f);
-          if (ImGui.SliderInt("Volume", ref vol, 0, 300)) {
+          if (ImGui.SliderInt("音量", ref vol, 0, 300)) {
               _mediaManager.LiveStreamVolume = vol / 100f;
           }
         }
@@ -335,7 +336,7 @@ namespace XivMediaPlayer.Windows {
           ImGui.Separator();
           ImGui.SetNextItemWidth(100f);
           int comboIdx = _plugin.ControllerService.PlayerSlot == 255 ? 4 : _plugin.ControllerService.PlayerSlot;
-          if (ImGui.Combo("Controller Slot", ref comboIdx, "Player 1\0Player 2\0Player 3\0Player 4\0None\0")) {
+          if (ImGui.Combo("手柄位置", ref comboIdx, "玩家 1\0玩家 2\0玩家 3\0玩家 4\0无\0")) {
               _plugin.ControllerService.PlayerSlot = comboIdx == 4 ? (byte)255 : (byte)comboIdx;
           }
         }
@@ -363,13 +364,13 @@ namespace XivMediaPlayer.Windows {
               if (Size.Value.X < 360) {
                 FeedType = TwitchFeedType._160p;
               }
-              if (Size.Value.X >= 360 || Size.Value.X < 480) {
+              if (Size.Value.X >= 360 && Size.Value.X < 480) {
                 FeedType = TwitchFeedType._360p;
               }
-              if (Size.Value.X >= 480 || Size.Value.X < 720) {
+              if (Size.Value.X >= 480 && Size.Value.X < 720) {
                 FeedType = TwitchFeedType._480p;
               }
-              if (Size.Value.X >= 720 || Size.Value.X < 1080) {
+              if (Size.Value.X >= 720 && Size.Value.X < 1080) {
                 FeedType = TwitchFeedType._720p;
               }
               if (Size.Value.X >= 1080) {

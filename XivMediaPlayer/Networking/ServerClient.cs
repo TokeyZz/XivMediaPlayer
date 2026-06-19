@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
-using XivMediaPlayer.Networking.Models;
+using XivMediaPlayer.Shared;
+using XivMediaPlayer.Shared.Models;
 using Dalamud.Plugin.Services;
 
 namespace XivMediaPlayer.Networking
@@ -19,24 +20,19 @@ namespace XivMediaPlayer.Networking
         {
             _baseUrl = baseUrl;
             _log = log;
-            _httpClient = new HttpClient();
+            _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
         }
 
-        public async Task<long> GetServerTimeAsync()
+        public async Task<long?> GetServerTimeAsync()
         {
             try
             {
                 var response = await _httpClient.GetAsync($"{_baseUrl}/api/rooms/time");
                 if (response.IsSuccessStatusCode)
-                {
                     return await response.Content.ReadFromJsonAsync<long>();
-                }
             }
-            catch (Exception ex)
-            {
-                _log.Error(ex, "Failed to fetch server time");
-            }
-            return 0;
+            catch (Exception ex) { _log.Error(ex, "[Net] Failed to fetch server time"); }
+            return null;
         }
 
         public async Task<List<TvPlacement>> GetTvsForRoomAsync(string locationKey)
@@ -84,7 +80,7 @@ namespace XivMediaPlayer.Networking
         {
             try
             {
-                var response = await _httpClient.DeleteAsync($"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/tvs/{Uri.EscapeDataString(tvId)}?ownerId={Uri.EscapeDataString(ownerId)}&bypassLock={bypassLock}");
+                var response = await _httpClient.DeleteAsync($"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/tvs/{Uri.EscapeDataString(tvId)}?ownerId={Uri.EscapeDataString(ownerId)}");
                 if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
                 {
                     throw new UnauthorizedAccessException("Cannot delete TV: It is locked by its owner.");
@@ -124,7 +120,7 @@ namespace XivMediaPlayer.Networking
                 {
                     throw new UnauthorizedAccessException("The TV in this room is locked by its owner.");
                 }
-                
+
                 if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
                 {
                     throw new InvalidOperationException("You are no longer the media owner.");
@@ -146,7 +142,7 @@ namespace XivMediaPlayer.Networking
             catch (Exception ex)
             {
                 _log.Error(ex, $"Failed to update media state for room {locationKey}");
-                throw; // Rethrow so the plugin can catch and handle it
+                throw;
             }
             return null;
         }
@@ -185,6 +181,103 @@ namespace XivMediaPlayer.Networking
                 _log.Error(ex, "Failed to get media states in batch");
             }
             return new List<RoomMediaStateSync>();
+        }
+
+        private async Task<HttpResponseMessage?> SendWithRetryAsync(HttpRequestMessage request, int maxRetries = 2)
+        {
+            for (int attempt = 0; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    if (attempt > 0)
+                        _log.Warning($"[Net] Retry: attempt={attempt}, url={request.RequestUri}");
+                    var response = await _httpClient.SendAsync(request);
+                    if ((int)response.StatusCode == 429 || (int)response.StatusCode >= 500)
+                    {
+                        if (attempt < maxRetries) { await Task.Delay(500 * (attempt + 1)); continue; }
+                        return response;
+                    }
+                    return response;
+                }
+                catch (TaskCanceledException) { if (attempt >= maxRetries) return null; await Task.Delay(500 * (attempt + 1)); }
+                catch (HttpRequestException) { if (attempt >= maxRetries) return null; await Task.Delay(500 * (attempt + 1)); }
+            }
+            return null;
+        }
+
+        public async Task<ApiResult<ClaimDjResponse>> ClaimDjAsync(string locationKey, ClaimDjRequest request)
+        {
+            try
+            {
+                var httpRequest = new HttpRequestMessage(HttpMethod.Post,
+                    $"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/claim-dj")
+                {
+                    Content = JsonContent.Create(request)
+                };
+                var response = await SendWithRetryAsync(httpRequest);
+                if (response == null)
+                    return ApiResult<ClaimDjResponse>.Fail("[Net] ClaimDj: no response after retries");
+                if (response.IsSuccessStatusCode)
+                    return await response.Content.ReadFromJsonAsync<ApiResult<ClaimDjResponse>>()
+                        ?? ApiResult<ClaimDjResponse>.Fail("Empty response");
+                if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+                    return await response.Content.ReadFromJsonAsync<ApiResult<ClaimDjResponse>>()
+                        ?? ApiResult<ClaimDjResponse>.Fail("DJ conflict");
+                return ApiResult<ClaimDjResponse>.Fail($"Unexpected status: {response.StatusCode}");
+            }
+            catch (Exception ex) { _log.Error(ex, $"[Net] ClaimDj failed for {locationKey}"); return ApiResult<ClaimDjResponse>.Fail(ex.Message); }
+        }
+
+        public async Task<ApiResult<HeartbeatResponse>> HeartbeatAsync(string locationKey, HeartbeatRequest request)
+        {
+            try
+            {
+                var httpRequest = new HttpRequestMessage(HttpMethod.Post,
+                    $"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/heartbeat")
+                {
+                    Content = JsonContent.Create(request)
+                };
+                var response = await SendWithRetryAsync(httpRequest);
+                if (response == null)
+                    return ApiResult<HeartbeatResponse>.Fail("[Net] Heartbeat: no response after retries");
+                if (response.IsSuccessStatusCode)
+                    return await response.Content.ReadFromJsonAsync<ApiResult<HeartbeatResponse>>()
+                        ?? ApiResult<HeartbeatResponse>.Fail("Empty response");
+                return ApiResult<HeartbeatResponse>.Fail($"Unexpected status: {response.StatusCode}");
+            }
+            catch (Exception ex) { _log.Error(ex, $"[Net] Heartbeat failed for {locationKey}"); return ApiResult<HeartbeatResponse>.Fail(ex.Message); }
+        }
+
+        public async Task<ApiResult<ClaimDjResponse>> ReleaseDjAsync(string locationKey, ReleaseDjRequest request)
+        {
+            try
+            {
+                var httpRequest = new HttpRequestMessage(HttpMethod.Post,
+                    $"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/release-dj")
+                {
+                    Content = JsonContent.Create(request)
+                };
+                var response = await SendWithRetryAsync(httpRequest);
+                if (response == null)
+                    return ApiResult<ClaimDjResponse>.Fail("[Net] ReleaseDj: no response after retries");
+                if (response.IsSuccessStatusCode)
+                    return await response.Content.ReadFromJsonAsync<ApiResult<ClaimDjResponse>>()
+                        ?? ApiResult<ClaimDjResponse>.Fail("Empty response");
+                return ApiResult<ClaimDjResponse>.Fail($"Unexpected status: {response.StatusCode}");
+            }
+            catch (Exception ex) { _log.Error(ex, $"[Net] ReleaseDj failed for {locationKey}"); return ApiResult<ClaimDjResponse>.Fail(ex.Message); }
+        }
+
+        public async Task<RoomStateResponse?> GetStateAsync(string locationKey)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/state");
+                if (response.IsSuccessStatusCode)
+                    return await response.Content.ReadFromJsonAsync<RoomStateResponse>();
+            }
+            catch (Exception ex) { _log.Error(ex, $"[Net] GetState failed for {locationKey}"); }
+            return null;
         }
 
         public void Dispose()

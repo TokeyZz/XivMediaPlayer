@@ -20,16 +20,6 @@
         "resolved": "2.1.0",
         "contentHash": "UTdxWvbgp2xzT1Ajaa2va+Qi3oNHJPasYmVhbKI2VVdu1VYP6yUG+RikhsHvpD7iM0S8e8UYb5Qm/LTWxx9QAA=="
       },
-      "Microsoft.AspNetCore.SignalR.Client": {
-        "type": "Direct",
-        "requested": "[10.0.8, )",
-        "resolved": "10.0.8",
-        "contentHash": "GC0SmIqE1b5Lqibt5mZ5yN7RtMKxwzaLvceSpo9f3GPZChCevLVLeAnxEhmNq79yYjXMK5K7TYdu7nVeENLinw==",
-        "dependencies": {
-          "Microsoft.AspNetCore.Http.Connections.Client": "10.0.8",
-          "Microsoft.AspNetCore.SignalR.Client.Core": "10.0.8"
-        }
-      },
       "System.Drawing.Common": {
         "type": "Direct",
         "requested": "[8.0.0, )",
@@ -84,110 +74,6 @@
         "type": "Transitive",
         "resolved": "3.9.0",
         "contentHash": "wydvN5kotK5y/ZRC04/F6YUqesJCzdixaItRkR8L0/nOLSs2/BJ7rKRbU7BxkxpKIBqlN8EpuXxH/fQEZEHtuw=="
-      },
-      "Microsoft.AspNetCore.Connections.Abstractions": {
-        "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "DfmEvnTPOVfkz8s4zDdmjy7z1iiwid3IDnonPD2V48j812njrfgP7CxphDn0b+Iq92+PU0WFH1xpAv09pTUEvg==",
-        "dependencies": {
-          "Microsoft.Extensions.Features": "10.0.8"
-        }
-      },
-      "Microsoft.AspNetCore.Http.Connections.Client": {
-        "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "qZaRK0U6mL990BlSpLkKnA9O1NQX+5pz9l6/PQIQCHZEpCCuLG2xsBVGOj6YhH5mGe/3GzKvDQfAZt+Iihlqfw==",
-        "dependencies": {
-          "Microsoft.AspNetCore.Http.Connections.Common": "10.0.8",
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.8",
-          "Microsoft.Extensions.Options": "10.0.8"
-        }
-      },
-      "Microsoft.AspNetCore.Http.Connections.Common": {
-        "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "gcVqAq9lnp6o+RFmOw/fPlOWQWm8pmB92f59hmF+grZjtByVAx9HeVLE7QJjjPJMt/vubP2TbhXIb0ksxD8cZw==",
-        "dependencies": {
-          "Microsoft.AspNetCore.Connections.Abstractions": "10.0.8"
-        }
-      },
-      "Microsoft.AspNetCore.SignalR.Client.Core": {
-        "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "M4eBfXAdDS8ziiIKGCon+dQZC0u+BIZ1K0JqI982vfNCcr1ZxChp68pDBCShTv4m1D3qJr8YC4Sm4KEWtQ+HRg==",
-        "dependencies": {
-          "Microsoft.AspNetCore.SignalR.Common": "10.0.8",
-          "Microsoft.AspNetCore.SignalR.Protocols.Json": "10.0.8",
-          "Microsoft.Extensions.DependencyInjection": "10.0.8",
-          "Microsoft.Extensions.Logging": "10.0.8"
-        }
-      },
-      "Microsoft.AspNetCore.SignalR.Common": {
-        "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "k++Zhl06barMW30QwGoOMNhPOjANk/w8m2Kbz4JNZ6qHQm4jC7yckZqbK8oOyGV6uushrGtpbNTlCpsOWfnFug==",
-        "dependencies": {
-          "Microsoft.AspNetCore.Connections.Abstractions": "10.0.8",
-          "Microsoft.Extensions.Options": "10.0.8"
-        }
-      },
-      "Microsoft.AspNetCore.SignalR.Protocols.Json": {
-        "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "xaN3NF3Kf252nNiY3aq+oRtDM4XayUB8+ZyqR8qHq5InjLxGk7JZPEnN0KIbp6OLeuEAv8s1NwXSsgOSYm3ZVQ==",
-        "dependencies": {
-          "Microsoft.AspNetCore.SignalR.Common": "10.0.8"
-        }
-      },
-      "Microsoft.Extensions.DependencyInjection": {
-        "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "daf62xHIrq8pnE709hgaZZN9tSam9TGGepWe1+bE6V3GEuVwJiMs6ib+38lfMCyAJAHiX0vapxBhsuMSV7U+cg==",
-        "dependencies": {
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.8"
-        }
-      },
-      "Microsoft.Extensions.DependencyInjection.Abstractions": {
-        "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "21nbDV60SRPWGIivsyl6lqBeEJNG1sginhhfWgRrr3Ais7aQ12To25OAHQxgoiJkjqy1aQ6RxpZBGYuTi7Ge6A=="
-      },
-      "Microsoft.Extensions.Features": {
-        "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "pzn7prqSzxHmXIQw+yomgkEUMU5ZtE+WK/5syc8ob5rWrRaqb+JTt7GkW9AU9y6NMVNTEjV9vrJMfO+lUlcH8A=="
-      },
-      "Microsoft.Extensions.Logging": {
-        "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "K60JhWC2hN/Gi7TP68tBxSzk5ACWOs7lkmPzsfA8Bcf/IXTajujt2ORMf9rSMk1bsng6Lv4Y3fuxp3bm1+15ug==",
-        "dependencies": {
-          "Microsoft.Extensions.DependencyInjection": "10.0.8",
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.8",
-          "Microsoft.Extensions.Options": "10.0.8"
-        }
-      },
-      "Microsoft.Extensions.Logging.Abstractions": {
-        "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "fdVadZmsC8jRP0KvKy8mO8f6GV/HyBvElfcSxEhd+5FM5boAw/01iSaCto5G3G37ApJira4A3pNaVvBv8cUiLQ==",
-        "dependencies": {
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.8"
-        }
-      },
-      "Microsoft.Extensions.Options": {
-        "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "VBD+131DpTNCNDfA4kIyKTiCySvJGNhwibdWBSdFRu7GMfXLXcXODkgA+KStKbbhzraLglZWUN4nXyHgW4JIRA==",
-        "dependencies": {
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.8",
-          "Microsoft.Extensions.Primitives": "10.0.8"
-        }
-      },
-      "Microsoft.Extensions.Primitives": {
-        "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "OBPo4nYhMyIbtueoC10CBm6AGAbo/A9IV8QQ/6ryZS7VvmqpGT7hunazeHLxFawRzn3oLOq4jhqhpBX4tfswWQ=="
       },
       "Microsoft.Win32.SystemEvents": {
         "type": "Transitive",
@@ -317,6 +203,9 @@
           "SixLabors.ImageSharp": "[3.1.7, )",
           "VideoLAN.LibVLC.Windows": "[3.0.18, )"
         }
+      },
+      "xivmediaplayer.shared": {
+        "type": "Project"
       }
     },
     "net10.0-windows7.0/win-x64": {

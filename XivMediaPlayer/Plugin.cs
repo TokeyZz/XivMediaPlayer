@@ -65,6 +65,17 @@ namespace XivMediaPlayer
         private Networking.ControllerService? _controllerService;
 
         private string _currentMediaOwnerId = string.Empty;
+        // v2 sync state
+        private long _stateVersion = 0;
+        private bool _isTransitioning = false;
+        private bool _isSyncing = false;
+        private CancellationTokenSource _heartbeatCts;
+        private CancellationTokenSource _fetchCts;
+        private int _consecutiveLocalFailures = 0;
+        private int _consecutiveSyncFailures = 0;
+        private long _lastSuccessfulTimecode = -1;
+        private bool _lastSyncWithRoom = false;
+        private int _stalledDetectCount = 0;
         private bool _isLocalDj = false;
         private DepthBufferCapture _depthCapture;
         private UILayerCapture _uiCapture;
@@ -156,8 +167,8 @@ namespace XivMediaPlayer
         }
 
         // Current room TV state
-        public Networking.Models.TvPlacement? CurrentTvPlacement { get; internal set; }
-        private List<Networking.Models.TvPlacement> _nearbyTvs = new();
+        public TvPlacement? CurrentTvPlacement { get; internal set; }
+        private List<TvPlacement> _nearbyTvs = new();
 
         // Input tracking
         private bool _wasLeftMousePressed = false;
@@ -240,6 +251,24 @@ namespace XivMediaPlayer
                 // Otherwise we constantly dispose the HttpClient while requests are in flight!
                 if (ServerClient.BaseUrl != _config.ServerUrl)
                 {
+
+                // Handle SyncWithRoom toggle
+                if (_config.SyncWithRoom != _lastSyncWithRoom)
+                {
+                    _lastSyncWithRoom = _config.SyncWithRoom;
+                    if (_config.SyncWithRoom)
+                    {
+                        if (!_isLocalDj)
+                        {
+                            StartFetchLoop();
+                        }
+                    }
+                    else
+                    {
+                        StopFetchLoop();
+                        StopHeartbeatLoop();
+                    }
+                }
                     ServerClient?.Dispose();
                     ServerClient = new Networking.ServerClient(_config.ServerUrl, _pluginLog);
                 }
@@ -537,33 +566,13 @@ namespace XivMediaPlayer
                 }
             }
 
-            // Sync Polling Loop
+            // v2 Sync: heartbeat and fetch loops run independently via ClaimDjAsync/ReleaseDjAsync
+            // Only keep server time sync and TV data fetch
             bool isHouse = !string.IsNullOrEmpty(LocationKey) && LocationKey.StartsWith("house_");
             bool isZone = !string.IsNullOrEmpty(LocationKey) && LocationKey.StartsWith("zone_");
 
             if (isHouse || (isZone && _config.EnableOutdoorPublicScreens))
             {
-                bool isMediaOwner = _isLocalDj;
-
-                // Only push if actively playing or loading.
-                // Paused media should continue pushing so clients don't think the DJ crashed.
-                if (isMediaOwner && ((_mediaManager?.ActiveStream != null) || !string.IsNullOrEmpty(_lastStreamURL)))
-                {
-                    if ((DateTime.UtcNow - _lastServerSyncPush).TotalSeconds >= 5)
-                    {
-                        _lastServerSyncPush = DateTime.UtcNow;
-                        _pluginLog.Information($"[Social] Executing PushMediaToServerAsync. ActiveStream Time: {_mediaManager?.ActiveStream?.Time ?? 0}");
-                        _ = PushMediaToServerAsync(isBackgroundSync: true);
-                    }
-                }
-                else if ((DateTime.UtcNow - _lastServerSyncPush).TotalSeconds >= 5)
-                {
-                    _lastServerSyncPush = DateTime.UtcNow;
-                    _pluginLog.Information($"[Social] Skipping Push. isMediaOwner={isMediaOwner} ({_currentMediaOwnerId} vs {_config.OwnerId}), ActiveStream={_mediaManager?.ActiveStream != null}");
-                }
-
-                // Polling interval.
-                // Facilitates DJ handoff on media change.
                 if (!_hasFetchedServerTime)
                 {
                     _hasFetchedServerTime = true;
@@ -577,14 +586,14 @@ namespace XivMediaPlayer
                 }
             }
 
+
             if ((DateTime.UtcNow - _lastHistoryUpdate).TotalSeconds >= 10)
             {
                 _lastHistoryUpdate = DateTime.UtcNow;
-                if (_mediaManager?.ActiveStream != null && !_isIntentionallyPaused) {
+                if (_mediaManager?.GetActiveStream() != null && !_isIntentionallyPaused) {
                     UpdateWatchHistory();
                 }
             }
-
             // Clipboard cookie watcher — check every 5 seconds
             CheckClipboardForCookies();
         }
@@ -900,7 +909,7 @@ namespace XivMediaPlayer
             // Start FFmpeg backend instead of VLC for extreme low latency
             _mediaManager?.PlayFFmpegStream(rtsp);
             _lastStreamURL = rtsp;
-            _ = PushMediaToServerAsync(isBackgroundSync: false);
+            // Deprecated: v2 heartbeat handles pushing state
         }
 
         internal void SendEmulationMouseState(float normX, float normY, bool lmb, bool rmb)
@@ -948,7 +957,7 @@ namespace XivMediaPlayer
 
                     if (!isAutoSync)
                     {
-                        _ = PushMediaToServerAsync(isBackgroundSync: false);
+            // Deprecated: v2 heartbeat handles pushing state
                     }
                     _streamWasPlaying = true;
 
@@ -988,7 +997,7 @@ namespace XivMediaPlayer
 
             if (!isAutoSync)
             {
-                _ = PushMediaToServerAsync(isBackgroundSync: false);
+            // Deprecated: v2 heartbeat handles pushing state
             }
             _streamWasPlaying = true;
             try
@@ -1039,6 +1048,7 @@ namespace XivMediaPlayer
 
         private void PlayRouted(string url, IMediaGameObject audioGameObject, int startTimeMs = 0, bool isAutoSync = false)
         {
+            _isTransitioning = true;
             url = CleanUrl(url);
             if (YtDlpManager.IsUrlSupported(url) && _ytDlpManager.IsAvailable())
             {
@@ -1123,7 +1133,9 @@ namespace XivMediaPlayer
 
                 PrintChat($"[媒体播放器] 正在直接播放!\r\n使用 \"/media video\" 切换视频窗口\r\n使用 \"/media stop\" 停止");
 
-                if (!isAutoSync) _ = PushMediaToServerAsync(isBackgroundSync: false);
+                if (!isAutoSync && _config.SyncWithRoom) _ = ClaimDjAsync();
+                _isTransitioning = false;
+                _isSyncing = false;
                 _streamWasPlaying = true;
                 try { MuteBgm(); } catch (Exception e) { _pluginLog.Warning(e, e.Message); }
                 _isResolvingMedia = false;
@@ -1229,8 +1241,7 @@ namespace XivMediaPlayer
                                 EnqueueFrameworkAction(() =>
                                 {
                                     _lastStreamURL = rescuedStreamUrl;
-                                    _isLocalDj = true;
-                                    _ = PushMediaToServerAsync(isBackgroundSync: false);
+                                    _ = ClaimDjAsync();
                                 });
                             }
 
@@ -1309,7 +1320,9 @@ namespace XivMediaPlayer
 
                         if (!isAutoSync)
                         {
-                            _ = PushMediaToServerAsync(isBackgroundSync: false);
+                            if (!isAutoSync && _config.SyncWithRoom) _ = ClaimDjAsync();
+                            _isTransitioning = false;
+                            _isSyncing = false;
                         }
 
                         _streamWasPlaying = true;
@@ -1368,6 +1381,9 @@ namespace XivMediaPlayer
         private void _mediaManager_OnNewMediaTriggered(object sender, EventArgs e)
         {
             EnqueueFrameworkAction(() => {
+                _isSyncing = false;
+                _consecutiveLocalFailures = 0;
+                _consecutiveSyncFailures = 0;
                 PrintChat("[媒体播放器] 正在启动流...");
                 _mediaErrorCount = 0; // Reset errors on successful start
             });
@@ -1422,7 +1438,7 @@ namespace XivMediaPlayer
             }
 
             if (pushToServer) {
-                _ = PushMediaToServerAsync(isBackgroundSync: false);
+                // No-op: v2 heartbeat handles pushing state
             }
         }
 
@@ -1495,6 +1511,7 @@ namespace XivMediaPlayer
         private void OnTerritoryChanged(uint territoryId)
         {
             SaveMediaStateForCurrentLocation();
+            _ = ReleaseDjAsync();
             _videoWindow.IsOpen = false;
             if (_screenSettingsWindow != null) _screenSettingsWindow.IsOpen = false;
             _mediaManager?.CleanSounds();
@@ -1632,7 +1649,7 @@ namespace XivMediaPlayer
 
             var state = new RoomMediaState();
 
-            var activeStream = _mediaManager?.ActiveStream;
+            var activeStream = _mediaManager?.GetActiveStream();
             if (activeStream != null && !string.IsNullOrEmpty(activeStream.SoundPath))
             {
                 // We use _lastStreamURL to save the original un-resolved YouTube/Twitch URL
@@ -1689,7 +1706,7 @@ namespace XivMediaPlayer
         private async Task PushMediaToServerAsync(bool isBackgroundSync = false)
         {
             var key = CurrentTvPlacement?.LocationKey ?? _lastLocationKey;
-            var activeStream = _mediaManager?.ActiveStream;
+            var activeStream = _mediaManager?.GetActiveStream();
             string lastUrl = CleanUrl(_lastStreamURL ?? "");
             string soundPath = activeStream?.SoundPath ?? "";
             // Never let local StreamProxy URLs (e.g. http://127.0.0.1:xxxxx/stream.m3u8?sid=...) leak as fallback
@@ -1719,7 +1736,7 @@ namespace XivMediaPlayer
                 // If it's a foreground sync (e.g. user pressed stop, or video finished), WE MUST push the empty state!
                 if (isBackgroundSync && string.IsNullOrEmpty(lastUrl) && string.IsNullOrEmpty(soundPath) && !_isResolvingMedia) return;
 
-                var sync = new Networking.Models.RoomMediaStateSync
+                var sync = new RoomMediaStateSync
                 {
                     LocationKey = key,
                     CurrentUrl = !string.IsNullOrEmpty(lastUrl) ? lastUrl : soundPath,
@@ -1805,9 +1822,9 @@ namespace XivMediaPlayer
         private async Task FetchServerTimeAsync()
         {
             if (ServerClient == null) return;
-            long st = await ServerClient.GetServerTimeAsync();
+            long? st = await ServerClient.GetServerTimeAsync();
             if (st > 0) {
-                _serverTimeOffsetMs = st - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                _serverTimeOffsetMs = st!.Value - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 _pluginLog.Information($"[Time Sync] Server time offset calculated: {_serverTimeOffsetMs}ms");
             } else {
                 _hasFetchedServerTime = false;
@@ -1866,7 +1883,7 @@ namespace XivMediaPlayer
             }
             if (_isResolvingMedia) return;
 
-            var activeStream = _mediaManager?.ActiveStream;
+            var activeStream = _mediaManager?.GetActiveStream();
             bool isLocalEnded = activeStream != null && activeStream.VlcState == LibVLCSharp.Shared.VLCState.Ended;
             bool isDifferentUrl = activeStream == null || (!string.IsNullOrEmpty(_lastStreamURL) && _lastStreamURL != sync.CurrentUrl) || (isLocalEnded && sync.IsPlaying);
             // Only sync VODs. Live streams cannot be reliably timecode-synced.
@@ -1934,6 +1951,193 @@ namespace XivMediaPlayer
         }
 
         /// <summary>
+
+
+
+
+        #region v2 Sync (Heartbeat / Fetch)
+
+        private bool _isDraggingSeek => _videoWindow?.IsDraggingSeek ?? false;
+
+        private async Task HeartbeatLoopAsync(CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(2000, ct);
+                    if (!_isLocalDj) continue;
+                    if (_isTransitioning) { Debug.WriteLine("[Sync] Heartbeat Skip: isTransitioning"); continue; }
+                    if (_isDraggingSeek) { Debug.WriteLine("[Sync] Heartbeat Skip: isDraggingSeek"); continue; }
+
+                    var snapshot = _mediaManager?.GetSnapshot();
+                    if (snapshot == null || string.IsNullOrEmpty(snapshot.Url)) continue;
+
+                    var request = new HeartbeatRequest
+                    {
+                        OwnerId = _config.OwnerId,
+                        StateVersion = _stateVersion,
+                        CurrentUrl = _lastStreamURL,
+                        TimecodeMs = snapshot.TimeMs,
+                        IsPlaying = snapshot.IsPlaying,
+                        SpeedRate = 1.0f,
+                        Queue = _mediaQueue.ToList()
+                    };
+
+                    var result = await ServerClient.HeartbeatAsync(LocationKey, request);
+                    if (result.Success)
+                    {
+                        _stateVersion = result.Data!.AcceptedVersion;
+                        Debug.WriteLine("[Sync] Heartbeat: v=" + _stateVersion + ", url=" + _lastStreamURL + ", time=" + snapshot.TimeMs + "ms, playing=" + snapshot.IsPlaying + ", result=200");
+                    }
+                    else
+                    {
+                        Debug.WriteLine("[Sync] Heartbeat: result=409, error=" + result.Error);
+                        _isLocalDj = false;
+                        StopHeartbeatLoop();
+                        StartFetchLoop();
+                        PrintChatError("播放权已被接管，切换到跟随模式");
+                    }
+
+                    if (snapshot.IsPlaying)
+                    {
+                        if (_lastSuccessfulTimecode == snapshot.TimeMs)
+                        {
+                            _stalledDetectCount++;
+                            if (_stalledDetectCount >= 5)
+                            {
+                                Debug.WriteLine("[VLC] Stalled: time=" + snapshot.TimeMs + "ms, sameFor=" + (_stalledDetectCount * 2) + "s, action=retry");
+                                _stalledDetectCount = 0;
+                                RefreshCurrentMedia();
+                            }
+                        }
+                        else
+                        {
+                            _stalledDetectCount = 0;
+                            _lastSuccessfulTimecode = snapshot.TimeMs;
+                        }
+                    }
+                }
+                catch (Exception ex) { Debug.WriteLine("[Sync] Heartbeat error: " + ex.Message); }
+            }
+        }
+
+        private void StartHeartbeatLoop()
+        {
+            StopHeartbeatLoop();
+            _heartbeatCts = new CancellationTokenSource();
+            _ = HeartbeatLoopAsync(_heartbeatCts.Token);
+        }
+        private void StopHeartbeatLoop()
+        {
+            _heartbeatCts?.Cancel();
+            _heartbeatCts?.Dispose();
+            _heartbeatCts = null;
+        }
+
+        private async Task FetchLoopAsync(CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(5000, ct);
+                    if (_isLocalDj) continue;
+                    if (!_config.SyncWithRoom) continue;
+                    if (_isSyncing) { Debug.WriteLine("[Sync] Follow Skip: isSyncing"); continue; }
+
+                    var state = await ServerClient.GetStateAsync(LocationKey);
+                    if (state == null) continue;
+
+                    Debug.WriteLine("[Sync] State Fetch: v=" + state.StateVersion + ", djAge=" + state.DjHeartbeatAgeSeconds.ToString("F0") + "s, djDisconnected=" + state.DjDisconnected + ", url=" + state.CurrentUrl);
+
+                    if (state.DjDisconnected)
+                    {
+                        Debug.WriteLine("[Sync] Follow Skip: djDisconnected");
+                        continue;
+                    }
+
+                    if (string.IsNullOrEmpty(state.CurrentUrl)) continue;
+
+                    bool urlChanged = _lastStreamURL != state.CurrentUrl;
+                    bool versionChanged = state.StateVersion > _stateVersion;
+                    _stateVersion = state.StateVersion;
+
+                    if (urlChanged || versionChanged)
+                    {
+                        _consecutiveSyncFailures = 0;
+                        _isSyncing = true;
+                        Debug.WriteLine("[Sync] Follow: reason=" + (urlChanged ? "urlChanged" : "versionChanged") + ", action=play");
+                        PlayRouted(state.CurrentUrl, CurrentAudioSource, (int)state.TimecodeMs, isAutoSync: true);
+                    }
+                    else
+                    {
+                        var active = _mediaManager?.GetActiveStream();
+                        if (active == null) continue;
+
+                        long timeDiff = Math.Abs(active.Time - state.TimecodeMs);
+                        if (timeDiff > 5000 && state.IsPlaying)
+                        {
+                            Debug.WriteLine("[Sync] Follow: reason=sameUrl, action=seek, diff=" + timeDiff + "ms");
+                            _mediaManager.SeekStream(state.TimecodeMs);
+                        }
+                        if (state.IsPlaying && active.PlaybackState == NAudio.Wave.PlaybackState.Paused)
+                        {
+                            Debug.WriteLine("[Sync] Follow: reason=sameUrl, action=resume");
+                            active.Resume();
+                        }
+                        if (!state.IsPlaying && active.PlaybackState == NAudio.Wave.PlaybackState.Playing)
+                        {
+                            Debug.WriteLine("[Sync] Follow: reason=sameUrl, action=pause");
+                            active.Pause();
+                        }
+                    }
+                }
+                catch (Exception ex) { Debug.WriteLine("[Sync] Fetch error: " + ex.Message); }
+            }
+        }
+
+        private void StartFetchLoop()
+        {
+            StopFetchLoop();
+            _fetchCts = new CancellationTokenSource();
+            _ = FetchLoopAsync(_fetchCts.Token);
+        }
+        private void StopFetchLoop()
+        {
+            _fetchCts?.Cancel();
+            _fetchCts?.Dispose();
+            _fetchCts = null;
+        }
+
+        private async Task<bool> ClaimDjAsync()
+        {
+            var request = new ClaimDjRequest { OwnerId = _config.OwnerId, ExpectedVersion = _stateVersion };
+            var result = await ServerClient.ClaimDjAsync(LocationKey, request);
+            Debug.WriteLine("[Sync] Claim DJ: ownerId=" + _config.OwnerId + ", result=" + (result.Success ? "200" : "409") + ", version=" + _stateVersion);
+            if (result.Success)
+            {
+                _isLocalDj = true;
+                _stateVersion = result.Data!.CurrentVersion;
+                StartHeartbeatLoop();
+                StopFetchLoop();
+                return true;
+            }
+            PrintChatError("房间已有 DJ 在播放，请稍后再试");
+            return false;
+        }
+
+        private async Task ReleaseDjAsync()
+        {
+            if (!_isLocalDj) return;
+            var request = new ReleaseDjRequest { OwnerId = _config.OwnerId };
+            await ServerClient.ReleaseDjAsync(LocationKey, request);
+            _isLocalDj = false;
+            StopHeartbeatLoop();
+            Debug.WriteLine("[Sync] Release DJ: ownerId=" + _config.OwnerId + ", reason=manual");
+        }
+
+        #endregion
         /// Generates a unique key for the current location.
         public string LocationKey => GetLocationKey();
 
@@ -2076,10 +2280,10 @@ namespace XivMediaPlayer
 
         private void UpdateWatchHistory()
         {
-            if (string.IsNullOrEmpty(_lastStreamURL) || _mediaManager?.ActiveStream == null) return;
+            if (string.IsNullOrEmpty(_lastStreamURL) || _mediaManager?.GetActiveStream() == null) return;
             
-            long time = _mediaManager.ActiveStream.Time;
-            long length = _mediaManager.ActiveStream.Length;
+            long time = _mediaManager.GetActiveStream().Time;
+            long length = _mediaManager.GetActiveStream().Length;
             
             // Only track media that has been watched for at least 5 seconds
             if (time <= 5000) return;
@@ -2270,7 +2474,7 @@ namespace XivMediaPlayer
                     float progress = 0f;
                     bool isPlaying = false;
 
-                    var activeStream = _mediaManager?.ActiveStream;
+                    var activeStream = _mediaManager?.GetActiveStream();
                     if (activeStream != null)
                     {
                         if (activeStream.Length > 0)
@@ -2389,8 +2593,6 @@ namespace XivMediaPlayer
                                 {
                                     float seekProgress = (uv.X - 0.32f) / 0.28f;
                                     activeStream.Time = (long)(seekProgress * activeStream.Length);
-                                    _isLocalDj = true;
-                                    _ = PushMediaToServerAsync(isBackgroundSync: false);
                                 }
                             }
                         }
@@ -2411,7 +2613,7 @@ namespace XivMediaPlayer
                                     _isQueueMenuOpen = false;
                                 } else if (action == "clear") {
                                     _mediaQueue.Clear();
-                                    _ = PushMediaToServerAsync(false);
+            // Deprecated: v2 heartbeat handles pushing state
                                     _queueMenuTextureManager?.UpdateQueue(_mediaQueue, _currentMediaTitle ?? "Nothing Playing");
                                 } else if (action == "paste") {
                                     Thread thread = new Thread(() =>
@@ -2428,11 +2630,11 @@ namespace XivMediaPlayer
                                             {
                                                 _mediaQueue.Enqueue(clip);
                                                 PrintChat($"[媒体播放器] 已添加到队列 ({_mediaQueue.Count}): {clip}", ChatSeverity.Info);
-                                                if (_mediaManager?.ActiveStream == null || _mediaManager.ActiveStream.PlaybackState == NAudio.Wave.PlaybackState.Stopped)
+                                                if (_mediaManager?.GetActiveStream() == null || _mediaManager.GetActiveStream().PlaybackState == NAudio.Wave.PlaybackState.Stopped)
                                                 {
                                                     if (_playerObject != null) PlayRouted(_mediaQueue.Dequeue(), CurrentAudioSource);
                                                 }
-                                                else _ = PushMediaToServerAsync(false);
+                                                // Deprecated: v2 heartbeat handles pushing state
                                                 _queueMenuTextureManager?.UpdateQueue(_mediaQueue, _currentMediaTitle ?? "Nothing Playing");
                                             });
                                         }
@@ -2449,7 +2651,7 @@ namespace XivMediaPlayer
                                         if (idx >= 0 && idx < list.Count) {
                                             list.RemoveAt(idx);
                                             _mediaQueue = new Queue<string>(list);
-                                            _ = PushMediaToServerAsync(false);
+            // Deprecated: v2 heartbeat handles pushing state
                                             _queueMenuTextureManager?.UpdateQueue(_mediaQueue, _currentMediaTitle ?? "Nothing Playing");
                                         }
                                     }
@@ -2524,7 +2726,7 @@ namespace XivMediaPlayer
                                     }
                                     else if (CurrentTvPlacement == null)
                                     {
-                                        CurrentTvPlacement = new Networking.Models.TvPlacement { OwnerId = _config.OwnerId, IsLocked = false };
+                                        CurrentTvPlacement = new TvPlacement { OwnerId = _config.OwnerId, IsLocked = false };
                                         if (!string.IsNullOrEmpty(LocationKey))
                                         {
                                             _screenSettingsWindow.RegisterTvAsync(LocationKey);
@@ -3123,17 +3325,14 @@ namespace XivMediaPlayer
         /// </summary>
         public void SeekRelative(int seconds)
         {
-            var activeStream = _mediaManager?.ActiveStream;
+            var activeStream = _mediaManager?.GetActiveStream();
             if (activeStream == null || activeStream.Length <= 0) return;
 
             long newTime = activeStream.Time + (seconds * 1000L);
             newTime = Math.Clamp(newTime, 0, activeStream.Length);
             activeStream.Time = newTime;
 
-            if (_isLocalDj)
-            {
-                _ = PushMediaToServerAsync(isBackgroundSync: false);
-            }
+            // v2 heartbeat carries new timecode
         }
 
         /// <summary>
@@ -3160,7 +3359,7 @@ namespace XivMediaPlayer
         /// </summary>
         public void TogglePlayPause()
         {
-            var activeStream = _mediaManager?.ActiveStream;
+            var activeStream = _mediaManager?.GetActiveStream();
             if (activeStream == null)
             {
                 return;
@@ -3192,10 +3391,6 @@ namespace XivMediaPlayer
                 _isIntentionallyPaused = false;
             }
 
-            if (_isLocalDj)
-            {
-                _ = PushMediaToServerAsync(isBackgroundSync: false);
-            }
         }
 
         /// <summary>
@@ -3307,7 +3502,7 @@ namespace XivMediaPlayer
         {
             if (string.IsNullOrEmpty(_lastStreamURL) || _playerObject == null) return;
 
-            var activeStream = _mediaManager?.ActiveStream;
+            var activeStream = _mediaManager?.GetActiveStream();
             int currentTimeMs = activeStream != null ? (int)activeStream.Time : 0;
 
             PrintChat("[媒体播放器] 正在刷新媒体...");
@@ -3349,7 +3544,7 @@ namespace XivMediaPlayer
 
             // Save what we were playing
             string savedUrl = _lastStreamURL;
-            var activeStream = _mediaManager?.ActiveStream;
+            var activeStream = _mediaManager?.GetActiveStream();
             int savedTimeMs = activeStream != null ? (int)activeStream.Time : 0;
 
             // Tear down
@@ -3401,6 +3596,9 @@ namespace XivMediaPlayer
         {
             if (_disposed) return;
             _disposed = true;
+            StopHeartbeatLoop();
+            StopFetchLoop();
+            _ = ReleaseDjAsync();
 
             try
             {

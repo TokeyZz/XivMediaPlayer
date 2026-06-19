@@ -1,0 +1,12 @@
+C:\Users\Tokey\Desktop\XivMediaPlayer-main\XivMediaPlayer.Shared\bin\Release\net10.0\XivMediaPlayer.Shared.deps.json
+C:\Users\Tokey\Desktop\XivMediaPlayer-main\XivMediaPlayer.Shared\bin\Release\net10.0\XivMediaPlayer.Shared.dll
+C:\Users\Tokey\Desktop\XivMediaPlayer-main\XivMediaPlayer.Shared\bin\Release\net10.0\XivMediaPlayer.Shared.pdb
+C:\Users\Tokey\Desktop\XivMediaPlayer-main\XivMediaPlayer.Shared\obj\Release\net10.0\XivMediaPlayer.Shared.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Tokey\Desktop\XivMediaPlayer-main\XivMediaPlayer.Shared\obj\Release\net10.0\XivMediaPlayer.Shared.AssemblyInfoInputs.cache
+C:\Users\Tokey\Desktop\XivMediaPlayer-main\XivMediaPlayer.Shared\obj\Release\net10.0\XivMediaPlayer.Shared.AssemblyInfo.cs
+C:\Users\Tokey\Desktop\XivMediaPlayer-main\XivMediaPlayer.Shared\obj\Release\net10.0\XivMediaPlayer.Shared.csproj.CoreCompileInputs.cache
+C:\Users\Tokey\Desktop\XivMediaPlayer-main\XivMediaPlayer.Shared\obj\Release\net10.0\XivMediaPlayer.Shared.sourcelink.json
+C:\Users\Tokey\Desktop\XivMediaPlayer-main\XivMediaPlayer.Shared\obj\Release\net10.0\XivMediaPlayer.Shared.dll
+C:\Users\Tokey\Desktop\XivMediaPlayer-main\XivMediaPlayer.Shared\obj\Release\net10.0\refint\XivMediaPlayer.Shared.dll
+C:\Users\Tokey\Desktop\XivMediaPlayer-main\XivMediaPlayer.Shared\obj\Release\net10.0\XivMediaPlayer.Shared.pdb
+C:\Users\Tokey\Desktop\XivMediaPlayer-main\XivMediaPlayer.Shared\obj\Release\net10.0\ref\XivMediaPlayer.Shared.dll

@@ -17,7 +17,7 @@ namespace XivMediaPlayer.Server.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.8");
 
-            modelBuilder.Entity("XivMediaPlayer.Server.Models.MediaTrackRecord", b =>
+            modelBuilder.Entity("XivMediaPlayer.Shared.Models.MediaTrackRecord", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -47,7 +47,7 @@ namespace XivMediaPlayer.Server.Migrations
                     b.ToTable("MediaTrackRecords");
                 });
 
-            modelBuilder.Entity("XivMediaPlayer.Server.Models.RoomMediaStateSync", b =>
+            modelBuilder.Entity("XivMediaPlayer.Shared.Models.RoomMediaStateSync", b =>
                 {
                     b.Property<string>("LocationKey")
                         .HasColumnType("TEXT");
@@ -81,7 +81,44 @@ namespace XivMediaPlayer.Server.Migrations
                     b.ToTable("RoomMediaStates");
                 });
 
-            modelBuilder.Entity("XivMediaPlayer.Server.Models.TvPlacement", b =>
+            modelBuilder.Entity("XivMediaPlayer.Shared.Models.RoomState", b =>
+                {
+                    b.Property<string>("LocationKey")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CurrentUrl")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("DjHeartbeatUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DjOwnerId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsPlaying")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("QueueJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<float>("SpeedRate")
+                        .HasColumnType("REAL");
+
+                    b.Property<long>("StateVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("TimecodeMs")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("LocationKey");
+
+                    b.ToTable("RoomStates");
+                });
+
+            modelBuilder.Entity("XivMediaPlayer.Shared.Models.TvPlacement", b =>
                 {
                     b.Property<string>("LocationKey")
                         .HasColumnType("TEXT");

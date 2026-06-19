@@ -1,15 +1,18 @@
-using NAudio.Wave;
+﻿using NAudio.Wave;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
+using LibVLCSharp.Shared;
 
 namespace MediaPlayerCore {
   public class MediaManager : IDisposable {
     byte[] _lastFrame = Array.Empty<byte>();
     private bool _invalidated = false;
     private ConcurrentDictionary<string, MediaObject> _playbackStreams = new ConcurrentDictionary<string, MediaObject>();
-    private List<MediaObject> _deadStreams = new List<MediaObject>();
     private FFmpegMediaObject _ffmpegStream;
+    private LibVLC? _sharedLibVLC;
+    private readonly object _vlcInitLock = new();
 
     public event EventHandler<MediaError> OnErrorReceived;
     public event EventHandler OnCleanupTime;
@@ -31,10 +34,28 @@ namespace MediaPlayerCore {
     public int LastFrameHeight { get; set; } = 0;
     public bool Invalidated { get => _invalidated; set => _invalidated = value; }
     
-    public MediaObject? ActiveStream {
+    public MediaObject? GetActiveStream() {
+      var stream = _playbackStreams.Values.FirstOrDefault();
+      if (stream == null || stream.IsDisposed) return null;
+      return stream;
+    }
+
+    public LibVLC SharedLibVLC {
       get {
-        var stream = _playbackStreams.Values.FirstOrDefault();
-        return stream;
+        if (_sharedLibVLC == null) {
+          lock (_vlcInitLock) {
+            if (_sharedLibVLC == null) {
+              Core.Initialize(Path.Combine(_libVLCPath, "libvlc", "win-x64"));
+              var vlcArgs = new List<string> { "--vout=none", "--http-reconnect" };
+              if (!string.IsNullOrEmpty(VlcProxyArgs)) {
+                foreach (var arg in VlcProxyArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                  vlcArgs.Add(arg);
+              }
+              _sharedLibVLC = new LibVLC(vlcArgs.ToArray());
+            }
+          }
+        }
+        return _sharedLibVLC;
       }
     }
 
@@ -44,16 +65,23 @@ namespace MediaPlayerCore {
       _mainPlayer = playerObject;
       _camera = camera;
       _libVLCPath = libVLCPath;
-      _updateLoop = Task.Run(() => Update());
+      _updateLoop = Task.Run(UpdateLoop);
+    }
+
+    private async Task UpdateLoop() {
+      while (notDisposed) {
+        try { UpdateVolumes(_playbackStreams); } catch { }
+        await Task.Delay(100);
+      }
     }
 
     public void PlayStream(IMediaGameObject playerObject, string audioPath, bool spatialAllowed, int startTimeMs = 0, Dictionary<string, string>? httpHeaders = null, bool audioOnly = false) {
       Task.Run(() => {
         try {
+          Debug.WriteLine("[Play] Route: via=direct");
           if (!audioOnly) {
               StopFFmpegStream();
           }
-          OnNewMediaTriggered?.Invoke(this, EventArgs.Empty);
           if (!string.IsNullOrEmpty(audioPath)) {
             ConfigureStream(playerObject, audioPath, spatialAllowed, startTimeMs, httpHeaders, audioOnly);
           }
@@ -65,8 +93,9 @@ namespace MediaPlayerCore {
 
     public long Length {
       get {
-        if (ActiveStream != null) {
-          return ActiveStream.Length;
+        var active = GetActiveStream();
+        if (active != null) {
+          return active.Length;
         }
         return 0;
       }
@@ -79,12 +108,10 @@ namespace MediaPlayerCore {
             try {
                 StopFFmpegStream();
 
-                // Stop all VLC streams synchronously to prevent them from playing concurrently
                 MediaObject[] streams;
                 lock (_playbackStreams) {
                     streams = _playbackStreams.Values.ToArray();
                     _playbackStreams.Clear();
-                    streams = streams.Concat(_deadStreams).ToArray();
                 }
                 foreach (var stream in streams) {
                     try { stream?.Dispose(); } catch { }
@@ -92,9 +119,7 @@ namespace MediaPlayerCore {
 
                 OnNewMediaTriggered?.Invoke(this, EventArgs.Empty);
                 
-                // _libVLCPath is e.g. ConfigDir/Dependencies
                 string ffmpegPath = Path.Combine(_libVLCPath, "ffmpeg.exe");
-
                 _ffmpegStream = new FFmpegMediaObject(this, ffmpegPath);
                 _ffmpegStream.OnErrorReceived += MediaManager_OnErrorReceived;
                 _ffmpegStream.PlaybackStopped += FFmpegStream_PlaybackStopped;
@@ -134,38 +159,23 @@ namespace MediaPlayerCore {
     }
 
     public void StopStream() {
-      // Copy references before clearing to avoid collection modification issues
       MediaObject[] streams;
       lock (_playbackStreams) {
           streams = _playbackStreams.Values.ToArray();
           _playbackStreams.Clear();
-          streams = streams.Concat(_deadStreams).ToArray();
       }
-      // VLC's Stop() is synchronous and blocks — run on background thread
       Task.Run(() => {
         StopFFmpegStream();
         foreach (var stream in streams) {
-          try {
-            stream?.Dispose();
-          } catch { }
+          try { stream?.Dispose(); } catch { }
         }
       });
     }
 
     public bool IsAllowedToStartStream(IMediaGameObject playerObject) {
-      if (_playbackStreams.ContainsKey(playerObject.Name)) {
-        return true;
-      } else {
-        if (_playbackStreams.Count == 0) {
-          return true;
-        } else {
-          foreach (string key in _playbackStreams.Keys) {
-            bool noStream = _playbackStreams[key].PlaybackState == PlaybackState.Stopped;
-            return noStream;
-          }
-        }
-      }
-      return false;
+      if (_playbackStreams.ContainsKey(playerObject.Name)) return true;
+      if (_playbackStreams.Count == 0) return true;
+      return _playbackStreams.Values.All(s => s.PlaybackState == PlaybackState.Stopped);
     }
 
     public void ConfigureStream(IMediaGameObject playerObject, string audioPath, bool spatialAllowed, int startTimeMs, Dictionary<string, string>? httpHeaders = null, bool audioOnly = false) {
@@ -175,7 +185,7 @@ namespace MediaPlayerCore {
           
           lock (_playbackStreams) {
               if (!_playbackStreams.TryGetValue(playerObject.Name, out stream)) {
-                  stream = new MediaObject(this, playerObject, _camera, SoundType.Livestream, audioPath, _libVLCPath, spatialAllowed, audioOnly);
+                  stream = new MediaObject(this, playerObject, _camera, SoundType.Livestream, audioPath, spatialAllowed, audioOnly);
                   _playbackStreams[playerObject.Name] = stream;
                   isNew = true;
               }
@@ -188,22 +198,13 @@ namespace MediaPlayerCore {
                  OnPlaybackFinished?.Invoke(this, e);
               };
               stream.Play(audioPath, _livestreamVolume, startTimeMs, httpHeaders);
+              OnNewMediaTriggered?.Invoke(this, EventArgs.Empty);
             }
           } else {
              stream.ChangeVideoStream(audioPath, LastFrameWidth, startTimeMs, httpHeaders);
           }
       }
     }
-
-    private void Update() {
-      while (notDisposed) {
-        try {
-          UpdateVolumes(_playbackStreams);
-        } catch { }
-        Thread.Sleep(100);
-      }
-    }
-
     public void UpdateVolumes(ConcurrentDictionary<string, MediaObject> sounds) {
       for (int i = 0; i < sounds.Count; i++) {
         lock (sounds) {
@@ -248,7 +249,6 @@ namespace MediaPlayerCore {
               float direction = AngleDir(_camera.Forward, dir, _camera.Top);
               _ffmpegStream.Pan = direction;
               
-              // Copy of CalculateObjectVolume logic for FFmpeg stream
               float maxDistance = 100;
               float volume = _livestreamVolume;
               float distance = Vector3.Distance(GetListeningPosition(), _ffmpegStream.CharacterObject.Position);
@@ -268,10 +268,7 @@ namespace MediaPlayerCore {
       float volume = _livestreamVolume;
       float distance = Vector3.Distance(GetListeningPosition(), mediaObject.CharacterObject.Position);
       
-      // Calculate linear attenuation
       float attenuation = Math.Clamp((maxDistance - distance) / maxDistance, 0f, 1f);
-      
-      // Apply an exponential curve to make the volume drop off more naturally over distance
       float exponentialAttenuation = (float)Math.Pow(attenuation, 2.0);
       
       return Math.Clamp(volume * exponentialAttenuation, 0f, 1f);
@@ -290,7 +287,7 @@ namespace MediaPlayerCore {
     public void CleanSounds() {
       try {
         lock (_playbackStreams) {
-            var allStreamsToDispose = _playbackStreams.Values.Concat(_deadStreams).ToArray();
+            var allStreamsToDispose = _playbackStreams.Values.ToArray();
             foreach (var sound in allStreamsToDispose) {
               if (sound != null) {
                 sound.Invalidated = true;
@@ -299,7 +296,6 @@ namespace MediaPlayerCore {
               }
             }
             _playbackStreams?.Clear();
-            _deadStreams.Clear();
         }
         lock (FrameLock) {
           _lastFrame = Array.Empty<byte>();
@@ -318,6 +314,38 @@ namespace MediaPlayerCore {
       try {
         _updateLoop?.Wait(TimeSpan.FromSeconds(2));
       } catch { }
+      try { _sharedLibVLC?.Dispose(); } catch { }
     }
+
+    public void SeekStream(long timeMs) {
+      var active = GetActiveStream();
+      active?.Seek(timeMs);
+    }
+
+    public void PauseActiveStream() {
+      GetActiveStream()?.Pause();
+    }
+
+    public void ResumeActiveStream() {
+      GetActiveStream()?.Resume();
+    }
+
+    public MediaSnapshot? GetSnapshot() {
+      var active = GetActiveStream();
+      if (active == null) return null;
+      return new MediaSnapshot {
+        Url = active.SoundPath,
+        TimeMs = active.Time,
+        IsPlaying = active.PlaybackState == PlaybackState.Playing,
+        VlcState = active.VlcState
+      };
+    }
+  }
+
+  public class MediaSnapshot {
+    public string Url { get; init; } = "";
+    public long TimeMs { get; init; }
+    public bool IsPlaying { get; init; }
+    public VLCState VlcState { get; init; }
   }
 }

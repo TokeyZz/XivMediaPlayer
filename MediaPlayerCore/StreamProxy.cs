@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -15,10 +16,6 @@ namespace MediaPlayerCore
         private static readonly Lazy<StreamProxy> _instance = new Lazy<StreamProxy>(() => new StreamProxy());
         public static StreamProxy Instance => _instance.Value;
 
-        /// <summary>
-        /// WebProxy to use for all outbound HttpClient requests.
-        /// Set from plugin config. Null = use system default.
-        /// </summary>
         public static System.Net.IWebProxy? OutboundProxy { get; set; }
 
         private HttpListener _listener;
@@ -32,13 +29,28 @@ namespace MediaPlayerCore
             public string PreFetchedM3u8Content { get; set; }
             public Dictionary<string, string> Headers { get; set; }
             public HttpClient Client { get; set; }
+            public DateTime LastAccessedUtc { get; set; } = DateTime.UtcNow;
         }
 
         private StreamProxy()
         {
-            _port = 40000 + new Random().Next(1000);
-            _listener = new HttpListener();
-            _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
+            var rng = new Random();
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                _port = 40000 + rng.Next(1000, 5000);
+                _listener = new HttpListener();
+                _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
+                try
+                {
+                    _listener.Start();
+                    break;
+                }
+                catch
+                {
+                    _listener.Close();
+                    if (attempt == 4) throw;
+                }
+            }
             _cts = new CancellationTokenSource();
         }
 
@@ -52,7 +64,7 @@ namespace MediaPlayerCore
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[StreamProxy] Failed to start listener: {ex.Message}");
+                Debug.WriteLine($"[StreamProxy] Failed to start listener: {ex.Message}");
             }
         }
 
@@ -60,9 +72,10 @@ namespace MediaPlayerCore
         {
             Start();
             string sessionId = Guid.NewGuid().ToString("N");
+            Debug.WriteLine($"[StreamProxy] Session: action=create, id={sessionId}");
             
             var handler = new HttpClientHandler();
-            handler.UseCookies = false; // We are manually injecting the Cookie header
+            handler.UseCookies = false;
             if (OutboundProxy != null) handler.Proxy = OutboundProxy;
             if (handler.SupportsAutomaticDecompression)
             {
@@ -108,6 +121,7 @@ namespace MediaPlayerCore
         {
             if (string.IsNullOrEmpty(mediaUrl)) return string.Empty;
             string sessionId = Guid.NewGuid().ToString("N");
+            Debug.WriteLine($"[StreamProxy] Session: action=create, id={sessionId}");
 
             var handler = new HttpClientHandler { UseCookies = true, AutomaticDecompression = DecompressionMethods.All };
             if (OutboundProxy != null) handler.Proxy = OutboundProxy;
@@ -133,10 +147,6 @@ namespace MediaPlayerCore
             return $"http://127.0.0.1:{_port}/proxy_media?sid={sessionId}&target={Uri.EscapeDataString(targetBase64)}";
         }
 
-        /// <summary>
-        /// Attempts to recover the original upstream URL from a proxy session ID.
-        /// Returns null if the session is not found or has expired.
-        /// </summary>
         public string GetOriginalUrl(string sessionId)
         {
             if (!string.IsNullOrEmpty(sessionId) && _sessions.TryGetValue(sessionId, out var session))
@@ -146,6 +156,21 @@ namespace MediaPlayerCore
             return null;
         }
 
+        public void CleanupExpiredSessions()
+        {
+            var cutoff = DateTime.UtcNow - TimeSpan.FromMinutes(30);
+            foreach (var kvp in _sessions)
+            {
+                if (kvp.Value.LastAccessedUtc < cutoff)
+                {
+                    if (_sessions.TryRemove(kvp.Key, out var session))
+                    {
+                        Debug.WriteLine($"[StreamProxy] Session: action=expire, id={kvp.Key}");
+                        try { session.Client?.Dispose(); } catch { }
+                    }
+                }
+            }
+        }
         private async Task AcceptLoop(CancellationToken token)
         {
             while (!token.IsCancellationRequested)
@@ -171,14 +196,16 @@ namespace MediaPlayerCore
 
                 if (string.IsNullOrEmpty(sid) || !_sessions.TryGetValue(sid, out var session))
                 {
+                    CleanupExpiredSessions();
                     res.StatusCode = 404;
                     res.Close();
                     return;
                 }
 
+                session.LastAccessedUtc = DateTime.UtcNow;
+
                 if (path == "/stream.m3u8")
                 {
-                    // Fetch original m3u8
                     string m3u8Url = req.QueryString["target"] != null 
                         ? Encoding.UTF8.GetString(Convert.FromBase64String(req.QueryString["target"]))
                         : session.OriginalM3u8Url;
@@ -198,13 +225,12 @@ namespace MediaPlayerCore
                         } 
                         catch (Exception netEx)
                         {
-                            res.StatusCode = 502; // Bad Gateway
+                            res.StatusCode = 502;
                             res.Close();
                             return;
                         }
                     }
 
-                    // Rewrite URLs
                     Uri baseUri = new Uri(m3u8Url);
                     var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                     var sb = new StringBuilder();
@@ -217,7 +243,6 @@ namespace MediaPlayerCore
                         }
                         else
                         {
-                            // This is a URL
                             Uri absoluteUrl;
                             if (!Uri.TryCreate(baseUri, line, out absoluteUrl))
                             {
@@ -232,7 +257,6 @@ namespace MediaPlayerCore
                             }
                             else
                             {
-                                // Let VLC fetch .ts files directly
                                 sb.AppendLine(absoluteUrl.ToString());
                             }
                         }
@@ -278,18 +302,17 @@ namespace MediaPlayerCore
 
                     if (response.StatusCode == HttpStatusCode.OK && requestedOffset > 0)
                     {
-                        // SERVER IGNORED RANGE REQUEST. WE MUST MANUALLY DISCARD BYTES.
                         long bytesToDiscard = requestedOffset;
-                        byte[] discardBuffer = new byte[81920]; // 80KB buffer
+                        byte[] discardBuffer = new byte[81920];
                         while (bytesToDiscard > 0)
                         {
                             int toRead = (int)Math.Min(bytesToDiscard, discardBuffer.Length);
                             int read = await stream.ReadAsync(discardBuffer, 0, toRead);
-                            if (read == 0) break; // EOF
+                            if (read == 0) break;
                             bytesToDiscard -= read;
                         }
 
-                        res.StatusCode = 206; // Trick VLC into thinking the server honored the Range request
+                        res.StatusCode = 206;
                         long totalLength = response.Content.Headers.ContentLength ?? 0;
                         if (totalLength > 0)
                         {
@@ -329,13 +352,15 @@ namespace MediaPlayerCore
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[StreamProxy] Error handling request: {ex.Message}");
+                Debug.WriteLine($"[StreamProxy] Error handling request: {ex.Message}");
                 try { context.Response.StatusCode = 500; } catch { }
             }
             finally
             {
                 try { context.Response.Close(); } catch { }
             }
+
+            CleanupExpiredSessions();
         }
 
         public void Dispose()

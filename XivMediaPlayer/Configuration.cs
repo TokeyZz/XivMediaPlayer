@@ -50,7 +50,7 @@ namespace XivMediaPlayer {
     public bool OnlySafeDomainsPublicScreens { get => _onlySafeDomainsPublicScreens; set => _onlySafeDomainsPublicScreens = value; }
     public bool SpatialAudioEnabled { get => _spatialAudioEnabled; set => _spatialAudioEnabled = value; }
     public bool ShowOutdoorGridDebug { get; set; } = false;
-    public bool HasAutoDetectedAMD_v2 { get; set; } = false;
+
     public bool DepthOcclusionEnabled { get; set; } = true;
     public bool DisableUIBlockDetection { get; set; } = false;
     public bool AutoResumeMedia { get; set; } = true;
@@ -70,7 +70,7 @@ namespace XivMediaPlayer {
     public Dictionary<string, RoomMediaState> RoomMediaStates { get; set; } = new Dictionary<string, RoomMediaState>();
     public Dictionary<string, MediaHistoryEntry> WatchHistory { get; set; } = new Dictionary<string, MediaHistoryEntry>();
 
-    public string ServerUrl { get; set; } = "http://24.77.70.65:5000";
+    public string ServerUrl { get; set; } = "";
 
     // Unique identity for the local user to establish TV ownership
     public string OwnerId { get; set; } = Guid.NewGuid().ToString();

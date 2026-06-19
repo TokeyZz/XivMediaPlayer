@@ -20,7 +20,7 @@ namespace XivMediaPlayer.Server.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.8");
 
-            modelBuilder.Entity("XivMediaPlayer.Server.Models.RoomMediaStateSync", b =>
+            modelBuilder.Entity("XivMediaPlayer.Shared.Models.RoomMediaStateSync", b =>
                 {
                     b.Property<string>("LocationKey")
                         .HasColumnType("TEXT");
@@ -54,7 +54,7 @@ namespace XivMediaPlayer.Server.Migrations
                     b.ToTable("RoomMediaStates");
                 });
 
-            modelBuilder.Entity("XivMediaPlayer.Server.Models.TvPlacement", b =>
+            modelBuilder.Entity("XivMediaPlayer.Shared.Models.TvPlacement", b =>
                 {
                     b.Property<string>("LocationKey")
                         .HasColumnType("TEXT");
