@@ -205,17 +205,28 @@ namespace MediaPlayerCore {
     public void Play(string mediaPath, float volume, int startTimeMs, Dictionary<string, string>? httpHeaders) {
       Task.Run(async delegate {
         try {
-          if (!string.IsNullOrEmpty(mediaPath) && PlaybackState == PlaybackState.Stopped) {
-            try {
-              lock (_parent.FrameLock) {
-                _parent.LastFrame = Array.Empty<byte>();
-                _parent.LastFrameWidth = 0;
-                _parent.LastFrameHeight = 0;
-                _parent.LastFrameCount++;
-              }
-              Debug.WriteLine($"[MediaObject] Media path: {mediaPath.Substring(0, Math.Min(100, mediaPath.Length))}...");
+          if (string.IsNullOrEmpty(mediaPath)) {
+            Debug.WriteLine("[MediaObject] Play SKIPPED: mediaPath is empty");
+            return;
+          }
+          if (PlaybackState != PlaybackState.Stopped) {
+            Debug.WriteLine($"[MediaObject] Play SKIPPED: state={PlaybackState}, not Stopped");
+            return;
+          }
+          try {
+            var shortPath = mediaPath.Length > 120 ? mediaPath[..120] + "..." : mediaPath;
+            Debug.WriteLine($"[MediaObject] Play START: path={shortPath}, vol={volume}, startMs={startTimeMs}");
+            var sw = System.Diagnostics.Stopwatch.StartNew();
 
-              var libVLC = _parent.SharedLibVLC;
+            lock (_parent.FrameLock) {
+              _parent.LastFrame = Array.Empty<byte>();
+              _parent.LastFrameWidth = 0;
+              _parent.LastFrameHeight = 0;
+              _parent.LastFrameCount++;
+            }
+
+            var libVLC = _parent.SharedLibVLC;
+            Debug.WriteLine($"[MediaObject] Got SharedLibVLC: {libVLC.GetHashCode()}, took {sw.ElapsedMilliseconds}ms");
               string userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
               _vlcLogHandler = (s, e) => {
@@ -262,10 +273,12 @@ namespace MediaPlayerCore {
                   media.AddOption($":http-referrer={mediaReferer}");
               }
 
-              Debug.WriteLine("[MediaObject] Parsing media...");
+              Debug.WriteLine("[MediaObject] Creating Media, about to Parse...");
+              var parseSw = System.Diagnostics.Stopwatch.StartNew();
               await media.Parse(mediaPath.StartsWith("http") || mediaPath.StartsWith("rtmp") || mediaPath.StartsWith("rtsp")
                 ? MediaParseOptions.ParseNetwork : MediaParseOptions.ParseLocal);
-              Debug.WriteLine($"[MediaObject] Media parsed. Duration: {media.Duration}ms");
+              parseSw.Stop();
+              Debug.WriteLine($"[MediaObject] Media parsed OK: duration={media.Duration}ms, tracks={media.Tracks?.Length ?? 0}, parsed in {parseSw.ElapsedMilliseconds}ms");
 
               lock (_disposeLock) {
                 if (_disposed) {
@@ -337,11 +350,14 @@ namespace MediaPlayerCore {
               _baseVolume = volume;
               Volume = volume;
 
+              sw.Stop();
+              Debug.WriteLine($"[MediaObject] About to call VLC Play(), setup took {sw.ElapsedMilliseconds}ms");
               bool playResult = _vlcPlayer.Play();
-              Debug.WriteLine($"[MediaObject] VLC Play() returned: {playResult}");
+              Debug.WriteLine($"[MediaObject] VLC Play() returned: {playResult}, totalPlaySetup={sw.ElapsedMilliseconds}ms");
               _vlcWasAbleToStart = playResult;
 
               if (!playResult) {
+                Debug.WriteLine("[MediaObject] VLC Play() FAILED — returning false!");
                 OnErrorReceived?.Invoke(this, new MediaError() { Exception = new Exception("VLC Play() returned false — playback failed to start.") });
               }
             } catch (Exception e) {
@@ -349,10 +365,7 @@ namespace MediaPlayerCore {
               OnErrorReceived?.Invoke(this, new MediaError() { Exception = e });
               PlaybackStopped?.Invoke(this, "OK");
             }
-          } else {
-            Debug.WriteLine($"[MediaObject] Play skipped. mediaPath empty={string.IsNullOrEmpty(mediaPath)}, state={PlaybackState}");
-          }
-        } catch (Exception e) {
+          } catch (Exception e) {
           Debug.WriteLine($"[MediaObject] Outer play exception: {e}");
           OnErrorReceived?.Invoke(this, new MediaError() { Exception = e });
           PlaybackStopped?.Invoke(this, "ERR");
@@ -360,6 +373,8 @@ namespace MediaPlayerCore {
       });
     }
     public void ChangeVideoStream(string soundPath, float width, int startTimeMs = 0, Dictionary<string, string>? httpHeaders = null) {
+      var shortPath = soundPath?.Length > 120 ? soundPath[..120] + "..." : soundPath;
+      Debug.WriteLine($"[MediaObject] ChangeVideoStream START: path={shortPath}");
       Task.Run(async delegate {
         try {
           if (_vlcPlayer != null) {

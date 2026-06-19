@@ -231,20 +231,27 @@ namespace XivMediaPlayer.Networking
             catch (Exception ex) { _log.Error(ex, $"[Net] ClaimDj failed for {locationKey}"); return ApiResult<ClaimDjResponse>.Fail(ex.Message); }
         }
 
+        /// <summary>
+        /// Heartbeat is fire-and-forget — never retry, because a retry with a stale
+        /// StateVersion after the server already processed the first attempt would
+        /// trigger a false 409 "DJ lost" response.
+        /// </summary>
         public async Task<ApiResult<HeartbeatResponse>> HeartbeatAsync(string locationKey, HeartbeatRequest request)
         {
             try
             {
                 var url = $"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/heartbeat";
-                var response = await SendPostWithRetryAsync(url, request);
-                if (response == null)
-                    return ApiResult<HeartbeatResponse>.Fail("[Net] Heartbeat: no response after retries");
+                var response = await _httpClient.PostAsJsonAsync(url, request);
                 if (response.IsSuccessStatusCode)
                     return await response.Content.ReadFromJsonAsync<ApiResult<HeartbeatResponse>>()
                         ?? ApiResult<HeartbeatResponse>.Fail("Empty response");
+                if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+                    return await response.Content.ReadFromJsonAsync<ApiResult<HeartbeatResponse>>()
+                        ?? ApiResult<HeartbeatResponse>.Fail("Version conflict");
                 return ApiResult<HeartbeatResponse>.Fail($"Unexpected status: {response.StatusCode}");
             }
-            catch (Exception ex) { _log.Error(ex, $"[Net] Heartbeat failed for {locationKey}"); return ApiResult<HeartbeatResponse>.Fail(ex.Message); }
+            catch (TaskCanceledException) { return ApiResult<HeartbeatResponse>.Fail("[Net] Heartbeat timeout"); }
+            catch (Exception ex) { return ApiResult<HeartbeatResponse>.Fail(ex.Message); }
         }
 
         public async Task<ApiResult<ClaimDjResponse>> ReleaseDjAsync(string locationKey, ReleaseDjRequest request)

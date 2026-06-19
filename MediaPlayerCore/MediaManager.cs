@@ -84,16 +84,16 @@ namespace MediaPlayerCore {
     }
 
     public void PlayStream(IMediaGameObject playerObject, string audioPath, bool spatialAllowed, int startTimeMs = 0, Dictionary<string, string>? httpHeaders = null, bool audioOnly = false) {
+      var shortPath = audioPath?.Length > 120 ? audioPath[..120] + "..." : audioPath;
+      Debug.WriteLine($"[Play] PlayStream called: path={shortPath}, spatial={spatialAllowed}, startMs={startTimeMs}, audioOnly={audioOnly}");
       Task.Run(() => {
         try {
-          Debug.WriteLine("[Play] Route: via=direct");
-          if (!audioOnly) {
-              StopFFmpegStream();
-          }
+          if (!audioOnly) StopFFmpegStream();
           if (!string.IsNullOrEmpty(audioPath)) {
             ConfigureStream(playerObject, audioPath, spatialAllowed, startTimeMs, httpHeaders, audioOnly);
           }
         } catch (Exception e) {
+          Debug.WriteLine($"[Play] PlayStream exception: {e.Message}");
           OnErrorReceived?.Invoke(this, new MediaError() { Exception = e });
         }
       });
@@ -187,38 +187,42 @@ namespace MediaPlayerCore {
     }
 
     public void ConfigureStream(IMediaGameObject playerObject, string audioPath, bool spatialAllowed, int startTimeMs, Dictionary<string, string>? httpHeaders = null, bool audioOnly = false) {
-      if (playerObject != null) {
-          MediaObject stream = null;
-          bool isNew = false;
-          
-          lock (_playbackStreams) {
-              // Ensure we only ever have ONE active video stream decoding to the LastFrame buffer.
-              foreach (var kvp in _playbackStreams.ToList()) {
-                  if (kvp.Key != playerObject.Name) {
-                      kvp.Value.Stop();
-                      _playbackStreams.TryRemove(kvp.Key, out _);
-                  }
-              }
+      if (playerObject == null) { Debug.WriteLine("[Play] ConfigureStream: playerObject is NULL!"); return; }
+      var shortPath = audioPath?.Length > 120 ? audioPath[..120] + "..." : audioPath;
+      MediaObject stream = null;
+      bool isNew = false;
 
-              if (!_playbackStreams.TryGetValue(playerObject.Name, out stream)) {
-                  stream = new MediaObject(this, playerObject, _camera, SoundType.Livestream, audioPath, spatialAllowed, audioOnly);
-                  _playbackStreams[playerObject.Name] = stream;
-                  isNew = true;
+      lock (_playbackStreams) {
+          foreach (var kvp in _playbackStreams.ToList()) {
+              if (kvp.Key != playerObject.Name) {
+                  Debug.WriteLine($"[Play] ConfigureStream: stopping old stream key={kvp.Key}");
+                  kvp.Value.Stop();
+                  _playbackStreams.TryRemove(kvp.Key, out _);
               }
           }
 
-          if (isNew) {
-            lock (stream) {
-              stream.OnErrorReceived += MediaManager_OnErrorReceived;
-              stream.PlaybackFinished += (s, e) => {
-                 OnPlaybackFinished?.Invoke(this, e);
-              };
-              stream.Play(audioPath, _livestreamVolume, startTimeMs, httpHeaders);
-              OnNewMediaTriggered?.Invoke(this, EventArgs.Empty);
-            }
+          if (!_playbackStreams.TryGetValue(playerObject.Name, out stream)) {
+              Debug.WriteLine($"[Play] ConfigureStream: creating NEW stream name={playerObject.Name}, path={shortPath}");
+              stream = new MediaObject(this, playerObject, _camera, SoundType.Livestream, audioPath, spatialAllowed, audioOnly);
+              _playbackStreams[playerObject.Name] = stream;
+              isNew = true;
           } else {
-             stream.ChangeVideoStream(audioPath, LastFrameWidth, startTimeMs, httpHeaders);
+              Debug.WriteLine($"[Play] ConfigureStream: reusing EXISTING stream name={playerObject.Name}");
           }
+      }
+
+      if (isNew) {
+        lock (stream) {
+          stream.OnErrorReceived += MediaManager_OnErrorReceived;
+          stream.PlaybackFinished += (s, e) => { OnPlaybackFinished?.Invoke(this, e); };
+          Debug.WriteLine($"[Play] ConfigureStream: calling stream.Play(path={shortPath}, vol={_livestreamVolume}, startMs={startTimeMs})");
+          stream.Play(audioPath, _livestreamVolume, startTimeMs, httpHeaders);
+          Debug.WriteLine("[Play] ConfigureStream: stream.Play() returned, firing OnNewMediaTriggered");
+          OnNewMediaTriggered?.Invoke(this, EventArgs.Empty);
+        }
+      } else {
+         Debug.WriteLine($"[Play] ConfigureStream: calling ChangeVideoStream(path={shortPath}, width={LastFrameWidth})");
+         stream.ChangeVideoStream(audioPath, LastFrameWidth, startTimeMs, httpHeaders);
       }
     }
     public void UpdateVolumes(ConcurrentDictionary<string, MediaObject> sounds) {
