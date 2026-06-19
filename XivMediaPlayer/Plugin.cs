@@ -1399,7 +1399,8 @@ namespace XivMediaPlayer
                 _consecutiveLocalFailures = 0;
                 _consecutiveSyncFailures = 0;
                 PrintChat("[媒体播放器] 正在启动流...");
-                _mediaErrorCount = 0; // Reset errors on successful start
+                _mediaErrorCount = 0;
+                _mediaErrorRetryDelayMs = 5000; // Reset backoff
             });
         }
 
@@ -2033,7 +2034,7 @@ namespace XivMediaPlayer
                         }
                     }
                 }
-                catch (Exception ex) { Debug.WriteLine("[Sync] Heartbeat error: " + ex.Message); }
+                catch (Exception ex) { _pluginLog.Warning(ex, "[Sync] Heartbeat loop error"); }
             }
         }
 
@@ -2108,7 +2109,7 @@ namespace XivMediaPlayer
                         }
                     }
                 }
-                catch (Exception ex) { Debug.WriteLine("[Sync] Fetch error: " + ex.Message); }
+                catch (Exception ex) { _pluginLog.Warning(ex, "[Sync] Fetch loop error"); }
             }
         }
 
@@ -2262,14 +2263,14 @@ namespace XivMediaPlayer
 
         private DateTime _lastMediaRefreshTime = DateTime.MinValue;
 
+        private int _mediaErrorRetryDelayMs = 5000; // starts at 5s, doubles each retry
+
         private void OnMediaError(object? sender, MediaError e)
         {
             string errorMsg = e.Exception?.Message ?? string.Empty;
 
-            // Log ALL errors — never silently discard them
             _pluginLog.Warning(e.Exception, $"[VLC] Error: {errorMsg}");
 
-            // Ignore harmless VLC internal warnings that don't affect playback
             if (errorMsg.Contains("Failed to set on top", StringComparison.OrdinalIgnoreCase))
                 return;
 
@@ -2277,25 +2278,27 @@ namespace XivMediaPlayer
                 return;
 
             _lastMediaErrorTime = DateTime.UtcNow;
-
-            // Cooldown: don't retry more than once every 10 seconds
-            if ((DateTime.UtcNow - _lastMediaRefreshTime).TotalSeconds < 10)
-                return;
-            _lastMediaRefreshTime = DateTime.UtcNow;
-
             _mediaErrorCount++;
-            if (_mediaErrorCount < 5)
+
+            int maxRetries = 10;
+            if (_mediaErrorCount < maxRetries)
             {
-                RequestRefreshCurrentMedia();
-            }
-            else if (_mediaErrorCount == 5)
-            {
-                PrintChatError("[媒体播放器] 多次尝试后仍无法播放媒体");
-                EnqueueFrameworkAction(() =>
+                // Exponential backoff: 5s, 10s, 20s, 40s, 80s, 160s...
+                int delay = _mediaErrorRetryDelayMs;
+                _mediaErrorRetryDelayMs *= 2;
+                _pluginLog.Information($"[VLC] Error #{_mediaErrorCount}/{maxRetries}, retrying in {delay / 1000}s");
+                Task.Delay(delay).ContinueWith(_ =>
                 {
-                    _mediaManager?.StopStream();
-                    ResetStreamValues();
+                    if (_mediaManager?.GetActiveStream() != null)
+                        RequestRefreshCurrentMedia();
                 });
+            }
+            else if (_mediaErrorCount == maxRetries)
+            {
+                PrintChatError($"[媒体播放器] {maxRetries}次尝试后仍无法播放，正在重启播放内核...");
+                _mediaErrorCount = 0;
+                _mediaErrorRetryDelayMs = 5000;
+                EnqueueFrameworkAction(() => RequestKillAndRestart());
             }
         }
 

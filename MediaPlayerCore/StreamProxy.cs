@@ -80,38 +80,7 @@ namespace MediaPlayerCore
             string sessionId = Guid.NewGuid().ToString("N");
             Debug.WriteLine($"[StreamProxy] Session: action=create, id={sessionId}");
             
-            var handler = new HttpClientHandler();
-            handler.UseCookies = false;
-            if (OutboundProxy != null) handler.Proxy = OutboundProxy;
-            if (handler.SupportsAutomaticDecompression)
-            {
-                handler.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
-            }
-
-            var client = new HttpClient(handler);
-            bool hasUserAgent = false;
-            bool hasAccept = false;
-            if (headers != null)
-            {
-                foreach (var kvp in headers)
-                {
-                    if (kvp.Key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase)) hasUserAgent = true;
-                    if (kvp.Key.Equals("Accept", StringComparison.OrdinalIgnoreCase)) hasAccept = true;
-                    try { client.DefaultRequestHeaders.TryAddWithoutValidation(kvp.Key, kvp.Value); } catch { }
-                }
-            }
-            if (!hasUserAgent)
-            {
-                client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-            }
-            if (!hasAccept)
-            {
-                client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "*/*");
-            }
-            client.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Fetch-Site", "cross-site");
-            client.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Fetch-Mode", "cors");
-            client.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Fetch-Dest", "empty");
-            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
+            var client = CreateClient(headers);
 
             _sessions[sessionId] = new ProxySession
             {
@@ -129,23 +98,7 @@ namespace MediaPlayerCore
             string sessionId = Guid.NewGuid().ToString("N");
             Debug.WriteLine($"[StreamProxy] Session: action=create, id={sessionId}");
 
-            var handler = new HttpClientHandler { UseCookies = true, AutomaticDecompression = DecompressionMethods.All };
-            if (OutboundProxy != null) handler.Proxy = OutboundProxy;
-            var client = new HttpClient(handler);
-            bool hasUserAgent = false;
-            bool hasAccept = false;
-
-            if (headers != null)
-            {
-                foreach (var kvp in headers)
-                {
-                    if (kvp.Key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase)) hasUserAgent = true;
-                    if (kvp.Key.Equals("Accept", StringComparison.OrdinalIgnoreCase)) hasAccept = true;
-                    try { client.DefaultRequestHeaders.TryAddWithoutValidation(kvp.Key, kvp.Value); } catch { }
-                }
-            }
-            if (!hasUserAgent) client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0");
-            if (!hasAccept) client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "*/*");
+            var client = CreateClient(headers);
 
             _sessions[sessionId] = new ProxySession { OriginalM3u8Url = mediaUrl, Headers = headers, Client = client };
 
@@ -177,6 +130,39 @@ namespace MediaPlayerCore
                 }
             }
         }
+
+        private static HttpClient CreateClient(Dictionary<string, string>? headers)
+        {
+            var handler = new HttpClientHandler { UseCookies = false };
+            if (OutboundProxy != null) handler.Proxy = OutboundProxy;
+            handler.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
+            var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
+            bool hasUA = false, hasAccept = false;
+            if (headers != null)
+            {
+                foreach (var kvp in headers)
+                {
+                    if (kvp.Key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase)) hasUA = true;
+                    if (kvp.Key.Equals("Accept", StringComparison.OrdinalIgnoreCase)) hasAccept = true;
+                    try { client.DefaultRequestHeaders.TryAddWithoutValidation(kvp.Key, kvp.Value); } catch { }
+                }
+            }
+            if (!hasUA) client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            if (!hasAccept) client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "*/*");
+            return client;
+        }
+
+        private static async Task<HttpResponseMessage?> FetchWithRetry(HttpClient client, string url, int maxRetries = 2)
+        {
+            for (int attempt = 0; attempt <= maxRetries; attempt++)
+            {
+                try { return await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead); }
+                catch (TaskCanceledException) { if (attempt >= maxRetries) return null; await Task.Delay(500 * (attempt + 1)); }
+                catch (HttpRequestException) { if (attempt >= maxRetries) return null; await Task.Delay(500 * (attempt + 1)); }
+            }
+            return null;
+        }
+
         private async Task AcceptLoop(CancellationToken token)
         {
             while (!token.IsCancellationRequested)
@@ -186,7 +172,7 @@ namespace MediaPlayerCore
                     var context = await _listener.GetContextAsync();
                     _ = Task.Run(() => HandleRequest(context));
                 }
-                catch { }
+                catch (Exception ex) { Debug.WriteLine($"[StreamProxy] AcceptLoop error: {ex.Message}"); }
             }
         }
 
@@ -197,6 +183,7 @@ namespace MediaPlayerCore
                 var req = context.Request;
                 var res = context.Response;
 
+                Debug.WriteLine($"[StreamProxy] Request: {req.Url.LocalPath} from {req.RemoteEndPoint}");
                 string path = req.Url.LocalPath;
                 string sid = req.QueryString["sid"];
 
@@ -223,18 +210,15 @@ namespace MediaPlayerCore
                     }
                     else
                     {
-                        try 
+                        var m3u8Response = await FetchWithRetry(session.Client, m3u8Url);
+                        if (m3u8Response == null || !m3u8Response.IsSuccessStatusCode)
                         {
-                            var response = await session.Client.GetAsync(m3u8Url);
-                            response.EnsureSuccessStatusCode();
-                            text = await response.Content.ReadAsStringAsync();
-                        } 
-                        catch (Exception netEx)
-                        {
+                            Debug.WriteLine($"[StreamProxy] Proxy error: 502 for {m3u8Url}");
                             res.StatusCode = 502;
                             res.Close();
                             return;
                         }
+                        text = await m3u8Response.Content.ReadAsStringAsync();
                     }
 
                     Uri baseUri = new Uri(m3u8Url);
@@ -276,35 +260,62 @@ namespace MediaPlayerCore
                 else if (path == "/stream.ts")
                 {
                     string targetUrl = Encoding.UTF8.GetString(Convert.FromBase64String(req.QueryString["target"]));
-                    using var response = await session.Client.GetAsync(targetUrl, HttpCompletionOption.ResponseHeadersRead);
-                    res.ContentType = response.Content.Headers.ContentType?.ToString() ?? "video/MP2T";
-                    if (response.Content.Headers.ContentLength.HasValue)
-                        res.ContentLength64 = response.Content.Headers.ContentLength.Value;
+                    var tsResponse = await FetchWithRetry(session.Client, targetUrl);
+                    if (tsResponse == null || !tsResponse.IsSuccessStatusCode)
+                    {
+                        Debug.WriteLine($"[StreamProxy] Proxy error: 502 for {targetUrl}");
+                        res.StatusCode = 502;
+                        res.Close();
+                        return;
+                    }
+                    using (tsResponse)
+                    {
+                        res.ContentType = tsResponse.Content.Headers.ContentType?.ToString() ?? "video/MP2T";
+                        if (tsResponse.Content.Headers.ContentLength.HasValue)
+                            res.ContentLength64 = tsResponse.Content.Headers.ContentLength.Value;
 
-                    await response.Content.CopyToAsync(res.OutputStream);
+                        await tsResponse.Content.CopyToAsync(res.OutputStream);
+                    }
                 }
                 else if (path == "/proxy_media")
                 {
                     string targetUrl = Encoding.UTF8.GetString(Convert.FromBase64String(req.QueryString["target"]));
-                    var requestMessage = new HttpRequestMessage(HttpMethod.Get, targetUrl);
-
                     long requestedOffset = 0;
                     string rangeHeader = req.Headers["Range"];
                     if (!string.IsNullOrEmpty(rangeHeader) && rangeHeader.StartsWith("bytes="))
                     {
                         string rangeVal = rangeHeader.Substring("bytes=".Length).Split('-')[0];
-                        if (long.TryParse(rangeVal, out long offset))
-                        {
-                            requestedOffset = offset;
-                            requestMessage.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(offset, null);
-                        }
+                        long.TryParse(rangeVal, out requestedOffset);
                     }
 
-                    using var response = await session.Client.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead);
-                    
-                    res.ContentType = response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream";
+                    HttpResponseMessage? response = null;
+                    for (int attempt = 0; attempt <= 2; attempt++)
+                    {
+                        try
+                        {
+                            var reqMsg = new HttpRequestMessage(HttpMethod.Get, targetUrl);
+                            if (requestedOffset > 0)
+                                reqMsg.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(requestedOffset, null);
+                            response = await session.Client.SendAsync(reqMsg, HttpCompletionOption.ResponseHeadersRead);
+                            break;
+                        }
+                        catch (TaskCanceledException) { if (attempt >= 2) { response = null; break; } await Task.Delay(500 * (attempt + 1)); }
+                        catch (HttpRequestException) { if (attempt >= 2) { response = null; break; } await Task.Delay(500 * (attempt + 1)); }
+                    }
 
-                    using var stream = await response.Content.ReadAsStreamAsync();
+                    if (response == null)
+                    {
+                        Debug.WriteLine($"[StreamProxy] Proxy error: 502 for {targetUrl}");
+                        res.StatusCode = 502;
+                        res.Close();
+                        return;
+                    }
+
+                    using (response)
+                    {
+                        res.ContentType = response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream";
+
+                        using var stream = await response.Content.ReadAsStreamAsync();
 
                     if (response.StatusCode == HttpStatusCode.OK && requestedOffset > 0)
                     {
@@ -350,7 +361,8 @@ namespace MediaPlayerCore
                     }
 
                     await stream.CopyToAsync(res.OutputStream);
-                }
+                        }
+                    }
                 else
                 {
                     res.StatusCode = 404;

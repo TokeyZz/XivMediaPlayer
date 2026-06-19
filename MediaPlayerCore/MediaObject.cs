@@ -277,8 +277,15 @@ namespace MediaPlayerCore {
 
               Debug.WriteLine("[MediaObject] Creating Media, about to Parse...");
               var parseSw = System.Diagnostics.Stopwatch.StartNew();
-              await media.Parse(mediaPath.StartsWith("http") || mediaPath.StartsWith("rtmp") || mediaPath.StartsWith("rtsp")
+              var parseTask = media.Parse(mediaPath.StartsWith("http") || mediaPath.StartsWith("rtmp") || mediaPath.StartsWith("rtsp")
                 ? MediaParseOptions.ParseNetwork : MediaParseOptions.ParseLocal);
+              if (await Task.WhenAny(parseTask, Task.Delay(15000)) != parseTask)
+              {
+                  parseSw.Stop();
+                  Debug.WriteLine("[MediaObject] Media.Parse TIMEOUT after 15s");
+                  throw new TimeoutException("Media.Parse timed out after 15s");
+              }
+              await parseTask; // throw if the actual task faulted
               parseSw.Stop();
               Debug.WriteLine($"[MediaObject] Media parsed OK: duration={media.Duration}ms, tracks={media.Tracks?.Length ?? 0}, parsed in {parseSw.ElapsedMilliseconds}ms");
 
@@ -460,7 +467,9 @@ namespace MediaPlayerCore {
             };
             _vlcPlayer.Playing += playingHandler;
 
-            _vlcPlayer.Play();
+            bool playResult = _vlcPlayer.Play();
+            if (!playResult)
+                Debug.WriteLine("[MediaObject] ChangeVideoStream Play() returned FALSE - stream switch may have failed");
           }
         } catch (Exception e) { OnErrorReceived?.Invoke(this, new MediaError() { Exception = e }); }
       });

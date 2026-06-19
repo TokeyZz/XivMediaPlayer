@@ -1,4 +1,5 @@
 using Newtonsoft.Json;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
@@ -245,10 +246,38 @@ namespace MediaPlayerCore.YtDlp
         }
 
         /// <summary>
+        /// <summary>
         /// Resolves a URL to a direct stream URL suitable for VLC playback.
-        /// Returns null if resolution fails.
+        /// Retries up to maxRetries times on failure.
+        /// Returns null if resolution fails after all retries.
         /// </summary>
-        public async Task<string?> ResolveStreamUrl(string url)
+        public async Task<string?> ResolveStreamUrl(string url, int maxRetries = 2)
+        {
+            for (int attempt = 0; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    if (attempt > 0)
+                        Debug.WriteLine($"[yt-dlp] Retry attempt {attempt}/{maxRetries} for {url}");
+                    var result = await ResolveStreamUrlInternal(url);
+                    if (!string.IsNullOrEmpty(result)) return result;
+                    if (attempt < maxRetries) await Task.Delay(500 * (attempt + 1));
+                }
+                catch (TimeoutException)
+                {
+                    if (attempt >= maxRetries) { Debug.WriteLine($"[yt-dlp] All retries exhausted for {url}"); return null; }
+                    await Task.Delay(500 * (attempt + 1));
+                }
+                catch (Exception ex)
+                {
+                    if (attempt >= maxRetries) { Debug.WriteLine($"[yt-dlp] Failed after {maxRetries} retries: {ex.Message}"); return null; }
+                    await Task.Delay(500 * (attempt + 1));
+                }
+            }
+            return null;
+        }
+
+        private async Task<string?> ResolveStreamUrlInternal(string url)
         {
             if (!IsAvailable())
             {
@@ -277,6 +306,7 @@ namespace MediaPlayerCore.YtDlp
                 return null;
             } catch (Exception e)
             {
+                Debug.WriteLine($"[yt-dlp] ResolveStreamUrl failed: {e.Message}");
                 OnError?.Invoke(this, e);
                 return null;
             }
@@ -284,9 +314,36 @@ namespace MediaPlayerCore.YtDlp
 
         /// <summary>
         /// Fetches metadata (title, duration, uploader, thumbnail, etc.) for a URL.
-        /// Returns null if fetching fails.
+        /// Retries up to maxRetries times on failure.
+        /// Returns null if fetching fails after all retries.
         /// </summary>
-        public async Task<YtDlpMetadata?> GetMetadata(string url)
+        public async Task<YtDlpMetadata?> GetMetadata(string url, int maxRetries = 2)
+        {
+            for (int attempt = 0; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    if (attempt > 0)
+                        Debug.WriteLine($"[yt-dlp] GetMetadata retry attempt {attempt}/{maxRetries} for {url}");
+                    var result = await GetMetadataInternal(url);
+                    if (result != null) return result;
+                    if (attempt < maxRetries) await Task.Delay(500 * (attempt + 1));
+                }
+                catch (TimeoutException)
+                {
+                    if (attempt >= maxRetries) { Debug.WriteLine($"[yt-dlp] GetMetadata all retries exhausted for {url}"); return null; }
+                    await Task.Delay(500 * (attempt + 1));
+                }
+                catch (Exception ex)
+                {
+                    if (attempt >= maxRetries) { Debug.WriteLine($"[yt-dlp] GetMetadata failed after {maxRetries} retries: {ex.Message}"); return null; }
+                    await Task.Delay(500 * (attempt + 1));
+                }
+            }
+            return null;
+        }
+
+        private async Task<YtDlpMetadata?> GetMetadataInternal(string url)
         {
             if (!IsAvailable())
             {
@@ -307,6 +364,7 @@ namespace MediaPlayerCore.YtDlp
                 }
             } catch (Exception e)
             {
+                Debug.WriteLine($"[yt-dlp] GetMetadata failed: {e.Message}");
                 OnError?.Invoke(this, e);
             }
             return null;
@@ -360,20 +418,19 @@ namespace MediaPlayerCore.YtDlp
             return Array.Empty<string>();
         }
 
-        private static readonly System.Collections.Generic.HashSet<string> _knownFailedUrls = new();
+
+        private static readonly ConcurrentDictionary<string, DateTime> _failedUrlCache = new();
+        private static readonly TimeSpan FailedUrlTtl = TimeSpan.FromMinutes(5);
 
         /// <summary>
         /// Marks a URL as known to fail with yt-dlp (e.g. 403 or Unsupported).
+        /// Failed URLs are cached for 5 minutes to avoid re-checking the same broken URL.
         /// </summary>
         public static void MarkUrlAsFailed(string url)
         {
             if (string.IsNullOrWhiteSpace(url)) return;
-            lock (_knownFailedUrls)
-            {
-                _knownFailedUrls.Add(url);
-            }
+            _failedUrlCache[url] = DateTime.UtcNow + FailedUrlTtl;
         }
-
         /// <summary>
         /// Checks if the given URL is likely supported by yt-dlp
         /// (not a raw stream or local file).
@@ -382,11 +439,11 @@ namespace MediaPlayerCore.YtDlp
         {
             if (string.IsNullOrWhiteSpace(url)) return false;
             
-            lock (_knownFailedUrls)
+            if (_failedUrlCache.TryGetValue(url, out var expiresAt))
             {
-                if (_knownFailedUrls.Contains(url)) return false;
+                if (DateTime.UtcNow < expiresAt) return false;
+                _failedUrlCache.TryRemove(url, out _);
             }
-
             // Don't try yt-dlp on raw streams or local files
             if (url.StartsWith("rtmp://", StringComparison.OrdinalIgnoreCase)) return false;
             if (url.StartsWith("rtsp://", StringComparison.OrdinalIgnoreCase)) return false;
@@ -540,8 +597,9 @@ namespace MediaPlayerCore.YtDlp
             {
                 string result = await RunYtDlp($"--get-url -f \"{format}\" \"{url}\"");
                 return result?.Trim().Split('\n').FirstOrDefault()?.Trim();
-            } catch
+            } catch (Exception ex)
             {
+                Debug.WriteLine($"[yt-dlp] ResolveUrlWithFormat failed: {ex.Message}");
                 return null;
             }
         }
