@@ -3209,6 +3209,12 @@ namespace XivMediaPlayer
 
         internal enum ChatSeverity { Error, Important, Info }
 
+        private void PrintVerbose(string message)
+        {
+            if (_config.VerboseChatLogging)
+                _chat.Print(message);
+        }
+
         internal void PrintChat(string message, ChatSeverity severity = ChatSeverity.Important)
         {
             if (_disposed) return;
