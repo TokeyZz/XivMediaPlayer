@@ -1036,12 +1036,12 @@ namespace XivMediaPlayer
 
         private void PlayRouted(string url, IMediaGameObject audioGameObject, int startTimeMs = 0, bool isAutoSync = false)
         {
-            url = CleanUrl(url);
-
             if (startTimeMs == 0 && (url.Contains("youtube.com") || url.Contains("youtu.be")))
             {
                 startTimeMs = ExtractYouTubeStartTimeMs(url);
             }
+
+            url = CleanUrl(url);
 
             if (YtDlpManager.IsUrlSupported(url) && _ytDlpManager.IsAvailable())
             {
@@ -2993,15 +2993,15 @@ namespace XivMediaPlayer
             {
                 try
                 {
-                    var uri = new Uri(url);
-                    if (uri.Host.Contains("youtu.be"))
+                    var ytUri = new Uri(url);
+                    if (ytUri.Host.Contains("youtu.be"))
                     {
                         // youtu.be/ID?si=noise -> just keep the path
-                        url = uri.GetLeftPart(UriPartial.Path);
+                        url = ytUri.GetLeftPart(UriPartial.Path);
                     }
-                    else if (uri.Host.Contains("youtube.com") && uri.AbsolutePath.Contains("/watch"))
+                    else if (ytUri.Host.Contains("youtube.com") && ytUri.AbsolutePath.Contains("/watch"))
                     {
-                        string q = uri.Query;
+                        string q = ytUri.Query;
                         if (q.StartsWith("?")) q = q.Substring(1);
                         var parts = q.Split('&');
                         var keep = new System.Collections.Generic.List<string>();
@@ -3012,7 +3012,7 @@ namespace XivMediaPlayer
                                 keep.Add(part);
                             }
                         }
-                        url = uri.GetLeftPart(UriPartial.Path) + (keep.Count > 0 ? "?" + string.Join("&", keep) : "");
+                        url = ytUri.GetLeftPart(UriPartial.Path) + (keep.Count > 0 ? "?" + string.Join("&", keep) : "");
                     }
                 }
                 catch { }
