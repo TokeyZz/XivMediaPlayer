@@ -240,15 +240,10 @@ namespace MediaPlayerCore
                                 continue;
                             }
 
-                            if (absoluteUrl.ToString().Contains(".m3u8"))
-                            {
-                                string targetBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(absoluteUrl.ToString()));
-                                sb.AppendLine($"http://127.0.0.1:{_port}/stream.m3u8?sid={sid}&target={Uri.EscapeDataString(targetBase64)}");
-                            }
-                            else
-                            {
-                                sb.AppendLine(absoluteUrl.ToString());
-                            }
+                            // Rewrite ALL segment URLs through the proxy so VLC never hits the CDN directly
+                            session.LastAccessedUtc = DateTime.UtcNow;
+                            string targetBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(absoluteUrl.ToString()));
+                            sb.AppendLine($"http://127.0.0.1:{_port}/proxy_media?sid={sid}&target={Uri.EscapeDataString(targetBase64)}");
                         }
                     }
 
