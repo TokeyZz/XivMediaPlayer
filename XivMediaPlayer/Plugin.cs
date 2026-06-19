@@ -2034,6 +2034,7 @@ namespace XivMediaPlayer
                         }
                     }
                 }
+                catch (OperationCanceledException) { /* normal shutdown, ignore */ }
                 catch (Exception ex) { _pluginLog.Warning(ex, "[Sync] Heartbeat loop error"); }
             }
         }
@@ -2112,6 +2113,7 @@ namespace XivMediaPlayer
                         }
                     }
                 }
+                catch (OperationCanceledException) { /* normal shutdown, ignore */ }
                 catch (Exception ex) { _pluginLog.Warning(ex, "[Sync] Fetch loop error"); }
             }
         }

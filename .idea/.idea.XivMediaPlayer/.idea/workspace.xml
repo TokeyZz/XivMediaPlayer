@@ -8,9 +8,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="0ef52b20-39d8-41ed-8ac7-98baee6e657c" name="更改" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/.idea.XivMediaPlayer/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.XivMediaPlayer/.idea/workspace.xml" afterDir="false" />
-    </list>
+    <list default="true" id="0ef52b20-39d8-41ed-8ac7-98baee6e657c" name="更改" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -108,7 +106,7 @@
       <workItem from="1781668914184" duration="30761000" />
       <workItem from="1781713064780" duration="6052000" />
       <workItem from="1781788440710" duration="4993000" />
-      <workItem from="1781854051092" duration="10608000" />
+      <workItem from="1781854051092" duration="11206000" />
     </task>
     <servers />
   </component>
