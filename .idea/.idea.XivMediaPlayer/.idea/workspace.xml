@@ -9,17 +9,15 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="0ef52b20-39d8-41ed-8ac7-98baee6e657c" name="更改" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/.idea.XivMediaPlayer/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.XivMediaPlayer/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/bin/Debug/net10.0/XivMediaPlayer.Shared.dll" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/bin/Debug/net10.0/XivMediaPlayer.Shared.dll" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/bin/Debug/net10.0/XivMediaPlayer.Shared.pdb" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/bin/Debug/net10.0/XivMediaPlayer.Shared.pdb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Debug/net10.0/XivMediaPlayer.Shared.AssemblyInfo.cs" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Debug/net10.0/XivMediaPlayer.Shared.AssemblyInfo.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Debug/net10.0/XivMediaPlayer.Shared.AssemblyInfoInputs.cache" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Debug/net10.0/XivMediaPlayer.Shared.AssemblyInfoInputs.cache" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Debug/net10.0/XivMediaPlayer.Shared.dll" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Debug/net10.0/XivMediaPlayer.Shared.dll" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Debug/net10.0/XivMediaPlayer.Shared.pdb" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Debug/net10.0/XivMediaPlayer.Shared.pdb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Debug/net10.0/XivMediaPlayer.Shared.sourcelink.json" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Debug/net10.0/XivMediaPlayer.Shared.sourcelink.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Debug/net10.0/ref/XivMediaPlayer.Shared.dll" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Debug/net10.0/ref/XivMediaPlayer.Shared.dll" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Debug/net10.0/refint/XivMediaPlayer.Shared.dll" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Debug/net10.0/refint/XivMediaPlayer.Shared.dll" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/XivMediaPlayer/Networking/ServerClient.cs" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer/Networking/ServerClient.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/bin/Release/net10.0/XivMediaPlayer.Shared.dll" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/bin/Release/net10.0/XivMediaPlayer.Shared.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/bin/Release/net10.0/XivMediaPlayer.Shared.pdb" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/bin/Release/net10.0/XivMediaPlayer.Shared.pdb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Release/net10.0/XivMediaPlayer.Shared.AssemblyInfo.cs" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Release/net10.0/XivMediaPlayer.Shared.AssemblyInfo.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Release/net10.0/XivMediaPlayer.Shared.AssemblyInfoInputs.cache" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Release/net10.0/XivMediaPlayer.Shared.AssemblyInfoInputs.cache" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Release/net10.0/XivMediaPlayer.Shared.dll" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Release/net10.0/XivMediaPlayer.Shared.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Release/net10.0/XivMediaPlayer.Shared.pdb" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Release/net10.0/XivMediaPlayer.Shared.pdb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Release/net10.0/XivMediaPlayer.Shared.sourcelink.json" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Release/net10.0/XivMediaPlayer.Shared.sourcelink.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Release/net10.0/ref/XivMediaPlayer.Shared.dll" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Release/net10.0/ref/XivMediaPlayer.Shared.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Release/net10.0/refint/XivMediaPlayer.Shared.dll" beforeDir="false" afterPath="$PROJECT_DIR$/XivMediaPlayer.Shared/obj/Release/net10.0/refint/XivMediaPlayer.Shared.dll" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -118,7 +116,7 @@
       <workItem from="1781668914184" duration="30761000" />
       <workItem from="1781713064780" duration="6052000" />
       <workItem from="1781788440710" duration="4993000" />
-      <workItem from="1781854051092" duration="2482000" />
+      <workItem from="1781854051092" duration="2784000" />
     </task>
     <servers />
   </component>

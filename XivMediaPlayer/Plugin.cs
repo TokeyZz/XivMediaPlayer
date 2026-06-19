@@ -2259,21 +2259,17 @@ namespace XivMediaPlayer
         private void OnMediaError(object? sender, MediaError e)
         {
             string errorMsg = e.Exception?.Message ?? string.Empty;
-            if (!errorMsg.Contains("demux", StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
+
+            // Log ALL errors — never silently discard them
+            _pluginLog.Warning(e.Exception, $"[VLC] Error: {errorMsg}");
 
             if ((DateTime.UtcNow - _lastMediaErrorTime).TotalMilliseconds < 500)
             {
-                // Group errors that occur within 500ms into a single "error event"
-                _pluginLog.Warning(e.Exception, $"[Media Player] Media error occurred! (grouped)");
                 return;
             }
 
             _lastMediaErrorTime = DateTime.UtcNow;
             _mediaErrorCount++;
-            _pluginLog.Warning(e.Exception, $"[Media Player] Media error occurred! Error count: {_mediaErrorCount}");
             if (_mediaErrorCount < 5)
             {
                 RequestRefreshCurrentMedia();

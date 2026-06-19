@@ -45,13 +45,21 @@ namespace MediaPlayerCore {
         if (_sharedLibVLC == null) {
           lock (_vlcInitLock) {
             if (_sharedLibVLC == null) {
-              Core.Initialize(Path.Combine(_libVLCPath, "libvlc", "win-x64"));
-              var vlcArgs = new List<string> { "--vout=none", "--http-reconnect" };
-              if (!string.IsNullOrEmpty(VlcProxyArgs)) {
-                foreach (var arg in VlcProxyArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                  vlcArgs.Add(arg);
+              try {
+                var vlcPath = Path.Combine(_libVLCPath, "libvlc", "win-x64");
+                System.Diagnostics.Debug.WriteLine($"[MediaManager] Initializing LibVLC from: {vlcPath}");
+                Core.Initialize(vlcPath);
+                var vlcArgs = new List<string> { "--vout=none", "--http-reconnect" };
+                if (!string.IsNullOrEmpty(VlcProxyArgs)) {
+                  foreach (var arg in VlcProxyArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                    vlcArgs.Add(arg);
+                }
+                _sharedLibVLC = new LibVLC(vlcArgs.ToArray());
+                System.Diagnostics.Debug.WriteLine("[MediaManager] LibVLC initialized successfully");
+              } catch (Exception ex) {
+                System.Diagnostics.Debug.WriteLine($"[MediaManager] LibVLC init FAILED: {ex.Message}");
+                throw;
               }
-              _sharedLibVLC = new LibVLC(vlcArgs.ToArray());
             }
           }
         }
