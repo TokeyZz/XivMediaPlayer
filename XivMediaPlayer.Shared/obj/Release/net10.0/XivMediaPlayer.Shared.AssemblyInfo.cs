@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("XivMediaPlayer.Shared")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d7b5692b07af6c15ce7feb689ca67c2183e42262")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8d7fc46a6440931eec44e0844d13502166d6a626")]
 [assembly: System.Reflection.AssemblyProductAttribute("XivMediaPlayer.Shared")]
 [assembly: System.Reflection.AssemblyTitleAttribute("XivMediaPlayer.Shared")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
