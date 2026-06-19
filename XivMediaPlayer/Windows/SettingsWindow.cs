@@ -46,7 +46,7 @@ namespace XivMediaPlayer.Windows {
       ImGui.TextColored(new Vector4(0.7f, 0.9f, 1.0f, 1.0f), "消息提示");
       ImGui.Separator();
 
-      string[] filterLabels = new string[] { "全部消息", "仅重要消息", "全部屏蔽" };
+      string[] filterLabels = new string[] { "全部消息 (含调试)", "仅重要消息", "全部屏蔽" };
       int currentFilterIdx = (int)_plugin.Config.ChatMessageFilter;
       if (currentFilterIdx < 0 || currentFilterIdx > 2) currentFilterIdx = 0;
       if (ImGui.Combo("聊天消息过滤", ref currentFilterIdx, filterLabels, filterLabels.Length)) {
@@ -54,7 +54,7 @@ namespace XivMediaPlayer.Windows {
         _plugin.Config.Save();
       }
       ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f),
-        "全部: 显示所有提示 | 仅重要: 只显示错误和播放状态变更 | 全部屏蔽: 不显示任何聊天消息");
+        "全部: 显示所有消息含调试 | 仅重要: 只显示错误和播放状态变更 | 全部屏蔽: 不显示任何聊天消息");
 
       ImGui.Spacing();
       ImGui.Spacing();
@@ -219,17 +219,6 @@ namespace XivMediaPlayer.Windows {
           ImGui.SameLine();
           ImGui.Text(_plugin.CurrentTvPlacement.LocationKey);
       }
-      ImGui.Spacing();
-
-      bool verboseChat = _plugin.Config.VerboseChatLogging;
-      if (ImGui.Checkbox("Enable Verbose Chat Logging", ref verboseChat)) {
-        _plugin.Config.VerboseChatLogging = verboseChat;
-        _plugin.Config.Save();
-      }
-      ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f),
-        "Shows detailed plugin status messages in the chat.");
-
-      ImGui.Spacing();
       ImGui.Spacing();
 
       // yt-dlp quality

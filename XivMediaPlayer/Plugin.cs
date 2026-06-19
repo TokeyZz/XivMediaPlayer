@@ -3207,12 +3207,11 @@ namespace XivMediaPlayer
             return Regex.Replace(value, @"[^a-zA-Z0-9:/._\-]", "");
         }
 
-        internal enum ChatSeverity { Error, Important, Info }
+        internal enum ChatSeverity { Error, Important, Info, Debug }
 
         private void PrintVerbose(string message)
         {
-            if (_config.VerboseChatLogging)
-                _chat.Print(message);
+            PrintChat(message, ChatSeverity.Debug);
         }
 
         internal void PrintChat(string message, ChatSeverity severity = ChatSeverity.Important)
@@ -3220,7 +3219,7 @@ namespace XivMediaPlayer
             if (_disposed) return;
             var filter = _config.ChatMessageFilter;
             if (filter == ChatMessageLevel.Mute) return;
-            if (filter == ChatMessageLevel.Important && severity == ChatSeverity.Info) return;
+            if (filter == ChatMessageLevel.Important && (severity == ChatSeverity.Info || severity == ChatSeverity.Debug)) return;
             _chat.Print(message);
         }
 
