@@ -121,10 +121,12 @@ namespace XivMediaPlayer.Windows {
               }
           }
           
-          bool showDiff = _sceneRenderer.ShowDiff;
-          if (ImGui.Checkbox("Show Difference Map (UI Overlay)", ref showDiff)) {
-              _sceneRenderer.ShowDiff = showDiff;
-          }
+          int showMode = _sceneRenderer.ShowMode;
+          if (ImGui.RadioButton("Reconstructed Scene", showMode == 0)) { _sceneRenderer.ShowMode = 0; }
+          ImGui.SameLine();
+          if (ImGui.RadioButton("Show Difference Map (UI Overlay)", showMode == 1)) { _sceneRenderer.ShowMode = 1; }
+          ImGui.SameLine();
+          if (ImGui.RadioButton("Calculated Alpha Mask", showMode == 2)) { _sceneRenderer.ShowMode = 2; }
           
           if (_sceneRenderer.PreviewTextureHandle != IntPtr.Zero) {
               var avail = ImGui.GetContentRegionAvail();
