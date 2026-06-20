@@ -30,6 +30,7 @@ namespace XivMediaPlayer.Compositing {
     private Vortice.Direct3D11.ID3D11ShaderResourceView? _gbuffer3Srv;
     
     private unsafe FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* _lastUnk68Tex;
+    private Vortice.Direct3D11.ID3D11Texture2D? _unk68CopyTex;
     private Vortice.Direct3D11.ID3D11ShaderResourceView? _unk68Srv;
 
     /// <summary>
@@ -228,6 +229,59 @@ namespace XivMediaPlayer.Compositing {
         return srv;
     }
 
+    private unsafe Vortice.Direct3D11.ID3D11ShaderResourceView GetCopiedSRV(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* tex, ref FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* lastTex, ref Vortice.Direct3D11.ID3D11Texture2D copyTex, ref Vortice.Direct3D11.ID3D11ShaderResourceView srv) {
+        if (tex == null || tex->D3D11Texture2D == null) return null;
+        
+        var texPtr = (IntPtr)tex->D3D11Texture2D;
+        var d3dTex = new Vortice.Direct3D11.ID3D11Texture2D(texPtr);
+        var device = d3dTex.Device;
+        
+        try {
+            var desc = d3dTex.Description;
+            if (tex != lastTex || copyTex == null || copyTex.Description.Width != desc.Width || copyTex.Description.Height != desc.Height || copyTex.Description.Format != desc.Format) {
+                srv?.Dispose();
+                srv = null;
+                copyTex?.Dispose();
+                copyTex = null;
+                lastTex = tex;
+                
+                var copyDesc = desc;
+                copyDesc.BindFlags = Vortice.Direct3D11.BindFlags.ShaderResource;
+                copyDesc.Usage = Vortice.Direct3D11.ResourceUsage.Default;
+                copyDesc.CPUAccessFlags = Vortice.Direct3D11.CpuAccessFlags.None;
+                copyDesc.MiscFlags = Vortice.Direct3D11.ResourceOptionFlags.None;
+                
+                // Ensure format is SRV compatible
+                if (copyDesc.Format == Vortice.DXGI.Format.R24G8_Typeless) copyDesc.Format = Vortice.DXGI.Format.R24_UNorm_X8_Typeless;
+                else if (copyDesc.Format == Vortice.DXGI.Format.R32_Typeless) copyDesc.Format = Vortice.DXGI.Format.R32_Float;
+                else if (copyDesc.Format.ToString().Contains("Typeless")) {
+                    if (copyDesc.Format == Vortice.DXGI.Format.R8G8B8A8_Typeless) copyDesc.Format = Vortice.DXGI.Format.R8G8B8A8_UNorm;
+                    else if (copyDesc.Format == Vortice.DXGI.Format.R16G16B16A16_Typeless) copyDesc.Format = Vortice.DXGI.Format.R16G16B16A16_Float;
+                    else if (copyDesc.Format == Vortice.DXGI.Format.R32G32B32A32_Typeless) copyDesc.Format = Vortice.DXGI.Format.R32G32B32A32_Float;
+                    else if (copyDesc.Format == Vortice.DXGI.Format.R10G10B10A2_Typeless) copyDesc.Format = Vortice.DXGI.Format.R10G10B10A2_UNorm;
+                }
+                
+                copyTex = device.CreateTexture2D(copyDesc);
+                srv = device.CreateShaderResourceView(copyTex);
+            }
+            
+            var context = device.ImmediateContext;
+            if (desc.SampleDescription.Count > 1) {
+                context.ResolveSubresource(copyTex, 0, d3dTex, 0, desc.Format);
+            } else {
+                context.CopyResource(copyTex, d3dTex);
+            }
+            context.Dispose();
+        } catch (Exception ex) {
+            // Ignore
+        } finally {
+            device?.Dispose();
+            d3dTex?.Dispose();
+        }
+        
+        return srv;
+    }
+
     /// <summary>
     /// GPU-accelerated per-pixel depth occlusion. Uses WorldToScreen for positioning
     /// and view-space Z (dot with camera forward) for depth thresholds.
@@ -243,7 +297,7 @@ namespace XivMediaPlayer.Compositing {
           GetOrCreateSRV(rtm->GBuffers[3].Value, ref _lastGBuffer3Tex, ref _gbuffer3Srv);
           
           var unk68 = *(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x68);
-          GetOrCreateSRV(unk68, ref _lastUnk68Tex, ref _unk68Srv);
+          GetCopiedSRV(unk68, ref _lastUnk68Tex, ref _unk68CopyTex, ref _unk68Srv);
       }
 
       // WorldToScreen is the source of truth for screen positions
@@ -616,6 +670,7 @@ namespace XivMediaPlayer.Compositing {
       _gbuffer2Srv?.Dispose();
       _gbuffer3Srv?.Dispose();
       _unk68Srv?.Dispose();
+      _unk68CopyTex?.Dispose();
       _depthRenderer?.Dispose();
       _glowRenderer?.Dispose();
     }
