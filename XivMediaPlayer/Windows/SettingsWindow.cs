@@ -214,12 +214,22 @@ namespace XivMediaPlayer.Windows {
       ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Placement Key:");
       ImGui.SameLine();
       ImGui.Text(locationKey ?? "Unknown");
+      if (locationKey != null) {
+          ImGui.SameLine();
+          if (ImGui.Button("Copy##copyloc")) {
+              ImGui.SetClipboardText(locationKey);
+          }
+      }
 
       if (_plugin.CurrentTvPlacement != null)
       {
           ImGui.TextColored(new Vector4(0.4f, 1f, 0.4f, 1f), "Synced TV Key:");
           ImGui.SameLine();
           ImGui.Text(_plugin.CurrentTvPlacement.LocationKey);
+          ImGui.SameLine();
+          if (ImGui.Button("Copy##copysyncloc")) {
+              ImGui.SetClipboardText(_plugin.CurrentTvPlacement.LocationKey);
+          }
       }
       ImGui.Spacing();
 

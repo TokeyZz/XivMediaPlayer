@@ -40,6 +40,11 @@ namespace XivMediaPlayer.Windows {
         "RTM: SemiTransparent GBuffer 3",
         "RTM: SemiTransparent GBuffer 4",
         "RTM: Tone Adjust Source",
+        "RTM: Shadow",
+        "RTM: LightDiffuse",
+        "RTM: LightSpecular",
+        "RTM: SwapChainBackBuffer",
+        "RTM: SwapChainDepthStencil",
         "Reconstructed Scene (GBuffer2 * GBuffer3)"
     };
 
@@ -71,6 +76,10 @@ namespace XivMediaPlayer.Windows {
       if (ImGui.Button("Copy to Clipboard")) {
           CopyToClipboard();
       }
+      ImGui.SameLine();
+      if (ImGui.Button("Dump RTM Fields to Log")) {
+          DumpRtmFields();
+      }
       ImGui.Separator();
 
       if (_selectedPreviewMode == 0 || _selectedPreviewMode == 1) {
@@ -84,14 +93,18 @@ namespace XivMediaPlayer.Windows {
         return;
       }
 
-      if (_selectedPreviewMode == 14) {
+      if (_selectedPreviewMode == 19) {
           if (_sceneRenderer == null) {
               _sceneRenderer = new SceneReconstructionPreviewRenderer();
               _sceneRenderer.Initialize();
           }
           
           if (rtm->GBuffers[0].Value != null && rtm->GBuffers[1].Value != null && rtm->GBuffers[2].Value != null && rtm->GBuffers[3].Value != null && rtm->GBuffers[4].Value != null && UICapture?.BackBufferSRV != null) {
-              _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value, rtm->GBuffers[4].Value, UICapture.BackBufferSRV);
+              var lightDiffuse = *(Texture**)((byte*)rtm + 0x58);
+              var lightSpecular = *(Texture**)((byte*)rtm + 0x60);
+              if (lightDiffuse != null && lightSpecular != null) {
+                  _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value, rtm->GBuffers[4].Value, lightDiffuse, lightSpecular, UICapture.BackBufferSRV);
+              }
           }
           
           if (_sceneRenderer.PreviewTextureHandle != IntPtr.Zero) {
@@ -126,6 +139,11 @@ namespace XivMediaPlayer.Windows {
         case 11: tex = rtm->SemitransparentGBuffers[3].Value; break;
         case 12: tex = rtm->SemitransparentGBuffers[4].Value; break;
         case 13: tex = rtm->ToneAdjustSource; break;
+        case 14: tex = *(Texture**)((byte*)rtm + 0x50); break; // Shadow
+        case 15: tex = *(Texture**)((byte*)rtm + 0x58); break; // LightDiffuse
+        case 16: tex = *(Texture**)((byte*)rtm + 0x60); break; // LightSpecular
+        case 17: tex = rtm->SwapChainBackBuffer; break;
+        case 18: tex = rtm->SwapChainDepthStencil; break;
       }
 
       if (tex == null || tex->D3D11Texture2D == null) {
@@ -326,7 +344,7 @@ namespace XivMediaPlayer.Windows {
                 rgbaData = UICapture.LastColorData;
                 w = UICapture.CaptureWidth;
                 h = UICapture.CaptureHeight;
-            } else if (_selectedPreviewMode == 14) {
+            } else if (_selectedPreviewMode == 19) {
                 _pluginLog.Warning("[Depth Preview] Copying reconstructed scene not supported yet.");
                 return;
             } else {
@@ -347,6 +365,11 @@ namespace XivMediaPlayer.Windows {
                   case 11: tex = rtm->SemitransparentGBuffers[3].Value; break;
                   case 12: tex = rtm->SemitransparentGBuffers[4].Value; break;
                   case 13: tex = rtm->ToneAdjustSource; break;
+                  case 14: tex = *(Texture**)((byte*)rtm + 0x50); break; // Shadow
+                  case 15: tex = *(Texture**)((byte*)rtm + 0x58); break; // LightDiffuse
+                  case 16: tex = *(Texture**)((byte*)rtm + 0x60); break; // LightSpecular
+                  case 17: tex = rtm->SwapChainBackBuffer; break;
+                  case 18: tex = rtm->SwapChainDepthStencil; break;
                 }
 
                 if (tex == null || tex->D3D11Texture2D == null) return;
@@ -378,6 +401,29 @@ namespace XivMediaPlayer.Windows {
             }
         } catch (Exception ex) {
             _pluginLog.Error(ex, "[Depth Preview] Error copying to clipboard.");
+        }
+    }
+
+    private void DumpRtmFields() {
+        try {
+            var type = typeof(RenderTargetManager);
+            _pluginLog.Info("=== RenderTargetManager Properties ===");
+            foreach (var prop in type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)) {
+                if (prop.PropertyType.Name.Contains("Texture") || prop.PropertyType.Name.Contains("Span")) {
+                    _pluginLog.Info($"- {prop.PropertyType.Name} {prop.Name}");
+                }
+            }
+
+            _pluginLog.Info("=== RenderTargetManager Fields ===");
+            foreach (var field in type.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)) {
+                if (field.FieldType.Name.Contains("Texture") || field.FieldType.Name.Contains("FixedSizeArray")) {
+                    var offsetAttr = (System.Runtime.InteropServices.FieldOffsetAttribute)System.Attribute.GetCustomAttribute(field, typeof(System.Runtime.InteropServices.FieldOffsetAttribute));
+                    string offsetStr = offsetAttr != null ? $"[FieldOffset(0x{offsetAttr.Value:X})]" : "[NoOffset]";
+                    _pluginLog.Info($"{offsetStr} {field.FieldType.Name} {field.Name}");
+                }
+            }
+        } catch (Exception ex) {
+            _pluginLog.Error(ex, "Failed to dump RTM fields");
         }
     }
   }
