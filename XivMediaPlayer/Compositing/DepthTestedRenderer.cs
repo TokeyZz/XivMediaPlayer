@@ -153,6 +153,9 @@ Texture2D DepthTexture : register(t1);
 Texture2D BackBufferTexture : register(t2);
 Texture2D TitleTexture : register(t3);
 Texture2D PreUITexture : register(t4);
+Texture2D GBuffer2 : register(t5);
+Texture2D GBuffer3 : register(t6);
+Texture2D VignetteExtrapolatedTexture : register(t7);
 SamplerState VideoSampler : register(s0);
 SamplerState DepthSampler : register(s1);
 
@@ -695,11 +698,41 @@ float4 PS(VS_OUT input) : SV_TARGET {
           }
           
           if (trueAlpha > 0.01) {
+              // Get extrapolated subtractive vignette to perfectly match FFXIV's post-processing
+              float3 vignetteExtrapolated = VignetteExtrapolatedTexture.Sample(VideoSampler, screenUV).rgb;
+              float3 trueBackground = saturate(preUiColor.rgb - vignetteExtrapolated);
+              
+              // Mathematically estimate the true UI alpha!
+              // Since FFXIV writes alpha=1.0 for translucent chat boxes, we MUST estimate alpha from the color shift.
+              // Assuming the UI is either black or white (or saturated color), we can reverse-engineer A.
+              float3 estA;
+              
+              // Red channel estimate
+              if (bbColor.r > trueBackground.r) estA.r = (bbColor.r - trueBackground.r) / max(0.0001, 1.0 - trueBackground.r);
+              else estA.r = 1.0 - (bbColor.r / max(0.0001, trueBackground.r));
+              
+              // Green channel estimate
+              if (bbColor.g > trueBackground.g) estA.g = (bbColor.g - trueBackground.g) / max(0.0001, 1.0 - trueBackground.g);
+              else estA.g = 1.0 - (bbColor.g / max(0.0001, trueBackground.g));
+              
+              // Blue channel estimate
+              if (bbColor.b > trueBackground.b) estA.b = (bbColor.b - trueBackground.b) / max(0.0001, 1.0 - trueBackground.b);
+              else estA.b = 1.0 - (bbColor.b / max(0.0001, trueBackground.b));
+              
+              float estimatedAlpha = saturate(max(max(estA.r, estA.g), estA.b));
+              
+              // Falloff small noise
+              float diffMax2 = max(max(abs(bbColor.r - trueBackground.r), abs(bbColor.g - trueBackground.g)), abs(bbColor.b - trueBackground.b));
+              if (diffMax2 < 0.01) estimatedAlpha = 0.0;
+              
+              // Smooth out the alpha a bit to prevent hard jagged edges
+              trueAlpha = estimatedAlpha * smoothstep(0.01, 0.05, diffMax2);
+              
               // Mathematically perfect UI reconstruction!
               // For opaque UI (trueAlpha=1), this exactly outputs bbColor (the originating UI pixel).
               // For translucent UI (e.g. drop shadows), it mathematically removes the FFXIV background
-              // (preUiColor) and replaces it with the TV pixel, preserving the exact shadow!
-              color.rgb = saturate(bbColor.rgb + (color.rgb - preUiColor.rgb) * (1.0 - trueAlpha));
+              // (preUiColor + vignette) and replaces it with the TV pixel, preserving the exact shadow!
+              color.rgb = saturate(bbColor.rgb + (color.rgb - trueBackground) * (1.0 - trueAlpha));
           }
       } else {
           // Fallback to old alpha masking if Unk68 is somehow missing
@@ -867,7 +900,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
       float renderWidth, float renderHeight,
       List<(int X, int Y, int W, int H, string Name)> uiRects, IntPtr titleSrvPtr = default,
       bool isLooping = false, bool isShuffle = false, float time = 0, float showScreensaver = 0,
-      float videoAspectRatio = 0, IntPtr gbuffer2SrvPtr = default, IntPtr gbuffer3SrvPtr = default, IntPtr transparentUiSrvPtr = default) {
+      float videoAspectRatio = 0, IntPtr gbuffer2SrvPtr = default, IntPtr gbuffer3SrvPtr = default, IntPtr transparentUiSrvPtr = default, IntPtr vignetteExtrapolatedSrvPtr = default) {
 
       if (!_initialized || _disposed || videoSrvPtr == IntPtr.Zero || depthSrv == null) return false;
 
@@ -954,7 +987,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
         _context.PSSetShader(_pixelShader);
         _context.PSSetConstantBuffer(0, _constantBuffer);
         _context.PSSetConstantBuffer(1, _uiRectBuffer);
-        var srvs = new ID3D11ShaderResourceView[7];
+        var srvs = new ID3D11ShaderResourceView[8];
         if (videoSrvPtr != IntPtr.Zero) System.Runtime.InteropServices.Marshal.AddRef(videoSrvPtr);
         srvs[0] = videoSrvPtr != IntPtr.Zero ? new ID3D11ShaderResourceView(videoSrvPtr) : null;
         srvs[1] = depthSrv;
@@ -967,8 +1000,10 @@ float4 PS(VS_OUT input) : SV_TARGET {
         srvs[5] = gbuffer2SrvPtr != IntPtr.Zero ? new ID3D11ShaderResourceView(gbuffer2SrvPtr) : null;
         if (gbuffer3SrvPtr != IntPtr.Zero) System.Runtime.InteropServices.Marshal.AddRef(gbuffer3SrvPtr);
         srvs[6] = gbuffer3SrvPtr != IntPtr.Zero ? new ID3D11ShaderResourceView(gbuffer3SrvPtr) : null;
+        if (vignetteExtrapolatedSrvPtr != IntPtr.Zero) System.Runtime.InteropServices.Marshal.AddRef(vignetteExtrapolatedSrvPtr);
+        srvs[7] = vignetteExtrapolatedSrvPtr != IntPtr.Zero ? new ID3D11ShaderResourceView(vignetteExtrapolatedSrvPtr) : null;
         
-        _context.PSSetShaderResources(0, 7, srvs);
+        _context.PSSetShaderResources(0, 8, srvs);
         _context.PSSetSampler(0, _videoSampler);
         _context.PSSetSampler(1, _depthSampler);
 
@@ -986,6 +1021,9 @@ float4 PS(VS_OUT input) : SV_TARGET {
         _context.PSSetShaderResource(2, (ID3D11ShaderResourceView)null);
         _context.PSSetShaderResource(3, (ID3D11ShaderResourceView)null);
         _context.PSSetShaderResource(4, (ID3D11ShaderResourceView)null);
+        _context.PSSetShaderResource(5, (ID3D11ShaderResourceView)null);
+        _context.PSSetShaderResource(6, (ID3D11ShaderResourceView)null);
+        _context.PSSetShaderResource(7, (ID3D11ShaderResourceView)null);
         
         savedRTVs[0]?.Dispose();
         savedDSV?.Dispose();

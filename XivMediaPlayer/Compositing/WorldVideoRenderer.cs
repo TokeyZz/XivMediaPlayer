@@ -20,6 +20,7 @@ namespace XivMediaPlayer.Compositing {
     private readonly IGameGui? _gameGui;
     private DepthTestedRenderer? _depthRenderer;
     private GlowRenderer? _glowRenderer;
+    private VignetteExtractor? _vignetteExtractor;
     private bool _disposed;
     private bool _useDepthOcclusion = true;
     private bool _enableGlow = true;
@@ -299,6 +300,10 @@ namespace XivMediaPlayer.Compositing {
           var unk68 = *(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x68);
           GetCopiedSRV(unk68, ref _lastUnk68Tex, ref _unk68CopyTex, ref _unk68Srv);
       }
+      
+      if (_vignetteExtractor != null && uiCapture?.BackBufferSRV != null && _unk68Srv != null && depthCapture?.CapturedSRV != null) {
+          _vignetteExtractor.Update(uiCapture.BackBufferSRV, _unk68Srv, depthCapture.CapturedSRV);
+      }
 
       // WorldToScreen is the source of truth for screen positions
       WorldToScreenClamped(tl, out var sTL, out _);
@@ -353,6 +358,9 @@ namespace XivMediaPlayer.Compositing {
         // Ensure DepthTestedRenderer is initialized
         if (_depthRenderer == null) {
           _depthRenderer = new DepthTestedRenderer();
+          _depthRenderer.Initialize();
+          _vignetteExtractor = new VignetteExtractor();
+          _vignetteExtractor.Initialize();
         }
         if (!_depthRenderer.IsInitialized) {
           if (!_depthRenderer.Initialize()) {
@@ -406,7 +414,8 @@ namespace XivMediaPlayer.Compositing {
           uiCapture?.LastAddonRects, titleSrvPtr, isLooping, isShuffle, time, showScreensaver, videoAspectRatio,
           _gbuffer2Srv?.NativePointer ?? IntPtr.Zero,
           _gbuffer3Srv?.NativePointer ?? IntPtr.Zero,
-          _unk68Srv?.NativePointer ?? IntPtr.Zero);
+          _unk68Srv?.NativePointer ?? IntPtr.Zero,
+          _vignetteExtractor?.ExtrapolatedVignetteSRV?.NativePointer ?? IntPtr.Zero);
 
         DepthDebugInfo = $"Cam: {cameraPos:F1}\nFwd: {cameraForward:F2}\nFov: {fovY:F3}\nAspect: {aspectRatio:F3}";
 
@@ -497,9 +506,6 @@ namespace XivMediaPlayer.Compositing {
       var uvBL = new Vector2(0, 1);
 
       if (videoAspect > 0) {
-        if (Math.Abs(videoAspect - 16f / 9f) > 0.1f) {
-          RenderScreenSpace(textureSrv, videoAspect);
-        }
         float quadW = Vector2.Distance(sTL, sTR);
         float quadH = Vector2.Distance(sTL, sBL);
         float quadAspect = quadH > 0 ? quadW / quadH : 1.0f;
@@ -611,7 +617,7 @@ namespace XivMediaPlayer.Compositing {
       float quadDepth = nearPlane * (farPlane - distance) / (distance * (farPlane - nearPlane));
       quadDepth = Math.Clamp(quadDepth, 0f, 1f);
 
-      return ComputeVisibility(depthCapture, sTL, sTR, sBR, sBL, quadDepth);
+      return ComputeVisibility(depthCapture, sTL, sTR, sBL, sBR, quadDepth);
     }
 
     private bool WorldToScreen(Vector3 worldPos, out Vector2 screenPos) {
@@ -666,13 +672,16 @@ namespace XivMediaPlayer.Compositing {
     }
 
     public void Dispose() {
+      if (_disposed) return;
       _disposed = true;
+      _depthRenderer?.Dispose();
+      _glowRenderer?.Dispose();
+      _vignetteExtractor?.Dispose();
+      
       _gbuffer2Srv?.Dispose();
       _gbuffer3Srv?.Dispose();
       _unk68Srv?.Dispose();
       _unk68CopyTex?.Dispose();
-      _depthRenderer?.Dispose();
-      _glowRenderer?.Dispose();
     }
   }
 }

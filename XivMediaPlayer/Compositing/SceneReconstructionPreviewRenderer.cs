@@ -45,6 +45,8 @@ Texture2D LightSpecular : register(t2);
 Texture2D GBuffer4 : register(t3);
 Texture2D BackBuffer : register(t4);
 Texture2D Unk68 : register(t5);
+Texture2D DepthTex : register(t6);
+Texture2D VignetteExtrapolatedTexture : register(t7);
 
 SamplerState LinearSampler : register(s0);
 
@@ -72,32 +74,21 @@ float4 PS(VS_OUT input) : SV_TARGET {
   float3 diffuseLight = LightDiffuse.Sample(LinearSampler, input.uv).rgb;
   float3 specularLight = LightSpecular.Sample(LinearSampler, input.uv).rgb;
   float4 gbuffer4 = GBuffer4.Sample(LinearSampler, input.uv);
-  float4 unk68 = Unk68.Sample(LinearSampler, input.uv);
   
   // The user confirmed that Unk68 is the 1:1 final tonemapped, gamma-corrected game scene
   // right before the UI is drawn!
   // Therefore, no manual reconstruction, tonemapping, or gamma correction is needed.
-  float3 color = unk68.rgb;
+  float3 unk68Color = Unk68.Sample(LinearSampler, input.uv).rgb;
+  float3 vignetteExtrapolated = VignetteExtrapolatedTexture.Sample(LinearSampler, input.uv).rgb;
+  
+  // The true background without UI!
+  float3 trueBackground = saturate(unk68Color - vignetteExtrapolated);
+  float3 color = trueBackground;
   
   if (ShowDiff > 0.5) {
       float3 bbColor = BackBuffer.Sample(LinearSampler, input.uv).rgb;
-      float bbAlpha = BackBuffer.Sample(LinearSampler, input.uv).a;
-      
-      float3 uiDiff = abs(bbColor - color);
-      float diffMax = max(max(uiDiff.r, uiDiff.g), uiDiff.b);
-      
-      // Unfortunately we don't have the depth buffer here to cancel out the emissive skybox perfectly,
-      // but the main issue is visualising the math!
-      float trueAlpha = bbAlpha;
-      if (diffMax < 0.02) {
-          trueAlpha = 0.0;
-      }
-      
-      if (trueAlpha > 0.01) {
-          color = saturate(bbColor + (float3(0,0,0) - color) * (1.0 - trueAlpha));
-      } else {
-          color = float3(0,0,0);
-      }
+      // Show the exact UI overlay by diffing BackBuffer with our true background!
+      color = abs(bbColor - trueBackground);
   }
   
   return float4(color, 1.0);
@@ -105,6 +96,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
 ";
 
     private ID3D11Buffer _constantBuffer;
+    private VignetteExtractor _vignetteExtractor;
     public bool ShowDiff { get; set; } = false;
 
     public IntPtr PreviewTextureHandle => _previewSRV?.NativePointer ?? IntPtr.Zero;
@@ -170,9 +162,13 @@ float4 PS(VS_OUT input) : SV_TARGET {
         _previewRTV = _device.CreateRenderTargetView(_previewTexture);
         _previewSRV = _device.CreateShaderResourceView(_previewTexture);
 
+        _vignetteExtractor = new VignetteExtractor();
+        _vignetteExtractor.Initialize();
+
         _initialized = true;
         return true;
-      } catch {
+      } catch (Exception ex) {
+        System.IO.File.WriteAllText(@"C:\Users\stel9\Documents\InitializeError.txt", ex.ToString());
         return false;
       }
     }
@@ -202,9 +198,9 @@ float4 PS(VS_OUT input) : SV_TARGET {
         return _device.CreateShaderResourceView(cacheTex);
     }
 
-    public unsafe bool Update(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb0, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb1, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb2, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb3, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb4, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* unk68, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* lightDiffuse, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* lightSpecular, ID3D11ShaderResourceView bbSrv) {
-      if (!_initialized || _disposed || gb0 == null || gb1 == null || gb2 == null || gb3 == null || gb4 == null || unk68 == null || lightDiffuse == null || lightSpecular == null || bbSrv == null ||
-          gb0->D3D11Texture2D == null || gb1->D3D11Texture2D == null || gb2->D3D11Texture2D == null || gb3->D3D11Texture2D == null || gb4->D3D11Texture2D == null || unk68->D3D11Texture2D == null || lightDiffuse->D3D11Texture2D == null || lightSpecular->D3D11Texture2D == null) return false;
+    public unsafe void Update(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb0, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb1, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb2, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb3, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb4, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* unk68, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* lightDiffuse, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* lightSpecular, ID3D11ShaderResourceView bbSrv, ID3D11ShaderResourceView depthSrv) {
+      if (!_initialized || _disposed || gb0 == null || gb1 == null || gb2 == null || gb3 == null || gb4 == null || unk68 == null || lightDiffuse == null || lightSpecular == null || bbSrv == null || depthSrv == null ||
+          gb0->D3D11Texture2D == null || gb1->D3D11Texture2D == null || gb2->D3D11Texture2D == null || gb3->D3D11Texture2D == null || gb4->D3D11Texture2D == null || unk68->D3D11Texture2D == null || lightDiffuse->D3D11Texture2D == null || lightSpecular->D3D11Texture2D == null) return;
 
       ID3D11ShaderResourceView srv0 = null;
       ID3D11ShaderResourceView srv1 = null;
@@ -250,6 +246,8 @@ float4 PS(VS_OUT input) : SV_TARGET {
         lightDiffuseSrv = CreateSRVSafe(texDiff, ref _copyTexDiff);
         lightSpecularSrv = CreateSRVSafe(texSpec, ref _copyTexSpec);
         unk68Srv = CreateSRVSafe(texUnk, ref _copyTexUnk);
+        
+        _vignetteExtractor.Update(bbSrv, unk68Srv, depthSrv);
 
         var savedRTVs = new ID3D11RenderTargetView[1];
         ID3D11DepthStencilView savedDSV;
@@ -274,12 +272,17 @@ float4 PS(VS_OUT input) : SV_TARGET {
 
           _context.PSSetConstantBuffer(0, _constantBuffer);
 
-          _context.PSSetShaderResource(0, srv2);
-          _context.PSSetShaderResource(1, lightDiffuseSrv);
-          _context.PSSetShaderResource(2, lightSpecularSrv);
-          _context.PSSetShaderResource(3, srv4);
-          _context.PSSetShaderResource(4, bbSrv);
-          _context.PSSetShaderResource(5, unk68Srv);
+          ID3D11ShaderResourceView[] srvs = new ID3D11ShaderResourceView[8];
+          srvs[0] = srv2;
+          srvs[1] = lightDiffuseSrv;
+          srvs[2] = lightSpecularSrv;
+          srvs[3] = srv4;
+          srvs[4] = bbSrv;
+          srvs[5] = unk68Srv;
+          srvs[6] = depthSrv;
+          srvs[7] = _vignetteExtractor.ExtrapolatedVignetteSRV;
+          
+          _context.PSSetShaderResources(0, 8, srvs);
           _context.PSSetSampler(0, _sampler);
 
           _context.VSSetShader(_vertexShader);
@@ -288,14 +291,20 @@ float4 PS(VS_OUT input) : SV_TARGET {
           _context.IASetInputLayout(null);
           _context.IASetPrimitiveTopology(Vortice.Direct3D.PrimitiveTopology.TriangleList);
           _context.Draw(3, 0);
-
-          return true;
         } finally {
           _context.OMSetRenderTargets(savedRTVs, savedDSV);
+          _context.PSSetShaderResource(0, null);
+          _context.PSSetShaderResource(1, null);
+          _context.PSSetShaderResource(2, null);
+          _context.PSSetShaderResource(3, null);
+          _context.PSSetShaderResource(4, null);
+          _context.PSSetShaderResource(5, null);
+          _context.PSSetShaderResource(6, null);
+          _context.PSSetShaderResource(7, null);
         }
       } catch (Exception ex) {
         System.IO.File.WriteAllText(@"C:\Users\stel9\Documents\UpdateError.txt", ex.ToString());
-        return false;
+        return;
       } finally {
         srv0?.Dispose();
         srv1?.Dispose();
@@ -321,6 +330,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
       _copyTexSpec?.Dispose();
       _copyTexUnk?.Dispose();
 
+      _vignetteExtractor?.Dispose();
       _constantBuffer?.Dispose();
       _previewRTV?.Dispose();
       _previewSRV?.Dispose();

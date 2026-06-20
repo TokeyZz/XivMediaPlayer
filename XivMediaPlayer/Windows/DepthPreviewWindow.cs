@@ -15,7 +15,11 @@ namespace XivMediaPlayer.Windows {
   /// Debug window that shows the game's depth buffer as a grayscale image.
   /// White = near (depth 1.0 in reverse-Z), Black = far (depth 0.0).
   /// </summary>
-  internal class DepthPreviewWindow : Window, IDisposable {
+  internal unsafe class DepthPreviewWindow : Window, IDisposable {
+    private ID3D11Device _device;
+    private ID3D11DeviceContext _context;
+    
+    private SceneReconstructionPreviewRenderer _sceneRenderer;
     private readonly ITextureProvider _textureProvider;
     private readonly IPluginLog _pluginLog;
     private IDalamudTextureWrap _previewTexture;
@@ -51,7 +55,6 @@ namespace XivMediaPlayer.Windows {
 
     private ID3D11ShaderResourceView _dynamicSrv;
     private IntPtr _dynamicSrvTexPtr;
-    private SceneReconstructionPreviewRenderer _sceneRenderer;
     private XivMediaPlayer.Utils.TextureDumper _dumper;
 
     /// <summary>
@@ -108,13 +111,13 @@ namespace XivMediaPlayer.Windows {
               _sceneRenderer.Initialize();
           }
           
-          if (rtm->GBuffers[0].Value != null && rtm->GBuffers[1].Value != null && rtm->GBuffers[2].Value != null && rtm->GBuffers[3].Value != null && rtm->GBuffers[4].Value != null && UICapture?.BackBufferSRV != null) {
+          if (rtm->GBuffers[0].Value != null && rtm->GBuffers[1].Value != null && rtm->GBuffers[2].Value != null && rtm->GBuffers[3].Value != null && rtm->GBuffers[4].Value != null && UICapture?.BackBufferSRV != null && Capture?.CapturedSRV != null) {
               var lightDiffuse = *(Texture**)((byte*)rtm + 0x58);
               var lightSpecular = *(Texture**)((byte*)rtm + 0x60);
               var unk68 = *(Texture**)((byte*)rtm + 0x68);
 
               if (lightDiffuse != null && lightSpecular != null && unk68 != null) {
-                  _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value, rtm->GBuffers[4].Value, unk68, lightDiffuse, lightSpecular, UICapture.BackBufferSRV);
+                  _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value, rtm->GBuffers[4].Value, unk68, lightDiffuse, lightSpecular, UICapture.BackBufferSRV, Capture.CapturedSRV);
               }
           }
           
