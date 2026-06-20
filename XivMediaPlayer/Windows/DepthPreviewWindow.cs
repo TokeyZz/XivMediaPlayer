@@ -124,9 +124,15 @@ namespace XivMediaPlayer.Windows {
           int showMode = _sceneRenderer.ShowMode;
           if (ImGui.RadioButton("Reconstructed Scene", showMode == 0)) { _sceneRenderer.ShowMode = 0; }
           ImGui.SameLine();
-          if (ImGui.RadioButton("Show Difference Map (UI Overlay)", showMode == 1)) { _sceneRenderer.ShowMode = 1; }
+          if (ImGui.RadioButton("Difference Map", showMode == 1)) { _sceneRenderer.ShowMode = 1; }
           ImGui.SameLine();
-          if (ImGui.RadioButton("Calculated Alpha Mask", showMode == 2)) { _sceneRenderer.ShowMode = 2; }
+          if (ImGui.RadioButton("Alpha Mask", showMode == 2)) { _sceneRenderer.ShowMode = 2; }
+          ImGui.SameLine();
+          if (ImGui.RadioButton("Inverted Difference", showMode == 3)) { _sceneRenderer.ShowMode = 3; }
+          ImGui.SameLine();
+          if (ImGui.RadioButton("Native SwapChain Alpha", showMode == 4)) { _sceneRenderer.ShowMode = 4; }
+          ImGui.SameLine();
+          if (ImGui.RadioButton("Alpha Difference", showMode == 5)) { _sceneRenderer.ShowMode = 5; }
           
           if (_sceneRenderer.PreviewTextureHandle != IntPtr.Zero) {
               var avail = ImGui.GetContentRegionAvail();

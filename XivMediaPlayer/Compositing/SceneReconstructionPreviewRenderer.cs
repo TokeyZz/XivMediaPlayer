@@ -99,11 +99,39 @@ float4 PS(VS_OUT input) : SV_TARGET {
       
       float estimatedAlpha = saturate(max(max(estA.r, estA.g), estA.b));
       float diffMax2 = max(max(abs(bbColor.r - trueBackground.r), abs(bbColor.g - trueBackground.g)), abs(bbColor.b - trueBackground.b));
-      if (diffMax2 < 0.01) estimatedAlpha = 0.0;
       
-      float trueAlpha = estimatedAlpha * smoothstep(0.01, 0.05, diffMax2);
+      float nativeAlpha = BackBuffer.Sample(LinearSampler, input.uv).a;
+      float unk68Alpha = Unk68.Sample(LinearSampler, input.uv).a;
+      float alphaDiff = abs(nativeAlpha - unk68Alpha);
+      
+      float4 albedo = GBuffer2.Sample(LinearSampler, input.uv);
+      bool isSkybox = (dot(albedo.rgb, albedo.rgb) < 0.0001);
+      
+      float trueAlpha = 0.0;
+      if (isSkybox) {
+          // Over the skybox, alphaDiff is destroyed (1.0 - 1.0 = 0).
+          // But difference math (estimatedAlpha) works flawlessly because UI contrasts with the skybox!
+          trueAlpha = (diffMax2 > 0.02) ? estimatedAlpha : 0.0;
+      } else {
+          // Over geometry, diffMax2 can have holes if UI color == Geometry color.
+          // But alphaDiff works perfectly here to fill the holes!
+          trueAlpha = saturate(max(estimatedAlpha, alphaDiff));
+      }
       
       color = float3(trueAlpha, trueAlpha, trueAlpha);
+  } else if (ShowMode == 3) {
+      // Inverted Difference Map Experiment (Unmasked!)
+      color = saturate(1.0 - abs(bbColor - trueBackground));
+  } else if (ShowMode == 4) {
+      // Native SwapChain Alpha
+      float nativeAlpha = BackBuffer.Sample(LinearSampler, input.uv).a;
+      color = float3(nativeAlpha, nativeAlpha, nativeAlpha);
+  } else if (ShowMode == 5) {
+      // Alpha Difference Map (The Holy Grail?)
+      float nativeAlpha = BackBuffer.Sample(LinearSampler, input.uv).a;
+      float unk68Alpha = Unk68.Sample(LinearSampler, input.uv).a;
+      float alphaDiff = abs(nativeAlpha - unk68Alpha);
+      color = float3(alphaDiff, alphaDiff, alphaDiff);
   } else {
       // Standard Reconstructed Scene
       float3 uiDiff = bbColor - trueBackground;

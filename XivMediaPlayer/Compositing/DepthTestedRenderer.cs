@@ -721,12 +721,23 @@ float4 PS(VS_OUT input) : SV_TARGET {
               
               float estimatedAlpha = saturate(max(max(estA.r, estA.g), estA.b));
               
-              // Falloff small noise
               float diffMax2 = max(max(abs(bbColor.r - trueBackground.r), abs(bbColor.g - trueBackground.g)), abs(bbColor.b - trueBackground.b));
-              if (diffMax2 < 0.01) estimatedAlpha = 0.0;
               
-              // Smooth out the alpha a bit to prevent hard jagged edges
-              trueAlpha = estimatedAlpha * smoothstep(0.01, 0.05, diffMax2);
+              float nativeAlpha = bbColor.a;
+              float unk68Alpha = PreUITexture.Sample(VideoSampler, screenUV).a;
+              float alphaDiff = abs(nativeAlpha - unk68Alpha);
+              
+              bool isSkybox = (gameDepth < 0.00001);
+              
+              if (isSkybox) {
+                  // Over the skybox, alphaDiff is destroyed (1.0 - 1.0 = 0).
+                  // But difference math (estimatedAlpha) works flawlessly because UI contrasts with the skybox!
+                  trueAlpha = (diffMax2 > 0.02) ? estimatedAlpha : 0.0;
+              } else {
+                  // Over geometry, diffMax2 can have holes if UI color == Geometry color.
+                  // But alphaDiff works perfectly here to fill the holes!
+                  trueAlpha = saturate(max(estimatedAlpha, alphaDiff));
+              }
               
               // Mathematically perfect UI reconstruction!
               // For opaque UI (trueAlpha=1), this exactly outputs bbColor (the originating UI pixel).
