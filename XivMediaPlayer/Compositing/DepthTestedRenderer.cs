@@ -680,12 +680,27 @@ float4 PS(VS_OUT input) : SV_TARGET {
           // Mathematically perfect UI blending: Subtract the pre-UI scene (Unk68)
           // from the post-UI scene (BackBuffer) to get the exact UI contribution.
           float4 preUiColor = PreUITexture.Sample(VideoSampler, screenUV);
-          float3 uiDiff = bbColor.rgb - preUiColor.rgb;
+          float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
           
-          // Apply this difference directly to the TV pixel!
-          // This perfectly reconstructs semi-transparency, drop shadows, and 
-          // naturally cancels out emissive skyboxes.
-          color.rgb = saturate(color.rgb + uiDiff);
+          float3 uiDiff = abs(bbColor.rgb - preUiColor.rgb);
+          float diffMax = max(max(uiDiff.r, uiDiff.g), uiDiff.b);
+          float gameDepth = DepthTexture.Sample(DepthSampler, screenUV).r;
+          
+          // The emissive skybox incorrectly writes bbAlpha=1.0.
+          // We can detect it because it's at max depth (gameDepth=0) and has no UI difference.
+          // If it's the skybox without UI over it, we force trueAlpha to 0.
+          float trueAlpha = bbAlpha;
+          if (gameDepth < 0.00001 && diffMax < 0.02) {
+              trueAlpha = 0.0;
+          }
+          
+          if (trueAlpha > 0.01) {
+              // Mathematically perfect UI reconstruction!
+              // For opaque UI (trueAlpha=1), this exactly outputs bbColor (the originating UI pixel).
+              // For translucent UI (e.g. drop shadows), it mathematically removes the FFXIV background
+              // (preUiColor) and replaces it with the TV pixel, preserving the exact shadow!
+              color.rgb = saturate(bbColor.rgb + (color.rgb - preUiColor.rgb) * (1.0 - trueAlpha));
+          }
       } else {
           // Fallback to old alpha masking if Unk68 is somehow missing
           float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;

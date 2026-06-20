@@ -81,7 +81,23 @@ float4 PS(VS_OUT input) : SV_TARGET {
   
   if (ShowDiff > 0.5) {
       float3 bbColor = BackBuffer.Sample(LinearSampler, input.uv).rgb;
-      color = abs(bbColor - color);
+      float bbAlpha = BackBuffer.Sample(LinearSampler, input.uv).a;
+      
+      float3 uiDiff = abs(bbColor - color);
+      float diffMax = max(max(uiDiff.r, uiDiff.g), uiDiff.b);
+      
+      // Unfortunately we don't have the depth buffer here to cancel out the emissive skybox perfectly,
+      // but the main issue is visualising the math!
+      float trueAlpha = bbAlpha;
+      if (diffMax < 0.02) {
+          trueAlpha = 0.0;
+      }
+      
+      if (trueAlpha > 0.01) {
+          color = saturate(bbColor + (float3(0,0,0) - color) * (1.0 - trueAlpha));
+      } else {
+          color = float3(0,0,0);
+      }
   }
   
   return float4(color, 1.0);
