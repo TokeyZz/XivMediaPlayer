@@ -675,12 +675,20 @@ float4 PS(VS_OUT input) : SV_TARGET {
   
   if (insideUI && isInside && !occluded) {
       float4 bbColor = BackBufferTexture.Sample(VideoSampler, screenUV);
-      float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
       
       if (HasPreUI > 0.5) {
-          float4 uiTex = PreUITexture.Sample(VideoSampler, screenUV);
-          bbAlpha = saturate(uiTex.a);
-      }
+          // Mathematically perfect UI blending: Subtract the pre-UI scene (Unk68)
+          // from the post-UI scene (BackBuffer) to get the exact UI contribution.
+          float4 preUiColor = PreUITexture.Sample(VideoSampler, screenUV);
+          float3 uiDiff = bbColor.rgb - preUiColor.rgb;
+          
+          // Apply this difference directly to the TV pixel!
+          // This perfectly reconstructs semi-transparency, drop shadows, and 
+          // naturally cancels out emissive skyboxes.
+          color.rgb = saturate(color.rgb + uiDiff);
+      } else {
+          // Fallback to old alpha masking if Unk68 is somehow missing
+          float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
       
       if (color.a > 0.5) {
           if (rectType == 4) {
@@ -723,6 +731,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
               color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
           }
       }
+    }
   }
   
   return color;

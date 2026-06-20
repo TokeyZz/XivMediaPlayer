@@ -113,11 +113,14 @@ namespace XivMediaPlayer.Windows {
               var lightSpecular = *(Texture**)((byte*)rtm + 0x60);
               var unk68 = *(Texture**)((byte*)rtm + 0x68);
 
-              if (lightDiffuse != null && lightSpecular != null) {
-                  // Fallback to SwapChainBackBuffer instead of Unk68 (Tone Adjust Source)
-                  var fallbackSource = rtm->SwapChainBackBuffer;
-                  _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value, rtm->GBuffers[4].Value, fallbackSource, lightDiffuse, lightSpecular, UICapture.BackBufferSRV);
+              if (lightDiffuse != null && lightSpecular != null && unk68 != null) {
+                  _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value, rtm->GBuffers[4].Value, unk68, lightDiffuse, lightSpecular, UICapture.BackBufferSRV);
               }
+          }
+          
+          bool showDiff = _sceneRenderer.ShowDiff;
+          if (ImGui.Checkbox("Show Difference Map (UI Overlay)", ref showDiff)) {
+              _sceneRenderer.ShowDiff = showDiff;
           }
           
           if (_sceneRenderer.PreviewTextureHandle != IntPtr.Zero) {

@@ -28,6 +28,9 @@ namespace XivMediaPlayer.Compositing {
     private unsafe FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* _lastGBuffer3Tex;
     private Vortice.Direct3D11.ID3D11ShaderResourceView? _gbuffer2Srv;
     private Vortice.Direct3D11.ID3D11ShaderResourceView? _gbuffer3Srv;
+    
+    private unsafe FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* _lastUnk68Tex;
+    private Vortice.Direct3D11.ID3D11ShaderResourceView? _unk68Srv;
 
     /// <summary>
     /// Whether to render a backlit glow effect around the screen.
@@ -238,6 +241,9 @@ namespace XivMediaPlayer.Compositing {
       if (rtm != null) {
           GetOrCreateSRV(rtm->GBuffers[2].Value, ref _lastGBuffer2Tex, ref _gbuffer2Srv);
           GetOrCreateSRV(rtm->GBuffers[3].Value, ref _lastGBuffer3Tex, ref _gbuffer3Srv);
+          
+          var unk68 = *(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x68);
+          GetOrCreateSRV(unk68, ref _lastUnk68Tex, ref _unk68Srv);
       }
 
       // WorldToScreen is the source of truth for screen positions
@@ -346,7 +352,7 @@ namespace XivMediaPlayer.Compositing {
           uiCapture?.LastAddonRects, titleSrvPtr, isLooping, isShuffle, time, showScreensaver, videoAspectRatio,
           _gbuffer2Srv?.NativePointer ?? IntPtr.Zero,
           _gbuffer3Srv?.NativePointer ?? IntPtr.Zero,
-          transparentUiSrvPtr);
+          _unk68Srv?.NativePointer ?? IntPtr.Zero);
 
         DepthDebugInfo = $"Cam: {cameraPos:F1}\nFwd: {cameraForward:F2}\nFov: {fovY:F3}\nAspect: {aspectRatio:F3}";
 
@@ -609,6 +615,7 @@ namespace XivMediaPlayer.Compositing {
       _disposed = true;
       _gbuffer2Srv?.Dispose();
       _gbuffer3Srv?.Dispose();
+      _unk68Srv?.Dispose();
       _depthRenderer?.Dispose();
       _glowRenderer?.Dispose();
     }
