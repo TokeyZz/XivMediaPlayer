@@ -30,14 +30,12 @@ namespace XivMediaPlayer.Compositing {
     private bool _disposed;
 
     private const string PreviewShaderCode = @"
-Texture2D GBuffer0 : register(t0); // Tangent Normals
-Texture2D GBuffer1 : register(t1); // Unknown/Material
-Texture2D GBuffer2 : register(t2); // Albedo
-Texture2D GBuffer3 : register(t3); // Unknown/Specular
-Texture2D GBuffer4 : register(t4); // World Space Normals
-Texture2D BackBuffer : register(t5); // UI Backbuffer
-Texture2D LightDiffuse : register(t6); // Accumulation Diffuse
-Texture2D LightSpecular : register(t7); // Accumulation Specular
+Texture2D GBuffer2 : register(t0);
+Texture2D LightDiffuse : register(t1);
+Texture2D LightSpecular : register(t2);
+Texture2D GBuffer4 : register(t3);
+Texture2D BackBuffer : register(t4);
+Texture2D Unk68 : register(t5);
 
 SamplerState LinearSampler : register(s0);
 
@@ -65,16 +63,20 @@ float4 PS(VS_OUT input) : SV_TARGET {
   float3 diffuseLight = LightDiffuse.Sample(LinearSampler, input.uv).rgb;
   float3 specularLight = LightSpecular.Sample(LinearSampler, input.uv).rgb;
   float4 gbuffer4 = GBuffer4.Sample(LinearSampler, input.uv);
+  float4 unk68 = Unk68.Sample(LinearSampler, input.uv);
   
-  // FFXIV's LightDiffuse only contains direct light. Add a fake ambient term so it isn't pitch black!
-  float3 fakeAmbient = float3(0.2, 0.2, 0.25);
+  // The user confirmed that Unk68 alone (the pre-tonemapped composite buffer) is much better
+  // than our manual reconstruction because it includes subsurface scattering, true ambient, reflections, etc.
+  float3 color = unk68.rgb;
   
-  // Combine using standard composite formula
-  float3 color = (albedo.rgb * (diffuseLight + fakeAmbient)) + specularLight;
-  
-  // Actually, we suspect GBuffer4 (Unk68) passed as the fourth texture might be the ToneAdjustSource!
-  // Let's preview it directly!
-  color = gbuffer4.rgb;
+  // FFXIV uses a tonemapping pass after this buffer. To make it look right, we can apply a standard ACES filmic tonemap.
+  // ACES Filmic Tonemapping Curve
+  float a = 2.51f;
+  float b = 0.03f;
+  float c = 2.43f;
+  float d = 0.59f;
+  float e = 0.14f;
+  color = saturate((color*(a*color+b))/(color*(c*color+d)+e));
   
   // Apply Gamma Correction (since we're outputting directly to ImGui without a tonemapper)
   color = pow(abs(color), 1.0 / 2.2);
@@ -92,6 +94,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
     public bool ShowDiff { get; set; } = false;
 
     public IntPtr PreviewTextureHandle => _previewSRV?.NativePointer ?? IntPtr.Zero;
+    public ID3D11ShaderResourceView PreviewSRV => _previewSRV;
     public bool IsInitialized => _initialized;
 
     public bool Initialize(int width = 800, int height = 450) {
@@ -160,17 +163,18 @@ float4 PS(VS_OUT input) : SV_TARGET {
       }
     }
 
-    public unsafe bool Update(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb0, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb1, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb2, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb3, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb4, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* lightDiffuse, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* lightSpecular, ID3D11ShaderResourceView bbSrv) {
-      if (!_initialized || _disposed || gb0 == null || gb1 == null || gb2 == null || gb3 == null || gb4 == null || lightDiffuse == null || lightSpecular == null || bbSrv == null ||
-          gb0->D3D11Texture2D == null || gb1->D3D11Texture2D == null || gb2->D3D11Texture2D == null || gb3->D3D11Texture2D == null || gb4->D3D11Texture2D == null || lightDiffuse->D3D11Texture2D == null || lightSpecular->D3D11Texture2D == null) return false;
+    public unsafe bool Update(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb0, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb1, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb2, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb3, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb4, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* unk68, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* lightDiffuse, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* lightSpecular, ID3D11ShaderResourceView bbSrv) {
+      if (!_initialized || _disposed || gb0 == null || gb1 == null || gb2 == null || gb3 == null || gb4 == null || unk68 == null || lightDiffuse == null || lightSpecular == null || bbSrv == null ||
+          gb0->D3D11Texture2D == null || gb1->D3D11Texture2D == null || gb2->D3D11Texture2D == null || gb3->D3D11Texture2D == null || gb4->D3D11Texture2D == null || unk68->D3D11Texture2D == null || lightDiffuse->D3D11Texture2D == null || lightSpecular->D3D11Texture2D == null) return false;
 
       ID3D11ShaderResourceView srv0 = null;
       ID3D11ShaderResourceView srv1 = null;
       ID3D11ShaderResourceView srv2 = null;
       ID3D11ShaderResourceView srv3 = null;
       ID3D11ShaderResourceView srv4 = null;
-      ID3D11ShaderResourceView srv6 = null;
-      ID3D11ShaderResourceView srv7 = null;
+      ID3D11ShaderResourceView lightDiffuseSrv = null;
+      ID3D11ShaderResourceView lightSpecularSrv = null;
+      ID3D11ShaderResourceView unk68Srv = null;
 
       try {
         var texPtr0 = (IntPtr)gb0->D3D11Texture2D;
@@ -180,6 +184,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
         var texPtr4 = (IntPtr)gb4->D3D11Texture2D;
         var texPtrDiff = (IntPtr)lightDiffuse->D3D11Texture2D;
         var texPtrSpec = (IntPtr)lightSpecular->D3D11Texture2D;
+        var texPtrUnk = (IntPtr)unk68->D3D11Texture2D;
         
         System.Runtime.InteropServices.Marshal.AddRef(texPtr0);
         using var tex0 = new ID3D11Texture2D(texPtr0);
@@ -195,14 +200,17 @@ float4 PS(VS_OUT input) : SV_TARGET {
         using var texDiff = new ID3D11Texture2D(texPtrDiff);
         System.Runtime.InteropServices.Marshal.AddRef(texPtrSpec);
         using var texSpec = new ID3D11Texture2D(texPtrSpec);
+        System.Runtime.InteropServices.Marshal.AddRef(texPtrUnk);
+        using var texUnk = new ID3D11Texture2D(texPtrUnk);
 
         srv0 = _device.CreateShaderResourceView(tex0);
         srv1 = _device.CreateShaderResourceView(tex1);
         srv2 = _device.CreateShaderResourceView(tex2);
         srv3 = _device.CreateShaderResourceView(tex3);
         srv4 = _device.CreateShaderResourceView(tex4);
-        srv6 = _device.CreateShaderResourceView(texDiff);
-        srv7 = _device.CreateShaderResourceView(texSpec);
+        lightDiffuseSrv = _device.CreateShaderResourceView(texDiff);
+        lightSpecularSrv = _device.CreateShaderResourceView(texSpec);
+        unk68Srv = _device.CreateShaderResourceView(texUnk);
 
         var savedRTVs = new ID3D11RenderTargetView[1];
         ID3D11DepthStencilView savedDSV;
@@ -227,14 +235,12 @@ float4 PS(VS_OUT input) : SV_TARGET {
 
           _context.PSSetConstantBuffer(0, _constantBuffer);
 
-          _context.PSSetShaderResource(0, srv0);
-          _context.PSSetShaderResource(1, srv1);
-          _context.PSSetShaderResource(2, srv2);
-          _context.PSSetShaderResource(3, srv3);
-          _context.PSSetShaderResource(4, srv4);
-          _context.PSSetShaderResource(5, bbSrv);
-          _context.PSSetShaderResource(6, srv6);
-          _context.PSSetShaderResource(7, srv7);
+          _context.PSSetShaderResource(0, srv2);
+          _context.PSSetShaderResource(1, lightDiffuseSrv);
+          _context.PSSetShaderResource(2, lightSpecularSrv);
+          _context.PSSetShaderResource(3, srv4);
+          _context.PSSetShaderResource(4, bbSrv);
+          _context.PSSetShaderResource(5, unk68Srv);
           _context.PSSetSampler(0, _sampler);
 
           _context.VSSetShader(_vertexShader);
@@ -247,14 +253,6 @@ float4 PS(VS_OUT input) : SV_TARGET {
           return true;
         } finally {
           _context.OMSetRenderTargets(savedRTVs, savedDSV);
-          _context.PSSetShaderResource(0, (ID3D11ShaderResourceView)null);
-          _context.PSSetShaderResource(1, (ID3D11ShaderResourceView)null);
-          _context.PSSetShaderResource(2, (ID3D11ShaderResourceView)null);
-          _context.PSSetShaderResource(3, (ID3D11ShaderResourceView)null);
-          _context.PSSetShaderResource(4, (ID3D11ShaderResourceView)null);
-          _context.PSSetShaderResource(5, (ID3D11ShaderResourceView)null);
-          _context.PSSetShaderResource(6, (ID3D11ShaderResourceView)null);
-          _context.PSSetShaderResource(7, (ID3D11ShaderResourceView)null);
         }
       } catch (Exception ex) {
         System.IO.File.WriteAllText(@"C:\Users\stel9\Documents\UpdateError.txt", ex.ToString());
@@ -265,8 +263,9 @@ float4 PS(VS_OUT input) : SV_TARGET {
         srv2?.Dispose();
         srv3?.Dispose();
         srv4?.Dispose();
-        srv6?.Dispose();
-        srv7?.Dispose();
+        lightDiffuseSrv?.Dispose();
+        lightSpecularSrv?.Dispose();
+        unk68Srv?.Dispose();
       }
     }
 

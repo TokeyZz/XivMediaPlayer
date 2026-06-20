@@ -77,6 +77,10 @@ namespace XivMediaPlayer.Windows {
           CopyToClipboard();
       }
       ImGui.SameLine();
+      if (ImGui.Button("Export Preview Frame to Desktop")) {
+          ExportPreviewFrame();
+      }
+      ImGui.SameLine();
       if (ImGui.Button("Dump RTM Fields to Log")) {
           DumpRtmFields();
       }
@@ -109,8 +113,8 @@ namespace XivMediaPlayer.Windows {
               var unk68 = *(Texture**)((byte*)rtm + 0x68);
 
               if (lightDiffuse != null && lightSpecular != null) {
-                  // PASS UNK68 in place of GBuffer4 so we can preview it!
-                  _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value, unk68, lightDiffuse, lightSpecular, UICapture.BackBufferSRV);
+                  // PASS GBuffer4 AND UNK68!
+                  _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value, rtm->GBuffers[4].Value, unk68, lightDiffuse, lightSpecular, UICapture.BackBufferSRV);
               }
           }
           
@@ -411,7 +415,79 @@ namespace XivMediaPlayer.Windows {
         }
     }
 
-    private void DumpRtmFields() {
+      private unsafe void ExportPreviewFrame() {
+          if (_sceneRenderer == null || !_sceneRenderer.IsInitialized || _sceneRenderer.PreviewSRV == null) {
+              _pluginLog.Error("Preview renderer is not initialized or SRV is null.");
+              return;
+          }
+
+          var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+          var folderPath = System.IO.Path.Combine(desktopPath, "XivMediaPlayerDumps");
+          if (!System.IO.Directory.Exists(folderPath)) {
+              System.IO.Directory.CreateDirectory(folderPath);
+          }
+
+          var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+          var filePath = System.IO.Path.Combine(folderPath, $"ReconstructedPreview_{ts}.png");
+
+          using var dumper = new Utils.TextureDumper();
+          if (dumper.Initialize()) {
+              // 1. Export the Reconstructed Preview
+              var rgbaData = dumper.DumpTextureToRgba(_sceneRenderer.PreviewSRV, 1920, 1080);
+              if (rgbaData != null) {
+                  using var bmp = new System.Drawing.Bitmap(1920, 1080, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                  var rect = new System.Drawing.Rectangle(0, 0, 1920, 1080);
+                  var data = bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.WriteOnly, bmp.PixelFormat);
+                  
+                  // TextureDumper already outputs BGRA, so no need to swap B and R!
+                  // Just force Alpha to 255 so the PNG isn't transparent.
+                  for (int i = 0; i < rgbaData.Length; i += 4) {
+                      rgbaData[i + 3] = 255;
+                  }
+                  
+                  System.Runtime.InteropServices.Marshal.Copy(rgbaData, 0, data.Scan0, rgbaData.Length);
+                  bmp.UnlockBits(data);
+                  bmp.Save(filePath, System.Drawing.Imaging.ImageFormat.Png);
+                  _pluginLog.Information($"Exported Preview to {filePath}");
+              }
+
+              // 2. Export the actual Game Frame (SwapChainBackBuffer)
+              var rtm = RenderTargetManager.Instance();
+              if (rtm != null && rtm->SwapChainBackBuffer != null && rtm->SwapChainBackBuffer->D3D11Texture2D != null) {
+                  var sbbPtr = (IntPtr)rtm->SwapChainBackBuffer->D3D11Texture2D;
+                  System.Runtime.InteropServices.Marshal.AddRef(sbbPtr);
+                  using var d3dTex = new Vortice.Direct3D11.ID3D11Texture2D(sbbPtr);
+                  int w = d3dTex.Description.Width;
+                  int h = d3dTex.Description.Height;
+                  
+                  using var device = d3dTex.Device;
+                  using var srv = device.CreateShaderResourceView(d3dTex);
+                  
+                  var rgbaSbb = dumper.DumpTextureToRgba(srv, w, h);
+                  if (rgbaSbb != null) {
+                      var sbbPath = System.IO.Path.Combine(folderPath, $"GameScreenshot_{ts}.png");
+                      using var bmp2 = new System.Drawing.Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                      var rect2 = new System.Drawing.Rectangle(0, 0, w, h);
+                      var data2 = bmp2.LockBits(rect2, System.Drawing.Imaging.ImageLockMode.WriteOnly, bmp2.PixelFormat);
+                      
+                      // TextureDumper already outputs BGRA, so no need to swap B and R!
+                      // Force Alpha to 255
+                      // (FFXIV stores Alpha=0 for the 3D scene in the backbuffer to use as a UI mask, 
+                      // which would make the PNG transparent in image editors if we didn't force it to 255)
+                      for (int i = 0; i < rgbaSbb.Length; i += 4) {
+                          rgbaSbb[i + 3] = 255;
+                      }
+                      
+                      System.Runtime.InteropServices.Marshal.Copy(rgbaSbb, 0, data2.Scan0, rgbaSbb.Length);
+                      bmp2.UnlockBits(data2);
+                      bmp2.Save(sbbPath, System.Drawing.Imaging.ImageFormat.Png);
+                      _pluginLog.Information($"Exported Game Screenshot to {sbbPath}");
+                  }
+              }
+          }
+      }
+
+    private unsafe void DumpRtmFields() {
         try {
             var type = typeof(RenderTargetManager);
             _pluginLog.Info("=== RenderTargetManager Properties ===");
@@ -464,16 +540,13 @@ namespace XivMediaPlayer.Windows {
                         var rect = new System.Drawing.Rectangle(0, 0, w, h);
                         var data = bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.WriteOnly, bmp.PixelFormat);
                         
-                        // Swap RGBA to BGRA
-                        byte[] bgraData = new byte[rgbaData.Length];
+                        // TextureDumper already outputs BGRA, so no need to swap B and R!
+                        // Force Alpha to 255 to prevent transparent exports
                         for (int i = 0; i < rgbaData.Length; i += 4) {
-                            bgraData[i] = rgbaData[i + 2];
-                            bgraData[i + 1] = rgbaData[i + 1];
-                            bgraData[i + 2] = rgbaData[i];
-                            bgraData[i + 3] = rgbaData[i + 3];
+                            rgbaData[i + 3] = 255;
                         }
                         
-                        System.Runtime.InteropServices.Marshal.Copy(bgraData, 0, data.Scan0, bgraData.Length);
+                        System.Runtime.InteropServices.Marshal.Copy(rgbaData, 0, data.Scan0, rgbaData.Length);
                         bmp.UnlockBits(data);
                         bmp.Save(System.IO.Path.Combine(deskDir, name + ".png"), System.Drawing.Imaging.ImageFormat.Png);
                     }
