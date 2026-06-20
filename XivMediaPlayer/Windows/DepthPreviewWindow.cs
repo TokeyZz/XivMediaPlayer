@@ -620,6 +620,7 @@ namespace XivMediaPlayer.Windows {
             ExportTex(*(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x70), "Unk70");
             ExportTex(*(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x78), "Unk78");
             ExportTex(*(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x80), "Unk80");
+            ExportTex(rtm->ToneAdjustSource, "ToneAdjustSource");
 
             _pluginLog.Info("Bulk export completed to Desktop!");
         } catch(Exception ex) {
