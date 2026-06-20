@@ -2443,6 +2443,21 @@ namespace XivMediaPlayer
         {
             if (_worldRenderer != null) _worldRenderer.UseDepthOcclusion = _config.DepthOcclusionEnabled;
 
+            bool useDifferenceFallback = false;
+            if (_objectTable != null) {
+                foreach (var obj in _objectTable) {
+                    if (obj == null || obj.Name == null) continue;
+                    var name = obj.Name.TextValue;
+                    if (name != null && (name.Contains("Wanderer's Campfire", StringComparison.OrdinalIgnoreCase) || 
+                                         name.Contains("Wanderers Lagerfeuer", StringComparison.OrdinalIgnoreCase) ||
+                                         name.Contains("Feu de camp du vagabond", StringComparison.OrdinalIgnoreCase) ||
+                                         name.Contains("ワンダラーズカンプファイア", StringComparison.OrdinalIgnoreCase))) {
+                        useDifferenceFallback = true;
+                        break;
+                    }
+                }
+            }
+
             // Reset per-frame depth capture flag
             _depthCapture?.BeginFrame();
 
@@ -2613,7 +2628,9 @@ namespace XivMediaPlayer
                         int physX = (int)(mousePos.X * scaleX);
                         int physY = (int)(mousePos.Y * scaleY);
 
-                        bool isOccluding = _uiCapture.IsPixelOccluding(physX, physY);
+                        IntPtr unk68Ptr = SceneColorProbe.GetToneAdjustSourceSrvPtr();
+                        
+                        bool isOccluding = _uiCapture.IsPixelOccluding(physX, physY, unk68Ptr, _depthCapture, useDifferenceFallback);
                         if (isOccluding)
                         {
                             uv = new System.Numerics.Vector2(-1, -1);
@@ -2945,20 +2962,9 @@ namespace XivMediaPlayer
 
                     _worldRenderer.EnableGlow = _config.DepthOcclusionEnabled && _config.LivestreamVolume > 0;
                     
-                    bool useDifferenceFallback = false;
-                    if (_objectTable != null) {
-                        foreach (var obj in _objectTable) {
-                            if (obj == null || obj.Name == null) continue;
-                            var name = obj.Name.TextValue;
-                            if (name != null && (name.Contains("Wanderer's Campfire", StringComparison.OrdinalIgnoreCase) || 
-                                                 name.Contains("Wanderers Lagerfeuer", StringComparison.OrdinalIgnoreCase) ||
-                                                 name.Contains("Feu de camp du vagabond", StringComparison.OrdinalIgnoreCase) ||
-                                                 name.Contains("ワンダラーズカンプファイア", StringComparison.OrdinalIgnoreCase))) {
-                                useDifferenceFallback = true;
-                                break;
-                            }
-                        }
-                    }
+                    // useDifferenceFallback is already calculated above when checking UI occlusion,
+                    // but we re-calculate it here in case the logic above was skipped.
+                    // (Actually we calculated it at the top of OnDraw, so we don't need to do it again here.)
                     
                     _worldRenderer.Render(videoSrv, videoWidth, videoHeight, _depthCapture, cameraPos, cameraForward, cameraRight, cameraUp, fovY, aspectRatio, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, lockState, volume, srvPtr, _config.LoopEnabled, _config.ShuffleEnabled, timeSeconds, showScreensaver, useDifferenceFallback: useDifferenceFallback);
                 }

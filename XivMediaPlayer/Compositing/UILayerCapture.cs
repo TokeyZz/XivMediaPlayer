@@ -19,6 +19,7 @@ namespace XivMediaPlayer.Compositing {
     private ID3D11Texture2D _backBufferCopy;
     private ID3D11ShaderResourceView _backBufferSRV;
     private ID3D11Texture2D _stagingTexture;
+    private ID3D11Texture2D _unk68StagingTexture;
     private ID3D11Texture2D _previewStagingTexture;
     private int _width, _height;
     private Vortice.DXGI.Format _format;
@@ -123,6 +124,18 @@ namespace XivMediaPlayer.Compositing {
                 CPUAccessFlags = CpuAccessFlags.Read,
               });
 
+              _unk68StagingTexture = _device.CreateTexture2D(new Texture2DDescription {
+                Width = 1,
+                Height = 1,
+                MipLevels = 1,
+                ArraySize = 1,
+                Format = Vortice.DXGI.Format.R16G16B16A16_Float, // Unk68 is often an FP16 format
+                SampleDescription = new SampleDescription(1, 0),
+                Usage = ResourceUsage.Staging,
+                BindFlags = BindFlags.None,
+                CPUAccessFlags = CpuAccessFlags.Read,
+              });
+
               _previewStagingTexture = _device.CreateTexture2D(new Texture2DDescription {
                 Width = desc.Width,
                 Height = desc.Height,
@@ -174,9 +187,9 @@ namespace XivMediaPlayer.Compositing {
 
     /// <summary>
     /// Reads the pixel from the captured backbuffer to determine if the game UI is occluding this point.
-    /// Accounts for AMD driver blending which blends greyscale world data into the UI mask, and ReShade which breaks the UI mask entirely.
+    /// Uses the same difference math as the shader to ignore modded skyboxes and handle translucent UI.
     /// </summary>
-    public bool IsPixelOccluding(int x, int y) {
+    public bool IsPixelOccluding(int x, int y, IntPtr unk68Ptr, DepthBufferCapture depthCapture, bool useDifferenceFallback) {
       if (_disposed || !_initialized || !_frameCaptured || _backBufferCopy == null || _stagingTexture == null) return false;
       if (x < 0 || y < 0 || x >= _width || y >= _height) return false;
 
@@ -184,21 +197,79 @@ namespace XivMediaPlayer.Compositing {
         _context.CopySubresourceRegion(_stagingTexture, 0, 0, 0, 0, _backBufferCopy, 0, new Vortice.Mathematics.Box(x, y, 0, x + 1, y + 1, 1));
         var mapped = _context.Map(_stagingTexture, 0, Vortice.Direct3D11.MapMode.Read, Vortice.Direct3D11.MapFlags.None);
         
-        bool isOccluding = false;
+        float nativeAlpha = 0f;
+        float bR = 0f, bG = 0f, bB = 0f;
         unsafe {
             byte* ptr = (byte*)mapped.DataPointer;
-            float alpha = ptr[3] / 255f; // BGRA or RGBA, alpha is the 4th byte
+            bB = ptr[0] / 255f;
+            bG = ptr[1] / 255f;
+            bR = ptr[2] / 255f;
+            nativeAlpha = ptr[3] / 255f;
+        }
+        _context.Unmap(_stagingTexture, 0);
+
+        float trueAlpha = nativeAlpha;
+        
+        if (unk68Ptr != IntPtr.Zero && depthCapture != null && depthCapture.LastDepthData != null) {
+            System.Runtime.InteropServices.Marshal.AddRef(unk68Ptr);
+            using var unk68Srv = new ID3D11ShaderResourceView(unk68Ptr);
+            using var unk68Tex = unk68Srv.Resource.QueryInterface<ID3D11Texture2D>();
             
-            // Standard Mode
-            // Ignore anything below ~0.1 alpha to cut out minor noise. The shader blends this smoothly,
-            // but for clicking, a 10% opaque UI element shouldn't block the mouse.
-            if (alpha > 0.1f) {
-                isOccluding = true;
+            // Recreate staging texture if format doesn't match
+            if (_unk68StagingTexture == null || _unk68StagingTexture.Description.Format != unk68Tex.Description.Format) {
+                _unk68StagingTexture?.Dispose();
+                _unk68StagingTexture = _device.CreateTexture2D(new Texture2DDescription {
+                    Width = 1, Height = 1, MipLevels = 1, ArraySize = 1,
+                    Format = unk68Tex.Description.Format, SampleDescription = new SampleDescription(1, 0),
+                    Usage = ResourceUsage.Staging, BindFlags = BindFlags.None, CPUAccessFlags = CpuAccessFlags.Read,
+                });
+            }
+
+            _context.CopySubresourceRegion(_unk68StagingTexture, 0, 0, 0, 0, unk68Tex, 0, new Vortice.Mathematics.Box(x, y, 0, x + 1, y + 1, 1));
+            var mappedUnk68 = _context.Map(_unk68StagingTexture, 0, Vortice.Direct3D11.MapMode.Read, Vortice.Direct3D11.MapFlags.None);
+            
+            float uR = 0f, uG = 0f, uB = 0f, uA = 0f;
+            unsafe {
+                if (_unk68StagingTexture.Description.Format == Vortice.DXGI.Format.R16G16B16A16_Float) {
+                    ushort* ptr16 = (ushort*)mappedUnk68.DataPointer;
+                    uR = (float)BitConverter.Int16BitsToHalf((short)ptr16[0]);
+                    uG = (float)BitConverter.Int16BitsToHalf((short)ptr16[1]);
+                    uB = (float)BitConverter.Int16BitsToHalf((short)ptr16[2]);
+                    uA = (float)BitConverter.Int16BitsToHalf((short)ptr16[3]);
+                } else {
+                    byte* ptr = (byte*)mappedUnk68.DataPointer;
+                    uR = ptr[0] / 255f;
+                    uG = ptr[1] / 255f;
+                    uB = ptr[2] / 255f;
+                    uA = ptr[3] / 255f;
+                }
+            }
+            _context.Unmap(_unk68StagingTexture, 0);
+
+            float gameDepth = depthCapture.LastDepthData[y * depthCapture.DepthWidth + x];
+            bool isSkybox = (gameDepth < 0.00001f);
+
+            // Estimated Alpha Math
+            float estR = (bR > uR) ? (bR - uR) / Math.Max(0.0001f, 1.0f - uR) : 1.0f - (bR / Math.Max(0.0001f, uR));
+            float estG = (bG > uG) ? (bG - uG) / Math.Max(0.0001f, 1.0f - uG) : 1.0f - (bG / Math.Max(0.0001f, uG));
+            float estB = (bB > uB) ? (bB - uB) / Math.Max(0.0001f, 1.0f - uB) : 1.0f - (bB / Math.Max(0.0001f, uB));
+            float estimatedAlpha = Math.Clamp(Math.Max(Math.Max(estR, estG), estB), 0f, 1f);
+            
+            float diffMax2 = Math.Max(Math.Max(Math.Abs(bR - uR), Math.Abs(bG - uG)), Math.Abs(bB - uB));
+            float alphaDiff = Math.Abs(nativeAlpha - uA);
+
+            if (isSkybox) {
+                if (useDifferenceFallback) {
+                    trueAlpha = (diffMax2 > 0.02f) ? estimatedAlpha : 0.0f;
+                } else {
+                    trueAlpha = nativeAlpha;
+                }
+            } else {
+                trueAlpha = Math.Clamp(Math.Max(estimatedAlpha, alphaDiff), 0f, 1f);
             }
         }
         
-        _context.Unmap(_stagingTexture, 0);
-        return isOccluding;
+        return trueAlpha > 0.1f;
       } catch {
         return false;
       }
