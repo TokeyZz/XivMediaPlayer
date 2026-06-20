@@ -21,6 +21,7 @@ namespace XivMediaPlayer.Compositing {
     private ID3D11Texture2D _stagingTexture;
     private ID3D11Texture2D _previewStagingTexture;
     private int _width, _height;
+    private Vortice.DXGI.Format _format;
     private bool _disposed;
     private bool _initialized;
     private bool _frameCaptured;
@@ -69,23 +70,18 @@ namespace XivMediaPlayer.Compositing {
 
     private bool CaptureToTexture(ref ID3D11Texture2D targetCopy, ref ID3D11ShaderResourceView targetSrv, bool isPreUI) {
       try {
-        var ffxivDevice = Device.Instance();
-        if (ffxivDevice == null || ffxivDevice->SwapChain == null) {
-          _debugInfo = "SwapChain not available";
+        var rtm = FFXIVClientStructs.FFXIV.Client.Graphics.Render.RenderTargetManager.Instance();
+        if (rtm == null || rtm->SwapChainBackBuffer == null || rtm->SwapChainBackBuffer->D3D11Texture2D == null) {
+          _debugInfo = "RTM SwapChainBackBuffer not available";
           return false;
         }
 
-        var scPtr = (IntPtr)ffxivDevice->SwapChain->DXGISwapChain;
-        if (scPtr == IntPtr.Zero) {
-          _debugInfo = "DXGISwapChain ptr is null";
-          return false;
-        }
-
-        var dxgiSwapChain = new Vortice.DXGI.IDXGISwapChain(scPtr);
-        var backBuffer = dxgiSwapChain.GetBuffer<ID3D11Texture2D>(0);
+        var texPtr = (IntPtr)rtm->SwapChainBackBuffer->D3D11Texture2D;
+        System.Runtime.InteropServices.Marshal.AddRef(texPtr);
+        var backBuffer = new Vortice.Direct3D11.ID3D11Texture2D(texPtr);
         var desc = backBuffer.Description;
 
-        if (targetCopy == null || _width != (int)desc.Width || _height != (int)desc.Height) {
+        if (targetCopy == null || _width != (int)desc.Width || _height != (int)desc.Height || _format != desc.Format) {
           targetCopy?.Dispose();
           targetSrv?.Dispose();
           targetSrv = null;
@@ -97,6 +93,7 @@ namespace XivMediaPlayer.Compositing {
              _previewStagingTexture = null;
              _width = (int)desc.Width;
              _height = (int)desc.Height;
+             _format = desc.Format;
           }
 
           targetCopy = _device.CreateTexture2D(new Texture2DDescription {

@@ -26,6 +26,15 @@ namespace XivMediaPlayer.Compositing {
     private int _width;
     private int _height;
 
+    private ID3D11Texture2D _copyTex0;
+    private ID3D11Texture2D _copyTex1;
+    private ID3D11Texture2D _copyTex2;
+    private ID3D11Texture2D _copyTex3;
+    private ID3D11Texture2D _copyTex4;
+    private ID3D11Texture2D _copyTexDiff;
+    private ID3D11Texture2D _copyTexSpec;
+    private ID3D11Texture2D _copyTexUnk;
+
     private bool _initialized;
     private bool _disposed;
 
@@ -152,6 +161,31 @@ float4 PS(VS_OUT input) : SV_TARGET {
       }
     }
 
+    private ID3D11ShaderResourceView CreateSRVSafe(ID3D11Texture2D sourceTex, ref ID3D11Texture2D cacheTex) {
+        var desc = sourceTex.Description;
+        if ((desc.BindFlags & BindFlags.ShaderResource) != 0) {
+            return _device.CreateShaderResourceView(sourceTex);
+        }
+        
+        if (cacheTex == null || cacheTex.Description.Width != desc.Width || cacheTex.Description.Height != desc.Height || cacheTex.Description.Format != desc.Format) {
+            cacheTex?.Dispose();
+            var copyDesc = desc;
+            copyDesc.BindFlags = BindFlags.ShaderResource;
+            copyDesc.Usage = ResourceUsage.Default;
+            copyDesc.CPUAccessFlags = CpuAccessFlags.None;
+            copyDesc.MiscFlags = ResourceOptionFlags.None;
+            cacheTex = _device.CreateTexture2D(copyDesc);
+        }
+        
+        if (desc.SampleDescription.Count > 1) {
+            _context.ResolveSubresource(cacheTex, 0, sourceTex, 0, desc.Format);
+        } else {
+            _context.CopyResource(cacheTex, sourceTex);
+        }
+        
+        return _device.CreateShaderResourceView(cacheTex);
+    }
+
     public unsafe bool Update(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb0, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb1, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb2, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb3, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* gb4, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* unk68, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* lightDiffuse, FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* lightSpecular, ID3D11ShaderResourceView bbSrv) {
       if (!_initialized || _disposed || gb0 == null || gb1 == null || gb2 == null || gb3 == null || gb4 == null || unk68 == null || lightDiffuse == null || lightSpecular == null || bbSrv == null ||
           gb0->D3D11Texture2D == null || gb1->D3D11Texture2D == null || gb2->D3D11Texture2D == null || gb3->D3D11Texture2D == null || gb4->D3D11Texture2D == null || unk68->D3D11Texture2D == null || lightDiffuse->D3D11Texture2D == null || lightSpecular->D3D11Texture2D == null) return false;
@@ -192,14 +226,14 @@ float4 PS(VS_OUT input) : SV_TARGET {
         System.Runtime.InteropServices.Marshal.AddRef(texPtrUnk);
         using var texUnk = new ID3D11Texture2D(texPtrUnk);
 
-        srv0 = _device.CreateShaderResourceView(tex0);
-        srv1 = _device.CreateShaderResourceView(tex1);
-        srv2 = _device.CreateShaderResourceView(tex2);
-        srv3 = _device.CreateShaderResourceView(tex3);
-        srv4 = _device.CreateShaderResourceView(tex4);
-        lightDiffuseSrv = _device.CreateShaderResourceView(texDiff);
-        lightSpecularSrv = _device.CreateShaderResourceView(texSpec);
-        unk68Srv = _device.CreateShaderResourceView(texUnk);
+        srv0 = CreateSRVSafe(tex0, ref _copyTex0);
+        srv1 = CreateSRVSafe(tex1, ref _copyTex1);
+        srv2 = CreateSRVSafe(tex2, ref _copyTex2);
+        srv3 = CreateSRVSafe(tex3, ref _copyTex3);
+        srv4 = CreateSRVSafe(tex4, ref _copyTex4);
+        lightDiffuseSrv = CreateSRVSafe(texDiff, ref _copyTexDiff);
+        lightSpecularSrv = CreateSRVSafe(texSpec, ref _copyTexSpec);
+        unk68Srv = CreateSRVSafe(texUnk, ref _copyTexUnk);
 
         var savedRTVs = new ID3D11RenderTargetView[1];
         ID3D11DepthStencilView savedDSV;
@@ -261,6 +295,15 @@ float4 PS(VS_OUT input) : SV_TARGET {
     public void Dispose() {
       if (_disposed) return;
       _disposed = true;
+
+      _copyTex0?.Dispose();
+      _copyTex1?.Dispose();
+      _copyTex2?.Dispose();
+      _copyTex3?.Dispose();
+      _copyTex4?.Dispose();
+      _copyTexDiff?.Dispose();
+      _copyTexSpec?.Dispose();
+      _copyTexUnk?.Dispose();
 
       _constantBuffer?.Dispose();
       _previewRTV?.Dispose();

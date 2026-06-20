@@ -89,14 +89,8 @@ namespace XivMediaPlayer.Compositing {
     }
 
     public static unsafe IntPtr GetToneAdjustSourceSrvPtr() {
-        var rtm = RenderTargetManager.Instance();
-        if (rtm == null) return IntPtr.Zero;
-
-        IntPtr texPtr = System.Runtime.InteropServices.Marshal.ReadIntPtr((IntPtr)rtm, 880); // ToneAdjustSource
-        if (texPtr == IntPtr.Zero) return IntPtr.Zero;
-
-        IntPtr srvPtr = System.Runtime.InteropServices.Marshal.ReadIntPtr(texPtr, 112); // D3D11ShaderResourceView
-        return srvPtr;
+        // ToneAdjustSource is no longer used by Dawntrail and will overwrite the UI mask with zeros!
+        return IntPtr.Zero;
     }
   }
 }

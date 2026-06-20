@@ -667,6 +667,12 @@ float4 PS(VS_OUT input) : SV_TARGET {
       }
   }
   
+  // Fallback: If AddonRects failed to capture (e.g. FFXIV update broke RaptureAtkUnitManager),
+  // allow the alpha mask to still apply everywhere!
+  if (UIRectCount == 0) {
+      insideUI = true;
+  }
+  
   if (insideUI && isInside && !occluded) {
       float4 bbColor = BackBufferTexture.Sample(VideoSampler, screenUV);
       float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;

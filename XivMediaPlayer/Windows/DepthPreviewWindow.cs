@@ -23,6 +23,7 @@ namespace XivMediaPlayer.Windows {
     private int _lastDataHash;
     private int _lastUiDataHash;
     private bool _disposed;
+    private ID3D11Texture2D _dynamicCopyTex;
     
     private int _selectedPreviewMode = 0;
     private readonly string[] _previewModes = {
@@ -113,8 +114,9 @@ namespace XivMediaPlayer.Windows {
               var unk68 = *(Texture**)((byte*)rtm + 0x68);
 
               if (lightDiffuse != null && lightSpecular != null) {
-                  // PASS GBuffer4 AND UNK68!
-                  _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value, rtm->GBuffers[4].Value, unk68, lightDiffuse, lightSpecular, UICapture.BackBufferSRV);
+                  // Fallback to SwapChainBackBuffer instead of Unk68 (Tone Adjust Source)
+                  var fallbackSource = rtm->SwapChainBackBuffer;
+                  _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value, rtm->GBuffers[4].Value, fallbackSource, lightDiffuse, lightSpecular, UICapture.BackBufferSRV);
               }
           }
           
@@ -189,50 +191,81 @@ namespace XivMediaPlayer.Windows {
         if (tex == null || tex->D3D11Texture2D == null) return null;
         var texPtr = (IntPtr)tex->D3D11Texture2D;
         if (_dynamicSrvTexPtr == texPtr && _dynamicSrv != null) {
+            if (_dynamicCopyTex != null) {
+                System.Runtime.InteropServices.Marshal.AddRef(texPtr);
+                using var d3dTex2 = new Vortice.Direct3D11.ID3D11Texture2D(texPtr);
+                using var device2 = d3dTex2.Device;
+                using var context2 = device2.ImmediateContext;
+                if (d3dTex2.Description.SampleDescription.Count > 1) {
+                    context2.ResolveSubresource(_dynamicCopyTex, 0, d3dTex2, 0, d3dTex2.Description.Format);
+                } else {
+                    context2.CopyResource(_dynamicCopyTex, d3dTex2);
+                }
+            }
             return _dynamicSrv;
         }
         
         _dynamicSrv?.Dispose();
         _dynamicSrv = null;
+        _dynamicCopyTex?.Dispose();
+        _dynamicCopyTex = null;
         _dynamicSrvTexPtr = texPtr;
         
         System.Runtime.InteropServices.Marshal.AddRef(texPtr);
         using var d3dTex = new Vortice.Direct3D11.ID3D11Texture2D(texPtr);
         try {
-            if ((d3dTex.Description.BindFlags & BindFlags.ShaderResource) != 0) {
+            var targetTex = d3dTex;
+            
+            if ((d3dTex.Description.BindFlags & BindFlags.ShaderResource) == 0) {
                 using var device = d3dTex.Device;
+                var desc = d3dTex.Description;
+                desc.BindFlags = BindFlags.ShaderResource;
+                desc.Usage = ResourceUsage.Default;
+                desc.CPUAccessFlags = CpuAccessFlags.None;
+                desc.MiscFlags = ResourceOptionFlags.None;
                 
-                // For depth buffers, we need a specific format
-                if (d3dTex.Description.Format == Vortice.DXGI.Format.R24G8_Typeless) {
-                    var desc = new ShaderResourceViewDescription {
-                        Format = Vortice.DXGI.Format.R24_UNorm_X8_Typeless,
-                        ViewDimension = Vortice.Direct3D.ShaderResourceViewDimension.Texture2D,
-                        Texture2D = new Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 }
-                    };
-                    _dynamicSrv = device.CreateShaderResourceView(d3dTex, desc);
-                } else if (d3dTex.Description.Format == Vortice.DXGI.Format.R32_Typeless) {
-                    var desc = new ShaderResourceViewDescription {
-                        Format = Vortice.DXGI.Format.R32_Float,
-                        ViewDimension = Vortice.Direct3D.ShaderResourceViewDimension.Texture2D,
-                        Texture2D = new Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 }
-                    };
-                    _dynamicSrv = device.CreateShaderResourceView(d3dTex, desc);
-                } else if (d3dTex.Description.Format.ToString().Contains("Typeless")) {
-                    Vortice.DXGI.Format newFmt = d3dTex.Description.Format;
-                    if (newFmt == Vortice.DXGI.Format.R8G8B8A8_Typeless) newFmt = Vortice.DXGI.Format.R8G8B8A8_UNorm;
-                    else if (newFmt == Vortice.DXGI.Format.R16G16B16A16_Typeless) newFmt = Vortice.DXGI.Format.R16G16B16A16_Float;
-                    else if (newFmt == Vortice.DXGI.Format.R32G32B32A32_Typeless) newFmt = Vortice.DXGI.Format.R32G32B32A32_Float;
-                    else if (newFmt == Vortice.DXGI.Format.R10G10B10A2_Typeless) newFmt = Vortice.DXGI.Format.R10G10B10A2_UNorm;
-                    
-                    var desc = new ShaderResourceViewDescription {
-                        Format = newFmt,
-                        ViewDimension = Vortice.Direct3D.ShaderResourceViewDimension.Texture2D,
-                        Texture2D = new Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 }
-                    };
-                    _dynamicSrv = device.CreateShaderResourceView(d3dTex, desc);
+                _dynamicCopyTex = device.CreateTexture2D(desc);
+                targetTex = _dynamicCopyTex;
+                
+                using var context = device.ImmediateContext;
+                if (desc.SampleDescription.Count > 1) {
+                    context.ResolveSubresource(_dynamicCopyTex, 0, d3dTex, 0, desc.Format);
                 } else {
-                    _dynamicSrv = device.CreateShaderResourceView(d3dTex);
+                    context.CopyResource(_dynamicCopyTex, d3dTex);
                 }
+            }
+
+            using var targetDevice = targetTex.Device;
+            // For depth buffers, we need a specific format
+            if (targetTex.Description.Format == Vortice.DXGI.Format.R24G8_Typeless) {
+                var desc = new ShaderResourceViewDescription {
+                    Format = Vortice.DXGI.Format.R24_UNorm_X8_Typeless,
+                    ViewDimension = Vortice.Direct3D.ShaderResourceViewDimension.Texture2D,
+                    Texture2D = new Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 }
+                };
+                _dynamicSrv = targetDevice.CreateShaderResourceView(targetTex, desc);
+            } else if (targetTex.Description.Format == Vortice.DXGI.Format.R32_Typeless) {
+                var desc = new ShaderResourceViewDescription {
+                    Format = Vortice.DXGI.Format.R32_Float,
+                    ViewDimension = Vortice.Direct3D.ShaderResourceViewDimension.Texture2D,
+                    Texture2D = new Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 }
+                };
+                _dynamicSrv = targetDevice.CreateShaderResourceView(targetTex, desc);
+            } else if (targetTex.Description.Format.ToString().Contains("Typeless")) {
+                Vortice.DXGI.Format newFmt = targetTex.Description.Format;
+                if (newFmt == Vortice.DXGI.Format.R8G8B8A8_Typeless) newFmt = Vortice.DXGI.Format.R8G8B8A8_UNorm;
+                else if (newFmt == Vortice.DXGI.Format.R16G16B16A16_Typeless) newFmt = Vortice.DXGI.Format.R16G16B16A16_Float;
+                else if (newFmt == Vortice.DXGI.Format.R32G32B32A32_Typeless) newFmt = Vortice.DXGI.Format.R32G32B32A32_Float;
+                else if (newFmt == Vortice.DXGI.Format.R10G10B10A2_Typeless) newFmt = Vortice.DXGI.Format.R10G10B10A2_UNorm;
+                
+                var desc = new ShaderResourceViewDescription {
+                    Format = newFmt,
+                    ViewDimension = Vortice.Direct3D.ShaderResourceViewDimension.Texture2D,
+                    Texture2D = new Texture2DShaderResourceView { MipLevels = 1, MostDetailedMip = 0 }
+                };
+                _dynamicSrv = targetDevice.CreateShaderResourceView(targetTex, desc);
+            } else {
+                _dynamicSrv = targetDevice.CreateShaderResourceView(targetTex);
             }
         } catch (Exception ex) {
             _pluginLog.Warning(ex, "[Depth Preview] Failed to create SRV.");
@@ -338,6 +371,7 @@ namespace XivMediaPlayer.Windows {
       _previewTexture?.Dispose();
       _uiPreviewTexture?.Dispose();
       _dynamicSrv?.Dispose();
+      _dynamicCopyTex?.Dispose();
       _sceneRenderer?.Dispose();
       _dumper?.Dispose();
     }
