@@ -85,7 +85,7 @@ namespace XivMediaPlayer.Compositing {
 
       if (_disposed || !IsActive || textureSrv == IntPtr.Zero) return;
       
-      var drawList = Dalamud.Bindings.ImGui.ImGui.GetBackgroundDrawList();
+      var drawList = Dalamud.Bindings.ImGui.ImGui.GetBackgroundDrawList(ImGui.GetMainViewport());
       int initialCmdSize = drawList.CmdBuffer.Size;
 
       float videoAspect = textureHeight > 0 ? (float)textureWidth / textureHeight : 0;
@@ -346,7 +346,7 @@ namespace XivMediaPlayer.Compositing {
       // Average depth for glow visibility
       float centerDepth = (depthTL + depthTR + depthBR + depthBL) * 0.25f;
 
-      var drawList = ImGui.GetBackgroundDrawList();
+      var drawList = ImGui.GetBackgroundDrawList(ImGui.GetMainViewport());
 
       // Draw glow behind the video
       if (_enableGlow && allCornersInFront) {
@@ -494,7 +494,7 @@ namespace XivMediaPlayer.Compositing {
 
       StabilizeCorners(ref sTL, ref sTR, ref sBR, ref sBL);
 
-      var drawList = ImGui.GetBackgroundDrawList();
+      var drawList = ImGui.GetBackgroundDrawList(ImGui.GetMainViewport());
 
       // Draw backlit glow layers behind the video
       if (_enableGlow) {
