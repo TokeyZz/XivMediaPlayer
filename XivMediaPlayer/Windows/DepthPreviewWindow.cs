@@ -39,6 +39,7 @@ namespace XivMediaPlayer.Windows {
         "RTM: SemiTransparent GBuffer 2",
         "RTM: SemiTransparent GBuffer 3",
         "RTM: SemiTransparent GBuffer 4",
+        "RTM: Tone Adjust Source",
         "Reconstructed Scene (GBuffer2 * GBuffer3)"
     };
 
@@ -83,7 +84,7 @@ namespace XivMediaPlayer.Windows {
         return;
       }
 
-      if (_selectedPreviewMode == 13) {
+      if (_selectedPreviewMode == 14) {
           if (_sceneRenderer == null) {
               _sceneRenderer = new SceneReconstructionPreviewRenderer();
               _sceneRenderer.Initialize();
@@ -124,6 +125,7 @@ namespace XivMediaPlayer.Windows {
         case 10: tex = rtm->SemitransparentGBuffers[2].Value; break;
         case 11: tex = rtm->SemitransparentGBuffers[3].Value; break;
         case 12: tex = rtm->SemitransparentGBuffers[4].Value; break;
+        case 13: tex = rtm->ToneAdjustSource; break;
       }
 
       if (tex == null || tex->D3D11Texture2D == null) {
@@ -213,6 +215,7 @@ namespace XivMediaPlayer.Windows {
     private void DrawStandardPreviews() {
       if (Capture != null) {
           Capture.ReadDepthEnabled = true;
+          Capture.GeneratePreview();
       }
       var data = Capture?.LastRgbaData;
       if (data != null && data.Length > 0) {
@@ -323,7 +326,7 @@ namespace XivMediaPlayer.Windows {
                 rgbaData = UICapture.LastColorData;
                 w = UICapture.CaptureWidth;
                 h = UICapture.CaptureHeight;
-            } else if (_selectedPreviewMode == 13) {
+            } else if (_selectedPreviewMode == 14) {
                 _pluginLog.Warning("[Depth Preview] Copying reconstructed scene not supported yet.");
                 return;
             } else {
@@ -343,6 +346,7 @@ namespace XivMediaPlayer.Windows {
                   case 10: tex = rtm->SemitransparentGBuffers[2].Value; break;
                   case 11: tex = rtm->SemitransparentGBuffers[3].Value; break;
                   case 12: tex = rtm->SemitransparentGBuffers[4].Value; break;
+                  case 13: tex = rtm->ToneAdjustSource; break;
                 }
 
                 if (tex == null || tex->D3D11Texture2D == null) return;
