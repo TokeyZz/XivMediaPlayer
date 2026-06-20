@@ -94,4 +94,5 @@ jobs:
           git checkout -B main origin/main
           git add repo.json
           git commit -m "[CI] Updating repo.json for testing build ${{ github.ref_name }}" || true
+          git pull --rebase origin main
           git push origin main
