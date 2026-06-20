@@ -199,8 +199,8 @@ namespace XivMediaPlayer.Compositing {
         using var depthTexture = new ID3D11Texture2D(_gameDepthTexturePtr);
         CopyDepthBuffer(depthTexture);
         ReadDepthToArray();
-      } catch {
-        // ignore — texture may become invalid during shutdown or resize
+      } catch (Exception e) {
+        _debugInfo = $"BeginFrame Error: {e.Message}";
       }
     }
 
@@ -243,8 +243,8 @@ namespace XivMediaPlayer.Compositing {
         } finally {
           _context.Unmap(_stagingTexture, 0);
         }
-      } catch {
-        // ignore
+      } catch (Exception e) {
+        _debugInfo = $"ReadDepth Error: {e.Message}";
       }
     }
 

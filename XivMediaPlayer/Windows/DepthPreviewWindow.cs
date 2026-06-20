@@ -550,7 +550,25 @@ namespace XivMediaPlayer.Windows {
                     int h = d3dTex.Description.Height;
                     
                     using var device = d3dTex.Device;
-                    using var srv = device.CreateShaderResourceView(d3dTex);
+                    using var context = device.ImmediateContext;
+                    
+                    // The buffer might not have BindFlags.ShaderResource.
+                    // Copy to a staging/temp texture that does.
+                    var desc = d3dTex.Description;
+                    desc.BindFlags = Vortice.Direct3D11.BindFlags.ShaderResource;
+                    desc.Usage = Vortice.Direct3D11.ResourceUsage.Default;
+                    desc.CPUAccessFlags = Vortice.Direct3D11.CpuAccessFlags.None;
+                    desc.MiscFlags = Vortice.Direct3D11.ResourceOptionFlags.None;
+                    
+                    using var srvTex = device.CreateTexture2D(desc);
+                    
+                    if (desc.SampleDescription.Count > 1) {
+                        context.ResolveSubresource(srvTex, 0, d3dTex, 0, desc.Format);
+                    } else {
+                        context.CopyResource(srvTex, d3dTex);
+                    }
+                    
+                    using var srv = device.CreateShaderResourceView(srvTex);
                     byte[] rgbaData = _dumper.DumpTextureToRgba(srv, w, h);
                     if (rgbaData != null) {
                         using var bmp = new System.Drawing.Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
