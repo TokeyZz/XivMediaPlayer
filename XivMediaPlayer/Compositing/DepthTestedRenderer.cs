@@ -220,15 +220,17 @@ float4 PS(VS_OUT input) : SV_TARGET {
   
   // Dynamic Resolution scaling: the depth buffer texture size might be larger than the actual rendered area
   float2 renderScale = float2(1.0, 1.0);
+  float2 texelSize = 1.0 / ScreenSize;
   if (RenderResolution.x > 0 && RenderResolution.y > 0) {
       renderScale = RenderResolution / ScreenSize;
+      texelSize = 1.0 / RenderResolution;
   }
   float2 depthUV = screenUV * renderScale;
   
   float gameDepth = DepthTexture.Sample(DepthSampler, depthUV).r;
   float4 color = float4(0, 0, 0, 0);
 
-  bool occluded = false;
+  float occlusion = 0.0;
   if (isInside) {
       // Calculate exact view-space Z distance of the intersection point
       float viewZ = dot(rayDir * t, -CameraForward);
@@ -240,14 +242,28 @@ float4 PS(VS_OUT input) : SV_TARGET {
       }
       exactDepth = saturate(exactDepth);
       
-      // Use exact mathematical depth + a tiny bias to perfectly fix Z-fighting 
-      // when the TV is placed completely flush against a wall!
-      if (gameDepth > exactDepth + 0.0001) {
-          occluded = true;
+      // Wide-radius soft-occlusion (PCF) with Gaussian weights
+      float occlusionCount = 0.0;
+      float totalWeight = 0.0;
+      
+      [unroll]
+      for (int dy = -2; dy <= 2; dy++) {
+          [unroll]
+          for (int dx = -2; dx <= 2; dx++) {
+              float d = DepthTexture.SampleLevel(DepthSampler, depthUV + float2(dx * texelSize.x * 1.5, dy * texelSize.y * 1.5), 0).r;
+              float weight = exp(-0.3 * (dx*dx + dy*dy));
+              if (d > exactDepth + 0.0001) occlusionCount += weight;
+              totalWeight += weight;
+          }
       }
+      
+      occlusion = occlusionCount / totalWeight;
+      
+      // Erode the occlusion mask to pull the TV pixels inwards, to cover the TAA blending.
+      occlusion = smoothstep(0.55, 0.95, occlusion);
   }
 
-  if (isInside && !occluded) {
+  if (isInside && occlusion < 0.999) {
       // Draw unoccluded TV
       if (sampleUV.x < 0 || sampleUV.x > 1 || sampleUV.y < 0 || sampleUV.y > 1) {
           color = float4(0, 0, 0, 1);
@@ -350,12 +366,15 @@ float4 PS(VS_OUT input) : SV_TARGET {
           }
       }
 
-      // Blend title texture perfectly flush onto the TV frame!
+      // Blend title texture flush onto the TV frame!
       if (HasTitleTexture > 0.5 && HoverUV.x >= 0.0 && HoverUV.y >= 0.0) {
           float4 titleColor = TitleTexture.Sample(VideoSampler, uv);
           // Standard alpha blend
           color.rgb = lerp(color.rgb, titleColor.rgb, titleColor.a);
       }
+      
+      // Apply soft occlusion mask
+      color.a *= (1.0 - occlusion);
   } else {
       float depthMask = 1.0;
       if (gameDepth < 0.0001) depthMask = 0; // Ignore skybox
@@ -433,7 +452,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
   // The UI compositing block was moved to the bottom of the shader to draw OVER the media controls.
   
   // Media Controls UI overlay
-  if (isInside && !occluded && HoverUV.x >= 0.0 && HoverUV.y >= 0.0 && IsLockedTV >= 0.0) {
+  if (isInside && occlusion < 0.999 && HoverUV.x >= 0.0 && HoverUV.y >= 0.0 && IsLockedTV >= 0.0) {
     // History Icon Top Left (0.02 - 0.08, 0.04 - 0.12)
     if (uv.x > 0.02 && uv.x < 0.08 && uv.y > 0.04 && uv.y < 0.12) {
        color.rgb = lerp(color.rgb, float3(0.05, 0.05, 0.05), 0.7);
@@ -675,11 +694,11 @@ float4 PS(VS_OUT input) : SV_TARGET {
       insideUI = true;
   }
   
-  if (insideUI && isInside && !occluded) {
+  if (insideUI && isInside && occlusion < 0.999) {
       float4 bbColor = BackBufferTexture.Sample(VideoSampler, screenUV);
       
       if (HasPreUI > 0.5) {
-          // Mathematically perfect UI blending: Subtract the pre-UI scene (Unk68)
+          // Mathematic UI blending, subtract the pre-UI scene (Unk68)
           // from the post-UI scene (BackBuffer) to get the exact UI contribution.
           float4 preUiColor = PreUITexture.Sample(VideoSampler, screenUV);
           float bbAlpha = BackBufferTexture.Sample(DepthSampler, screenUV).a;
@@ -697,7 +716,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
           }
           
           if (trueAlpha > 0.01) {
-              // Get extrapolated subtractive vignette to perfectly match FFXIV's post-processing
+              // Get extrapolated subtractive vignette to match FFXIV's post-processing
               float3 vignetteExtrapolated = VignetteExtrapolatedTexture.Sample(VideoSampler, screenUV).rgb;
               float3 trueBackground = saturate(preUiColor.rgb - vignetteExtrapolated);
               
@@ -735,16 +754,16 @@ float4 PS(VS_OUT input) : SV_TARGET {
                       trueAlpha = (diffMax2 > 0.02) ? estimatedAlpha : 0.0;
                   } else {
                       // No campfire, use SwapChainBackBuffer alpha natively!
-                      // The fog has low alpha so it doesn't block the TV, and UI occludes perfectly.
+                      // The fog has low alpha so it doesn't block the TV, and UI occludes the fog.
                       trueAlpha = nativeAlpha;
                   }
               } else {
                   // Over geometry, diffMax2 can have holes if UI color == Geometry color.
-                  // But alphaDiff works perfectly here to fill the holes!
+                  // But alphaDiff works here to fill the holes.
                   trueAlpha = saturate(max(estimatedAlpha, alphaDiff));
               }
               
-              // Mathematically perfect UI reconstruction!
+              // Mathematically UI reconstruction!
               // For opaque UI (trueAlpha=1), this exactly outputs bbColor (the originating UI pixel).
               // For translucent UI (e.g. drop shadows), it mathematically removes the FFXIV background
               // (preUiColor + vignette) and replaces it with the TV pixel, preserving the exact shadow!
