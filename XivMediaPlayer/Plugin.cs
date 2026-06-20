@@ -117,6 +117,12 @@ namespace XivMediaPlayer
         private readonly ConcurrentQueue<Action> _frameworkActions = new();
         private DateTime? _deferredBgmRestoreTime = null;
         private bool _killRestartQueued;
+
+        private System.Numerics.Matrix4x4? _prevViewProjMatrix = null;
+        private System.Numerics.Vector3? _prevCameraPos = null;
+        private System.Numerics.Vector3? _prevCameraForward = null;
+        private System.Numerics.Vector3? _prevCameraRight = null;
+        private System.Numerics.Vector3? _prevCameraUp = null;
         private bool _refreshQueued;
 
         public Networking.ServerClient ServerClient { get; private set; }
@@ -2520,6 +2526,7 @@ namespace XivMediaPlayer
                     float aspectRatio = 1.0f;
                     System.Numerics.Vector3 cameraRight = System.Numerics.Vector3.UnitX;
                     System.Numerics.Vector3 cameraUp = System.Numerics.Vector3.UnitY;
+                    System.Numerics.Matrix4x4? viewProjMatrix = null;
 
                     if (_camera != null)
                     {
@@ -2527,6 +2534,8 @@ namespace XivMediaPlayer
                         {
                             var sceneCamera = _camera->CameraBase.SceneCamera;
                             var rawView = sceneCamera.RenderCamera != null ? sceneCamera.RenderCamera->ViewMatrix : sceneCamera.ViewMatrix;
+                            if (sceneCamera.RenderCamera == null) return;
+                            var rawProj = sceneCamera.RenderCamera->ProjectionMatrix;
                             var view = System.Runtime.CompilerServices.Unsafe.As<
                               FFXIVClientStructs.FFXIV.Common.Math.Matrix4x4,
                               System.Numerics.Matrix4x4>(ref rawView);
@@ -2545,10 +2554,16 @@ namespace XivMediaPlayer
                             cameraUp = System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(invView.M21, invView.M22, invView.M23));
                             cameraForward = System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(invView.M31, invView.M32, invView.M33));
                             
-                            fovY = sceneCamera.RenderCamera->FoV;
-                            aspectRatio = sceneCamera.RenderCamera->AspectRatio;
-                            nearPlane = sceneCamera.RenderCamera->NearPlane;
-                            farPlane = sceneCamera.RenderCamera->FarPlane;
+                            fovY = sceneCamera.RenderCamera != null ? sceneCamera.RenderCamera->FoV : 0.785f;
+                            aspectRatio = sceneCamera.RenderCamera != null ? sceneCamera.RenderCamera->AspectRatio : 1.0f;
+                            nearPlane = sceneCamera.RenderCamera != null ? sceneCamera.RenderCamera->NearPlane : 0.1f;
+                            farPlane = sceneCamera.RenderCamera != null ? sceneCamera.RenderCamera->FarPlane : 10000f;
+                            
+                            var proj = System.Runtime.CompilerServices.Unsafe.As<
+                              FFXIVClientStructs.FFXIV.Common.Math.Matrix4x4,
+                              System.Numerics.Matrix4x4>(ref rawProj);
+                            
+                            viewProjMatrix = view * proj;
                         }
                         catch { }
                     }
@@ -2969,7 +2984,18 @@ namespace XivMediaPlayer
                     // but we re-calculate it here in case the logic above was skipped.
                     // (Actually we calculated it at the top of OnDraw, so we don't need to do it again here.)
                     
-                    _worldRenderer.Render(videoSrv, videoWidth, videoHeight, _depthCapture, cameraPos, cameraForward, cameraRight, cameraUp, fovY, aspectRatio, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, lockState, volume, srvPtr, _config.LoopEnabled, _config.ShuffleEnabled, timeSeconds, showScreensaver, useDifferenceFallback: useDifferenceFallback);
+                    var mainViewport = ImGui.GetMainViewport();
+                    
+                    _worldRenderer.Render(videoSrv, videoWidth, videoHeight, _depthCapture, 
+                        _prevCameraPos ?? cameraPos, _prevCameraForward ?? cameraForward, _prevCameraRight ?? cameraRight, _prevCameraUp ?? cameraUp, 
+                        fovY, aspectRatio, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, lockState, volume, srvPtr, _config.LoopEnabled, _config.ShuffleEnabled, timeSeconds, showScreensaver, useDifferenceFallback: useDifferenceFallback, 
+                        viewProjMatrix: _prevViewProjMatrix ?? viewProjMatrix, viewportPos: mainViewport.Pos, viewportSize: mainViewport.Size);
+                        
+                    _prevCameraPos = cameraPos;
+                    _prevCameraForward = cameraForward;
+                    _prevCameraRight = cameraRight;
+                    _prevCameraUp = cameraUp;
+                    _prevViewProjMatrix = viewProjMatrix;
                 }
                 
                 // Draw floating Emulation Controller UI

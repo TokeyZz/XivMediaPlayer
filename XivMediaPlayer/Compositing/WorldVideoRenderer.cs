@@ -80,7 +80,8 @@ namespace XivMediaPlayer.Compositing {
       IntPtr textureSrv, int textureWidth, int textureHeight, DepthBufferCapture depthCapture = null,
       Vector3? cameraPos = null, Vector3? cameraForward = null, Vector3? cameraRight = null, Vector3? cameraUp = null,
       float fovY = MathF.PI / 4, float aspectRatio = 1.0f, UILayerCapture uiCapture = null, float nearPlane = 0.1f, float farPlane = 10000f,
-      Vector2? hoverUV = null, float progress = 0f, bool isPlaying = false, float lockState = 1.0f, float volume = 1.0f, IntPtr titleSrvPtr = default, bool isLooping = false, bool isShuffle = false, float time = 0f, float showScreensaver = 0f, bool useDifferenceFallback = false) {
+      Vector2? hoverUV = null, float progress = 0f, bool isPlaying = false, float lockState = 1.0f, float volume = 1.0f, IntPtr titleSrvPtr = default, bool isLooping = false, bool isShuffle = false, float time = 0f, float showScreensaver = 0f, bool useDifferenceFallback = false,
+      Matrix4x4? viewProjMatrix = null, Vector2? viewportPos = null, Vector2? viewportSize = null) {
 
       if (_disposed || !IsActive || textureSrv == IntPtr.Zero) return;
       
@@ -120,9 +121,9 @@ namespace XivMediaPlayer.Compositing {
         bool allCornersInFront = zTL > 0.1f && zTR > 0.1f && zBR > 0.1f && zBL > 0.1f;
 
         RenderWithOcclusion(textureSrv, depthCapture, cameraPos.Value,
-          cameraForward.Value, cameraRight.Value, cameraUp.Value, fovY, aspectRatio, uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, lockState, volume, titleSrvPtr, isLooping, isShuffle, time, showScreensaver, videoAspect, allCornersInFront, useDifferenceFallback);
+          cameraForward.Value, cameraRight.Value, cameraUp.Value, fovY, aspectRatio, uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, lockState, volume, titleSrvPtr, isLooping, isShuffle, time, showScreensaver, videoAspect, allCornersInFront, useDifferenceFallback, viewProjMatrix, viewportPos, viewportSize);
       } else {
-        RenderScreenSpace(textureSrv, videoAspect);
+        RenderScreenSpace(textureSrv, videoAspect, viewProjMatrix, viewportPos, viewportSize);
       }
       
       PushCommandsToFront(drawList, initialCmdSize);
@@ -289,7 +290,8 @@ namespace XivMediaPlayer.Compositing {
     /// </summary>
     private unsafe void RenderWithOcclusion(IntPtr textureSrv, DepthBufferCapture depthCapture,
       Vector3 cameraPos, Vector3 cameraForward, Vector3 cameraRight, Vector3 cameraUp, float fovY, float aspectRatio, UILayerCapture uiCapture,
-      float nearPlane, float farPlane, Vector2? hoverUV, float progress, bool isPlaying, float lockState, float volume, IntPtr titleSrvPtr, bool isLooping, bool isShuffle, float time, float showScreensaver, float videoAspectRatio, bool allCornersInFront, bool useDifferenceFallback) {
+      float nearPlane, float farPlane, Vector2? hoverUV, float progress, bool isPlaying, float lockState, float volume, IntPtr titleSrvPtr, bool isLooping, bool isShuffle, float time, float showScreensaver, float videoAspectRatio, bool allCornersInFront, bool useDifferenceFallback,
+      Matrix4x4? viewProjMatrix, Vector2? viewportPos, Vector2? viewportSize) {
       var (tl, tr, br, bl) = _transform.Corners;
       
       var rtm = FFXIVClientStructs.FFXIV.Client.Graphics.Render.RenderTargetManager.Instance();
@@ -306,10 +308,10 @@ namespace XivMediaPlayer.Compositing {
       }
 
       // WorldToScreen is the source of truth for screen positions
-      WorldToScreenClamped(tl, out var sTL, out _);
-      WorldToScreenClamped(tr, out var sTR, out _);
-      WorldToScreenClamped(br, out var sBR, out _);
-      WorldToScreenClamped(bl, out var sBL, out _);
+      WorldToScreenClamped(tl, out var sTL, out _, viewProjMatrix, viewportPos, viewportSize);
+      WorldToScreenClamped(tr, out var sTR, out _, viewProjMatrix, viewportPos, viewportSize);
+      WorldToScreenClamped(br, out var sBR, out _, viewProjMatrix, viewportPos, viewportSize);
+      WorldToScreenClamped(bl, out var sBL, out _, viewProjMatrix, viewportPos, viewportSize);
 
       StabilizeCorners(ref sTL, ref sTR, ref sBR, ref sBL);
 
@@ -365,7 +367,7 @@ namespace XivMediaPlayer.Compositing {
         if (!_depthRenderer.IsInitialized) {
           if (!_depthRenderer.Initialize()) {
             DepthRendererError = $"Init failed: {_depthRenderer.InitError}";
-            RenderScreenSpace(textureSrv, videoAspectRatio);
+            RenderScreenSpace(textureSrv, videoAspectRatio, viewProjMatrix, viewportPos, viewportSize);
             return;
           }
         }
@@ -381,7 +383,7 @@ namespace XivMediaPlayer.Compositing {
       try {
         if (depthCapture.CapturedSRV == null) {
           DepthRendererError = "Depth SRV not available";
-          RenderScreenSpace(textureSrv, videoAspectRatio);
+          RenderScreenSpace(textureSrv, videoAspectRatio, viewProjMatrix, viewportPos, viewportSize);
           return;
         }
 
@@ -431,12 +433,12 @@ namespace XivMediaPlayer.Compositing {
           DepthRendererError = null;
         } else {
           if (uiCapture == null || !uiCapture.IsInitialized) {
-          RenderScreenSpace(textureSrv, videoAspectRatio);
-        }
+            RenderScreenSpace(textureSrv, videoAspectRatio, viewProjMatrix, viewportPos, viewportSize);
+          }
         }
       } catch (Exception ex) {
         // Fallback to screen space if custom shader fails
-        RenderScreenSpace(textureSrv, videoAspectRatio);
+        RenderScreenSpace(textureSrv, videoAspectRatio, viewProjMatrix, viewportPos, viewportSize);
       }
     }
 
@@ -482,13 +484,13 @@ namespace XivMediaPlayer.Compositing {
     /// <summary>
     /// Renders using ImGui screen-space projection (no occlusion).
     /// </summary>
-    private void RenderScreenSpace(IntPtr textureSrv, float videoAspect) {
+    private void RenderScreenSpace(IntPtr textureSrv, float videoAspect, Matrix4x4? viewProjMatrix, Vector2? viewportPos, Vector2? viewportSize) {
       var (tl, tr, br, bl) = _transform.Corners;
 
-      WorldToScreenClamped(tl, out var sTL, out _);
-      WorldToScreenClamped(tr, out var sTR, out _);
-      WorldToScreenClamped(br, out var sBR, out _);
-      WorldToScreenClamped(bl, out var sBL, out _);
+      WorldToScreenClamped(tl, out var sTL, out _, viewProjMatrix, viewportPos, viewportSize);
+      WorldToScreenClamped(tr, out var sTR, out _, viewProjMatrix, viewportPos, viewportSize);
+      WorldToScreenClamped(br, out var sBR, out _, viewProjMatrix, viewportPos, viewportSize);
+      WorldToScreenClamped(bl, out var sBL, out _, viewProjMatrix, viewportPos, viewportSize);
 
       StabilizeCorners(ref sTL, ref sTR, ref sBR, ref sBL);
 
@@ -633,13 +635,25 @@ namespace XivMediaPlayer.Compositing {
     /// Projects a world position to screen with coordinate clamping to prevent
     /// extreme values from causing ImGui rendering artifacts.
     /// </summary>
-    private bool WorldToScreenClamped(Vector3 worldPos, out Vector2 screenPos, out bool isBehind) {
+    private bool WorldToScreenClamped(Vector3 worldPos, out Vector2 screenPos, out bool isBehind, Matrix4x4? viewProjMatrix, Vector2? viewportPos, Vector2? viewportSize) {
       screenPos = Vector2.Zero;
       isBehind = false;
 
-      if (_gameGui == null) return false;
-
-      bool onScreen = _gameGui.WorldToScreen(worldPos, out screenPos);
+      bool onScreen = false;
+      if (viewProjMatrix.HasValue && viewportPos.HasValue && viewportSize.HasValue) {
+        var p = Vector4.Transform(new Vector4(worldPos, 1.0f), viewProjMatrix.Value);
+        if (p.W >= 0.1f) {
+            p /= p.W;
+            screenPos.X = viewportPos.Value.X + (p.X + 1.0f) * 0.5f * viewportSize.Value.X;
+            screenPos.Y = viewportPos.Value.Y + (1.0f - p.Y) * 0.5f * viewportSize.Value.Y;
+            onScreen = true;
+        }
+      } else if (_gameGui != null) {
+        onScreen = _gameGui.WorldToScreen(worldPos, out screenPos);
+      } else {
+        return false;
+      }
+      
       isBehind = !onScreen;
 
       // Clamp to prevent extreme coordinates
