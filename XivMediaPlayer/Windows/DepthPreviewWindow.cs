@@ -80,6 +80,10 @@ namespace XivMediaPlayer.Windows {
       if (ImGui.Button("Dump RTM Fields to Log")) {
           DumpRtmFields();
       }
+      ImGui.SameLine();
+      if (ImGui.Button("Bulk Export Buffers to Desktop")) {
+          BulkExportBuffers();
+      }
       ImGui.Separator();
 
       if (_selectedPreviewMode == 0 || _selectedPreviewMode == 1) {
@@ -102,8 +106,11 @@ namespace XivMediaPlayer.Windows {
           if (rtm->GBuffers[0].Value != null && rtm->GBuffers[1].Value != null && rtm->GBuffers[2].Value != null && rtm->GBuffers[3].Value != null && rtm->GBuffers[4].Value != null && UICapture?.BackBufferSRV != null) {
               var lightDiffuse = *(Texture**)((byte*)rtm + 0x58);
               var lightSpecular = *(Texture**)((byte*)rtm + 0x60);
+              var unk68 = *(Texture**)((byte*)rtm + 0x68);
+
               if (lightDiffuse != null && lightSpecular != null) {
-                  _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value, rtm->GBuffers[4].Value, lightDiffuse, lightSpecular, UICapture.BackBufferSRV);
+                  // PASS UNK68 in place of GBuffer4 so we can preview it!
+                  _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value, unk68, lightDiffuse, lightSpecular, UICapture.BackBufferSRV);
               }
           }
           
@@ -424,6 +431,91 @@ namespace XivMediaPlayer.Windows {
             }
         } catch (Exception ex) {
             _pluginLog.Error(ex, "Failed to dump RTM fields");
+        }
+    }
+
+    private unsafe void BulkExportBuffers() {
+        try {
+            string deskDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "XivMediaPlayerDumps");
+            System.IO.Directory.CreateDirectory(deskDir);
+            
+            var rtm = RenderTargetManager.Instance();
+            if (rtm == null) return;
+            
+            if (_dumper == null) {
+                _dumper = new XivMediaPlayer.Utils.TextureDumper();
+                _dumper.Initialize();
+            }
+
+            void ExportTex(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* tex, string name) {
+                if (tex == null || tex->D3D11Texture2D == null) return;
+                try {
+                    var texPtr = (IntPtr)tex->D3D11Texture2D;
+                    System.Runtime.InteropServices.Marshal.AddRef(texPtr);
+                    using var d3dTex = new Vortice.Direct3D11.ID3D11Texture2D(texPtr);
+                    int w = d3dTex.Description.Width;
+                    int h = d3dTex.Description.Height;
+                    
+                    using var device = d3dTex.Device;
+                    using var srv = device.CreateShaderResourceView(d3dTex);
+                    byte[] rgbaData = _dumper.DumpTextureToRgba(srv, w, h);
+                    if (rgbaData != null) {
+                        using var bmp = new System.Drawing.Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                        var rect = new System.Drawing.Rectangle(0, 0, w, h);
+                        var data = bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.WriteOnly, bmp.PixelFormat);
+                        
+                        // Swap RGBA to BGRA
+                        byte[] bgraData = new byte[rgbaData.Length];
+                        for (int i = 0; i < rgbaData.Length; i += 4) {
+                            bgraData[i] = rgbaData[i + 2];
+                            bgraData[i + 1] = rgbaData[i + 1];
+                            bgraData[i + 2] = rgbaData[i];
+                            bgraData[i + 3] = rgbaData[i + 3];
+                        }
+                        
+                        System.Runtime.InteropServices.Marshal.Copy(bgraData, 0, data.Scan0, bgraData.Length);
+                        bmp.UnlockBits(data);
+                        bmp.Save(System.IO.Path.Combine(deskDir, name + ".png"), System.Drawing.Imaging.ImageFormat.Png);
+                    }
+                } catch(Exception e) {
+                    _pluginLog.Error(e, "Error exporting " + name);
+                }
+            }
+
+            void ExportSpanPtr(Span<FFXIVClientStructs.Interop.Pointer<FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture>> span, string name) {
+                for (int i = 0; i < span.Length; i++) {
+                    if (span[i].Value != null) {
+                        ExportTex(span[i].Value, $"{name}_{i}");
+                    }
+                }
+            }
+
+            try { ExportSpanPtr(rtm->GBuffers, "GBuffers"); } catch {}
+            try { ExportSpanPtr(rtm->SemitransparentGBuffers, "SemitransparentGBuffers"); } catch {}
+            try { ExportSpanPtr(rtm->Unk160, "Unk160"); } catch {}
+            try { ExportSpanPtr(rtm->Unk188, "Unk188"); } catch {}
+            try { ExportSpanPtr(rtm->Unk230, "Unk230"); } catch {}
+            try { ExportSpanPtr(rtm->Unk2A0, "Unk2A0"); } catch {}
+            try { ExportSpanPtr(rtm->Unk2B8, "Unk2B8"); } catch {}
+            try { ExportSpanPtr(rtm->CharaViewTextures, "CharaViewTextures"); } catch {}
+            try { ExportSpanPtr(rtm->CharaViewGBuffers, "CharaViewGBuffers"); } catch {}
+            try { ExportSpanPtr(rtm->CharaViewSemitransparentGBuffers, "CharaViewSemitransparentGBuffers"); } catch {}
+            try { ExportSpanPtr(rtm->Unk3E8, "Unk3E8"); } catch {}
+            try { ExportSpanPtr(rtm->Unk3F8, "Unk3F8"); } catch {}
+            try { ExportSpanPtr(rtm->Unk408, "Unk408"); } catch {}
+
+            ExportTex(*(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x48), "Unk48");
+            ExportTex(*(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x50), "Unk50");
+            ExportTex(*(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x58), "LightDiffuse");
+            ExportTex(*(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x60), "LightSpecular");
+            ExportTex(*(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x68), "Unk68");
+            ExportTex(*(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x70), "Unk70");
+            ExportTex(*(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x78), "Unk78");
+            ExportTex(*(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x80), "Unk80");
+
+            _pluginLog.Info("Bulk export completed to Desktop!");
+        } catch(Exception ex) {
+            _pluginLog.Error(ex, "Error bulk exporting.");
         }
     }
   }

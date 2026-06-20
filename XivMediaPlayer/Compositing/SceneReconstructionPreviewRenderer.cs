@@ -64,9 +64,17 @@ float4 PS(VS_OUT input) : SV_TARGET {
   // Read actual engine lighting buffers!
   float3 diffuseLight = LightDiffuse.Sample(LinearSampler, input.uv).rgb;
   float3 specularLight = LightSpecular.Sample(LinearSampler, input.uv).rgb;
+  float4 gbuffer4 = GBuffer4.Sample(LinearSampler, input.uv);
+  
+  // FFXIV's LightDiffuse only contains direct light. Add a fake ambient term so it isn't pitch black!
+  float3 fakeAmbient = float3(0.2, 0.2, 0.25);
   
   // Combine using standard composite formula
-  float3 color = (albedo.rgb * diffuseLight) + specularLight;
+  float3 color = (albedo.rgb * (diffuseLight + fakeAmbient)) + specularLight;
+  
+  // Actually, we suspect GBuffer4 (Unk68) passed as the fourth texture might be the ToneAdjustSource!
+  // Let's preview it directly!
+  color = gbuffer4.rgb;
   
   // Apply Gamma Correction (since we're outputting directly to ImGui without a tonemapper)
   color = pow(abs(color), 1.0 / 2.2);
