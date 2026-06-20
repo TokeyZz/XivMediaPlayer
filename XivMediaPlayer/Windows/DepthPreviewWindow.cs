@@ -427,8 +427,7 @@ namespace XivMediaPlayer.Windows {
               System.IO.Directory.CreateDirectory(folderPath);
           }
 
-          var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-          var filePath = System.IO.Path.Combine(folderPath, $"ReconstructedPreview_{ts}.png");
+          var filePath = System.IO.Path.Combine(folderPath, "ReconstructedPreview.png");
 
           using var dumper = new Utils.TextureDumper();
           if (dumper.Initialize()) {
@@ -461,11 +460,29 @@ namespace XivMediaPlayer.Windows {
                   int h = d3dTex.Description.Height;
                   
                   using var device = d3dTex.Device;
-                  using var srv = device.CreateShaderResourceView(d3dTex);
+                  using var context = device.ImmediateContext;
+                  
+                  // The SwapChainBackBuffer might not have BindFlags.ShaderResource.
+                  // We must copy it to a new texture that does.
+                  var desc = d3dTex.Description;
+                  desc.BindFlags = Vortice.Direct3D11.BindFlags.ShaderResource;
+                  desc.Usage = Vortice.Direct3D11.ResourceUsage.Default;
+                  desc.CPUAccessFlags = Vortice.Direct3D11.CpuAccessFlags.None;
+                  desc.MiscFlags = Vortice.Direct3D11.ResourceOptionFlags.None;
+                  
+                  using var srvTex = device.CreateTexture2D(desc);
+                  
+                  if (desc.SampleDescription.Count > 1) {
+                      context.ResolveSubresource(srvTex, 0, d3dTex, 0, desc.Format);
+                  } else {
+                      context.CopyResource(srvTex, d3dTex);
+                  }
+                  
+                  using var srv = device.CreateShaderResourceView(srvTex);
                   
                   var rgbaSbb = dumper.DumpTextureToRgba(srv, w, h);
                   if (rgbaSbb != null) {
-                      var sbbPath = System.IO.Path.Combine(folderPath, $"GameScreenshot_{ts}.png");
+                      var sbbPath = System.IO.Path.Combine(folderPath, "GameScreenshot.png");
                       using var bmp2 = new System.Drawing.Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
                       var rect2 = new System.Drawing.Rectangle(0, 0, w, h);
                       var data2 = bmp2.LockBits(rect2, System.Drawing.Imaging.ImageLockMode.WriteOnly, bmp2.PixelFormat);

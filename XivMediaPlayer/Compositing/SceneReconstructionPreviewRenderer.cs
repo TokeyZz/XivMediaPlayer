@@ -65,21 +65,10 @@ float4 PS(VS_OUT input) : SV_TARGET {
   float4 gbuffer4 = GBuffer4.Sample(LinearSampler, input.uv);
   float4 unk68 = Unk68.Sample(LinearSampler, input.uv);
   
-  // The user confirmed that Unk68 alone (the pre-tonemapped composite buffer) is much better
-  // than our manual reconstruction because it includes subsurface scattering, true ambient, reflections, etc.
+  // The user confirmed that Unk68 is the 1:1 final tonemapped, gamma-corrected game scene
+  // right before the UI is drawn!
+  // Therefore, no manual reconstruction, tonemapping, or gamma correction is needed.
   float3 color = unk68.rgb;
-  
-  // FFXIV uses a tonemapping pass after this buffer. To make it look right, we can apply a standard ACES filmic tonemap.
-  // ACES Filmic Tonemapping Curve
-  float a = 2.51f;
-  float b = 0.03f;
-  float c = 2.43f;
-  float d = 0.59f;
-  float e = 0.14f;
-  color = saturate((color*(a*color+b))/(color*(c*color+d)+e));
-  
-  // Apply Gamma Correction (since we're outputting directly to ImGui without a tonemapper)
-  color = pow(abs(color), 1.0 / 2.2);
   
   if (ShowDiff > 0.5) {
       float3 bbColor = BackBuffer.Sample(LinearSampler, input.uv).rgb;
