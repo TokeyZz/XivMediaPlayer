@@ -366,7 +366,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
           }
       }
 
-      // Blend title texture flush onto the TV frame!
+      // Blend title texture flush onto the TV frame.
       if (HasTitleTexture > 0.5 && HoverUV.x >= 0.0 && HoverUV.y >= 0.0) {
           float4 titleColor = TitleTexture.Sample(VideoSampler, uv);
           // Standard alpha blend
@@ -689,7 +689,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
   }
   
   // Fallback: If AddonRects failed to capture (e.g. FFXIV update broke RaptureAtkUnitManager),
-  // allow the alpha mask to still apply everywhere!
+  // allow the alpha mask to still apply everywhere.
   if (UIRectCount == 0) {
       insideUI = true;
   }
@@ -720,7 +720,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
               float3 vignetteExtrapolated = VignetteExtrapolatedTexture.Sample(VideoSampler, screenUV).rgb;
               float3 trueBackground = saturate(preUiColor.rgb - vignetteExtrapolated);
               
-              // Mathematically estimate the true UI alpha!
+              // Mathematically estimate the true UI alpha.
               // Since FFXIV writes alpha=1.0 for translucent chat boxes, we MUST estimate alpha from the color shift.
               // Assuming the UI is either black or white (or saturated color), we can reverse-engineer A.
               float3 estA;
@@ -753,7 +753,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
                       // This fixes the indoor emissive skybox blocking the TV.
                       trueAlpha = (diffMax2 > 0.02) ? estimatedAlpha : 0.0;
                   } else {
-                      // No campfire, use SwapChainBackBuffer alpha natively!
+                      // No campfire, use SwapChainBackBuffer alpha natively.
                       // The fog has low alpha so it doesn't block the TV, and UI occludes the fog.
                       trueAlpha = nativeAlpha;
                   }
@@ -763,10 +763,10 @@ float4 PS(VS_OUT input) : SV_TARGET {
                   trueAlpha = saturate(max(estimatedAlpha, alphaDiff));
               }
               
-              // Mathematically UI reconstruction!
+              // Mathematic UI reconstruction.
               // For opaque UI (trueAlpha=1), this exactly outputs bbColor (the originating UI pixel).
               // For translucent UI (e.g. drop shadows), it mathematically removes the FFXIV background
-              // (preUiColor + vignette) and replaces it with the TV pixel, preserving the exact shadow!
+              // (preUiColor + vignette) and replaces it with the TV pixel, preserving the exact shadow.
               color.rgb = saturate(bbColor.rgb + (color.rgb - trueBackground) * (1.0 - trueAlpha));
           }
       } else {

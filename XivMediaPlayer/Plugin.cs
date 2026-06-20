@@ -1972,7 +1972,7 @@ namespace XivMediaPlayer
                 {
                     if (sync.IsPlaying && !localIsPlaying)
                     {
-                        _pluginLog.Information($"[Social] Server says play, but we are paused. Resuming!");
+                        _pluginLog.Information($"[Social] Server says play, but we are paused. Resuming.");
                         activeStream.Resume();
                     }
                     else if (!sync.IsPlaying && localIsPlaying)
@@ -1982,12 +1982,12 @@ namespace XivMediaPlayer
                         // Check sync staleness or new stream status
                         if (sync.DataAgeMs < 15000 || isNewlyLoaded)
                         {
-                            _pluginLog.Information($"[Social] Server says paused (NewlyLoaded: {isNewlyLoaded}). Pausing!");
+                            _pluginLog.Information($"[Social] Server says paused (NewlyLoaded: {isNewlyLoaded}). Pausing.");
                             activeStream.Pause();
                         }
                         else
                         {
-                            _pluginLog.Information($"[Social] Server says paused, but it is {sync.DataAgeMs}ms old. Ignoring!");
+                            _pluginLog.Information($"[Social] Server says paused, but it is {sync.DataAgeMs}ms old. Ignoring.");
                         }
                     }
                 }
@@ -2315,10 +2315,14 @@ namespace XivMediaPlayer
             if (errorMsg.Contains("libdvbpsi", StringComparison.OrdinalIgnoreCase)) return;
 
             if ((DateTime.UtcNow - _lastMediaErrorTime).TotalMilliseconds < 500)
+            {
+                _pluginLog.Warning(e.Exception, "[VLC] Media error occurred (grouped within 500ms).");
                 return;
+            }
 
             _lastMediaErrorTime = DateTime.UtcNow;
             _mediaErrorCount++;
+            _pluginLog.Warning(e.Exception, $"[VLC] Media error occurred. Error count: {_mediaErrorCount}");
 
             int maxRetries = 10;
             if (_mediaErrorCount < maxRetries)
