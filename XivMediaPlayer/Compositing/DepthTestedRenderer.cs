@@ -81,7 +81,7 @@ namespace XivMediaPlayer.Compositing {
       public float HasPreUI;
       
       public float UseDifferenceFallback;
-      public Vector3 padding3;
+      public Vector2 padding3;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -136,9 +136,8 @@ cbuffer Constants : register(b0) {
   float Time;
   float ShowScreensaver;
   float HasPreUI;
-  float _pad7;
-  float _pad8;
-  float _pad9;
+  float UseDifferenceFallback;
+  float2 padding3;
 };
 
 cbuffer UIConsts : register(b1) {
@@ -731,12 +730,13 @@ float4 PS(VS_OUT input) : SV_TARGET {
               
               if (isSkybox) {
                   if (UseDifferenceFallback > 0.5) {
+                      // Wanderer's Campfire spawned, use difference fallback (estimatedAlpha)
+                      // This fixes the indoor emissive skybox blocking the TV.
                       trueAlpha = (diffMax2 > 0.02) ? estimatedAlpha : 0.0;
                   } else {
-                      // Outdoors: The outdoor skybox is completely different in Unk68,
-                      // so estimatedAlpha will mistakenly detect the skybox/fog as UI!
-                      // Disable it completely to prevent the ""smudge"" effect.
-                      trueAlpha = 0.0;
+                      // No campfire, use SwapChainBackBuffer alpha natively!
+                      // The fog has low alpha so it doesn't block the TV, and UI occludes perfectly.
+                      trueAlpha = nativeAlpha;
                   }
               } else {
                   // Over geometry, diffMax2 can have holes if UI color == Geometry color.
