@@ -1124,10 +1124,17 @@ namespace XivMediaPlayer
             // Direct playback for raw feeds (ignore query strings)
             string urlWithoutQuery = url.Split('?')[0];
             if (urlWithoutQuery.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase) ||
-                urlWithoutQuery.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase))
+                urlWithoutQuery.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
+                urlWithoutQuery.EndsWith(".flv", StringComparison.OrdinalIgnoreCase) ||
+                urlWithoutQuery.EndsWith(".ts", StringComparison.OrdinalIgnoreCase) ||
+                urlWithoutQuery.EndsWith(".webm", StringComparison.OrdinalIgnoreCase) ||
+                urlWithoutQuery.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase) ||
+                urlWithoutQuery.EndsWith(".mpd", StringComparison.OrdinalIgnoreCase))
             {
                 _lastStreamURL = url;
-                _lastStreamIsLive = urlWithoutQuery.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase);
+                _lastStreamIsLive = urlWithoutQuery.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase)
+                                 || urlWithoutQuery.EndsWith(".flv", StringComparison.OrdinalIgnoreCase)
+                                 || urlWithoutQuery.EndsWith(".ts", StringComparison.OrdinalIgnoreCase);
                 _lastStreamObject = audioGameObject;
                 _streamURLs = new string[] { url };
                 _videoWindow.IsOpen = _config.DefaultVideoOpen == 0;
@@ -1423,8 +1430,6 @@ namespace XivMediaPlayer
                 _consecutiveLocalFailures = 0;
                 _consecutiveSyncFailures = 0;
                 PrintChat("[媒体播放器] 正在启动流...");
-                _mediaErrorCount = 0;
-                _mediaErrorRetryDelayMs = 5000; // Reset backoff
             });
         }
 
@@ -2302,6 +2307,13 @@ namespace XivMediaPlayer
 
             if (errorMsg.Contains("Failed to set on top", StringComparison.OrdinalIgnoreCase))
                 return;
+
+            // Harmless VLC clock/timestamp warnings — recover on their own, not playback failures
+            if (errorMsg.Contains("Timestamp conversion failed", StringComparison.OrdinalIgnoreCase)) return;
+            if (errorMsg.Contains("Could not convert timestamp", StringComparison.OrdinalIgnoreCase)) return;
+            if (errorMsg.Contains("no reference clock", StringComparison.OrdinalIgnoreCase)) return;
+            if (errorMsg.Contains("TS discontinuity", StringComparison.OrdinalIgnoreCase)) return;
+            if (errorMsg.Contains("libdvbpsi", StringComparison.OrdinalIgnoreCase)) return;
 
             if ((DateTime.UtcNow - _lastMediaErrorTime).TotalMilliseconds < 500)
                 return;
@@ -3654,7 +3666,8 @@ namespace XivMediaPlayer
             
             if (YtDlpManager.IsUrlSupported(_lastStreamURL) && _ytDlpManager.IsAvailable())
             {
-                PlayRouted(_lastStreamURL, CurrentAudioSource, currentTimeMs);
+                // Follower mode: don't try to claim DJ on error retry
+                PlayRouted(_lastStreamURL, CurrentAudioSource, currentTimeMs, !_isLocalDj);
             }
             else
             {

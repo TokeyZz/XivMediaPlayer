@@ -323,7 +323,7 @@ namespace MediaPlayerCore.YtDlp
                   ? $"b[height<={_preferredMaxHeight}]/b"
                   : "b";
 
-                string result = await RunYtDlp($"--get-url -f \"{formatArg}\" \"{url}\"");
+                string result = await RunYtDlp($"--get-url --no-playlist -f \"{formatArg}\" \"{url}\"");
                 string? streamUrl = result?.Trim().Split('\n').FirstOrDefault()?.Trim();
 
                 if (!string.IsNullOrEmpty(streamUrl))
@@ -465,10 +465,16 @@ namespace MediaPlayerCore.YtDlp
         /// Checks if the given URL is likely supported by yt-dlp
         /// (not a raw stream or local file).
         /// </summary>
+        private static readonly string[] _directStreamExtensions = new[]
+        {
+            ".flv", ".ts", ".m3u8", ".mp4", ".mpd", ".m4s", ".m4a",
+            ".webm", ".mkv", ".avi", ".mov", ".wmv", ".aac", ".mp3", ".ogg"
+        };
+
         public static bool IsUrlSupported(string url)
         {
             if (string.IsNullOrWhiteSpace(url)) return false;
-            
+
             if (_failedUrlCache.TryGetValue(url, out var expiresAt))
             {
                 if (DateTime.UtcNow < expiresAt) return false;
@@ -478,6 +484,15 @@ namespace MediaPlayerCore.YtDlp
             if (url.StartsWith("rtmp://", StringComparison.OrdinalIgnoreCase)) return false;
             if (url.StartsWith("rtsp://", StringComparison.OrdinalIgnoreCase)) return false;
             if (File.Exists(url)) return false;
+
+            // Direct stream URLs (flv, ts, m3u8, mp4, etc.) don't need yt-dlp
+            string urlWithoutQuery = url.Split('?')[0];
+            foreach (var ext in _directStreamExtensions)
+            {
+                if (urlWithoutQuery.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
+                    return false;
+            }
+
             // Must be an HTTP URL
             return url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
               || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
