@@ -111,13 +111,13 @@ namespace XivMediaPlayer.Windows {
               _sceneRenderer.Initialize();
           }
           
-          if (rtm->GBuffers[0].Value != null && rtm->GBuffers[1].Value != null && rtm->GBuffers[2].Value != null && rtm->GBuffers[3].Value != null && rtm->GBuffers[4].Value != null && UICapture?.BackBufferSRV != null && Capture?.CapturedSRV != null) {
+          if (rtm->GBuffers[0].Value != null && rtm->GBuffers[1].Value != null && rtm->GBuffers[2].Value != null && rtm->GBuffers[3].Value != null && rtm->GBuffers[4].Value != null && UICapture?.BackBufferSRV != null) {
               var lightDiffuse = *(Texture**)((byte*)rtm + 0x58);
               var lightSpecular = *(Texture**)((byte*)rtm + 0x60);
               var unk68 = *(Texture**)((byte*)rtm + 0x68);
 
               if (lightDiffuse != null && lightSpecular != null && unk68 != null) {
-                  _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value, rtm->GBuffers[4].Value, unk68, lightDiffuse, lightSpecular, UICapture.BackBufferSRV, Capture.CapturedSRV);
+                  _sceneRenderer.Update(rtm->GBuffers[0].Value, rtm->GBuffers[1].Value, rtm->GBuffers[2].Value, rtm->GBuffers[3].Value, rtm->GBuffers[4].Value, unk68, lightDiffuse, lightSpecular, UICapture.BackBufferSRV);
               }
           }
           
