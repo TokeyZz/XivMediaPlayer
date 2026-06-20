@@ -109,12 +109,8 @@ float4 PS(VS_OUT input) : SV_TARGET {
       
       float trueAlpha = 0.0;
       if (isSkybox) {
-          // Over the skybox, alphaDiff is destroyed (1.0 - 1.0 = 0).
-          // But difference math (estimatedAlpha) works flawlessly because UI contrasts with the skybox!
           trueAlpha = (diffMax2 > 0.02) ? estimatedAlpha : 0.0;
       } else {
-          // Over geometry, diffMax2 can have holes if UI color == Geometry color.
-          // But alphaDiff works perfectly here to fill the holes!
           trueAlpha = saturate(max(estimatedAlpha, alphaDiff));
       }
       

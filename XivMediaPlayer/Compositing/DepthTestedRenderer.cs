@@ -79,9 +79,9 @@ namespace XivMediaPlayer.Compositing {
       public float Time;
       public float ShowScreensaver;
       public float HasPreUI;
-      public float _pad7;
-      public float _pad8;
-      public float _pad9;
+      
+      public float UseDifferenceFallback;
+      public Vector3 padding3;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -730,9 +730,14 @@ float4 PS(VS_OUT input) : SV_TARGET {
               bool isSkybox = (gameDepth < 0.00001);
               
               if (isSkybox) {
-                  // Over the skybox, alphaDiff is destroyed (1.0 - 1.0 = 0).
-                  // But difference math (estimatedAlpha) works flawlessly because UI contrasts with the skybox!
-                  trueAlpha = (diffMax2 > 0.02) ? estimatedAlpha : 0.0;
+                  if (UseDifferenceFallback > 0.5) {
+                      trueAlpha = (diffMax2 > 0.02) ? estimatedAlpha : 0.0;
+                  } else {
+                      // Outdoors: The outdoor skybox is completely different in Unk68,
+                      // so estimatedAlpha will mistakenly detect the skybox/fog as UI!
+                      // Disable it completely to prevent the ""smudge"" effect.
+                      trueAlpha = 0.0;
+                  }
               } else {
                   // Over geometry, diffMax2 can have holes if UI color == Geometry color.
                   // But alphaDiff works perfectly here to fill the holes!
@@ -911,7 +916,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
       float renderWidth, float renderHeight,
       List<(int X, int Y, int W, int H, string Name)> uiRects, IntPtr titleSrvPtr = default,
       bool isLooping = false, bool isShuffle = false, float time = 0, float showScreensaver = 0,
-      float videoAspectRatio = 0, IntPtr gbuffer2SrvPtr = default, IntPtr gbuffer3SrvPtr = default, IntPtr transparentUiSrvPtr = default, IntPtr vignetteExtrapolatedSrvPtr = default) {
+      float videoAspectRatio = 0, IntPtr gbuffer2SrvPtr = default, IntPtr gbuffer3SrvPtr = default, IntPtr transparentUiSrvPtr = default, IntPtr vignetteExtrapolatedSrvPtr = default, bool useDifferenceFallback = false) {
 
       if (!_initialized || _disposed || videoSrvPtr == IntPtr.Zero || depthSrv == null) return false;
 
@@ -961,7 +966,8 @@ float4 PS(VS_OUT input) : SV_TARGET {
           IsShuffle = isShuffle ? 1.0f : 0.0f,
           Time = time,
           ShowScreensaver = showScreensaver,
-          HasPreUI = transparentUiSrvPtr != IntPtr.Zero ? 1.0f : 0.0f
+          HasPreUI = transparentUiSrvPtr != IntPtr.Zero ? 1.0f : 0.0f,
+          UseDifferenceFallback = useDifferenceFallback ? 1.0f : 0.0f
         };
         _context.UpdateSubresource(constants, _constantBuffer);
 
