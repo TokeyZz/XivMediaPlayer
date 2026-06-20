@@ -58,6 +58,7 @@ namespace XivMediaPlayer {
     public bool ForceSyncProgress { get; set; } = false;
     public ChatMessageLevel ChatMessageFilter { get; set; } = ChatMessageLevel.All;
     public bool VerboseChatLogging { get; set; } = false;
+    public bool EnableWanderersCampfireFix { get; set; } = false;
 
     // yt-dlp settings
     public int PreferredQuality { get; set; } = 720;

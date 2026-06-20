@@ -2445,22 +2445,21 @@ namespace XivMediaPlayer
         }
 
         #endregion
-
-        #region UI
+#region UI
 
         private unsafe void OnDraw()
         {
             if (_worldRenderer != null) _worldRenderer.UseDepthOcclusion = _config.DepthOcclusionEnabled;
 
             bool useDifferenceFallback = false;
-            if (_objectTable != null) {
+            if (_config.EnableWanderersCampfireFix && _objectTable != null) {
                 foreach (var obj in _objectTable) {
                     if (obj == null || obj.Name == null) continue;
                     var name = obj.Name.TextValue;
                     if (name != null && (name.Contains("Wanderer's Campfire", StringComparison.OrdinalIgnoreCase) || 
                                          name.Contains("Wanderers Lagerfeuer", StringComparison.OrdinalIgnoreCase) ||
                                          name.Contains("Feu de camp du vagabond", StringComparison.OrdinalIgnoreCase) ||
-                                         name.Contains("ワンダラーズカンプファイア", StringComparison.OrdinalIgnoreCase))) {
+                                         name.Contains("放浪神の焚き火", StringComparison.OrdinalIgnoreCase))) {
                         useDifferenceFallback = true;
                         break;
                     }

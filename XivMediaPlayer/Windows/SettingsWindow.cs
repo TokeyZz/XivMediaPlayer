@@ -105,6 +105,15 @@ namespace XivMediaPlayer.Windows {
         ImGui.SetTooltip("允许在游戏 UI 覆盖电视时仍可点击电视。如果视觉模组干扰 UI 检测, 可开启此选项。");
       }
 
+      bool enableWanderersCampfireFix = _plugin.Config.EnableWanderersCampfireFix;
+      if (ImGui.Checkbox("启用流浪者营火修复 (模组营火)", ref enableWanderersCampfireFix)) {
+        _plugin.Config.EnableWanderersCampfireFix = enableWanderersCampfireFix;
+        _plugin.Config.Save();
+      }
+      if (ImGui.IsItemHovered()) {
+        ImGui.SetTooltip("如果你使用模组的隐形流浪者营火来绕过室内天空盒遮挡，请启用此选项。使用未修改的营火时请保持关闭。");
+      }
+
       if (ImGui.Button("清除观看历史")) {
         _plugin.Config.WatchHistory.Clear();
         _plugin.Config.Save();
