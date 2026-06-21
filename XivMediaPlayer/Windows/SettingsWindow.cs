@@ -16,11 +16,12 @@ namespace XivMediaPlayer.Windows {
     private Vector4 _proxyTestColor = new Vector4(1, 1, 1, 1);
 
     public SettingsWindow(Plugin plugin, Action onVolumeFix = null) :
-      base("媒体播放器 设置", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.AlwaysAutoResize, false) {
+      base("媒体播放器 设置", ImGuiWindowFlags.None, false) {
       _plugin = plugin;
       _onVolumeFix = onVolumeFix;
       Size = new Vector2(420, 0);
       SizeCondition = ImGuiCond.FirstUseEver;
+      SizeConstraints = new WindowSizeConstraints() { MinimumSize = new Vector2(320, 200), MaximumSize = new Vector2(800, 2000) };
     }
 
     public override void Draw() {
@@ -106,12 +107,12 @@ namespace XivMediaPlayer.Windows {
       }
 
       bool enableWanderersCampfireFix = _plugin.Config.EnableWanderersCampfireFix;
-      if (ImGui.Checkbox("启用流浪者营火修复 (模组营火)", ref enableWanderersCampfireFix)) {
+      if (ImGui.Checkbox("如果你在异空间看不见电视,请打开此选项并启用 skybox 模组", ref enableWanderersCampfireFix)) {
         _plugin.Config.EnableWanderersCampfireFix = enableWanderersCampfireFix;
         _plugin.Config.Save();
       }
       if (ImGui.IsItemHovered()) {
-        ImGui.SetTooltip("如果你使用模组的隐形流浪者营火来绕过室内天空盒遮挡，请启用此选项。使用未修改的营火时请保持关闭。");
+        ImGui.SetTooltip("配合 skybox 模组使用。开启后插件会用备用渲染路径绕过室内天空盒遮挡，让电视在异空间中可见。");
       }
 
       if (ImGui.Button("清除观看历史")) {
