@@ -133,6 +133,8 @@ namespace XivMediaPlayer.Windows {
           if (ImGui.RadioButton("Native SwapChain Alpha", showMode == 4)) { _sceneRenderer.ShowMode = 4; }
           ImGui.SameLine();
           if (ImGui.RadioButton("Alpha Difference", showMode == 5)) { _sceneRenderer.ShowMode = 5; }
+          ImGui.SameLine();
+          if (ImGui.RadioButton("UI Extraction (Colored)", showMode == 6)) { _sceneRenderer.ShowMode = 6; }
           
           if (_sceneRenderer.PreviewTextureHandle != IntPtr.Zero) {
               var avail = ImGui.GetContentRegionAvail();
@@ -404,8 +406,24 @@ namespace XivMediaPlayer.Windows {
                 w = UICapture.CaptureWidth;
                 h = UICapture.CaptureHeight;
             } else if (_selectedPreviewMode == 19) {
-                _pluginLog.Warning("[Depth Preview] Copying reconstructed scene not supported yet.");
-                return;
+                if (_sceneRenderer == null || !_sceneRenderer.IsInitialized || _sceneRenderer.PreviewSRV == null) {
+                    _pluginLog.Warning("[Depth Preview] Scene renderer not initialized.");
+                    return;
+                }
+                if (_dumper == null) {
+                    _dumper = new XivMediaPlayer.Utils.TextureDumper();
+                    _dumper.Initialize();
+                }
+                w = 1920;
+                h = 1080;
+                rgbaData = _dumper.DumpTextureToRgba(_sceneRenderer.PreviewSRV, w, h);
+                
+                // Force Alpha to 255 so the clipboard image isn't transparent.
+                if (rgbaData != null) {
+                    for (int i = 0; i < rgbaData.Length; i += 4) {
+                        rgbaData[i + 3] = 255;
+                    }
+                }
             } else {
                 var rtm = RenderTargetManager.Instance();
                 if (rtm == null) return;

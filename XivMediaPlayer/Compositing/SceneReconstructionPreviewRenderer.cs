@@ -86,19 +86,11 @@ float4 PS(VS_OUT input) : SV_TARGET {
       // Diff Map (RGB)
       color = abs(bbColor - trueBackground);
   } else if (ShowMode == 2) {
-      // Calculated Alpha Mask
-      float3 estA;
-      if (bbColor.r > trueBackground.r) estA.r = (bbColor.r - trueBackground.r) / max(0.0001, 1.0 - trueBackground.r);
-      else estA.r = 1.0 - (bbColor.r / max(0.0001, trueBackground.r));
-      
-      if (bbColor.g > trueBackground.g) estA.g = (bbColor.g - trueBackground.g) / max(0.0001, 1.0 - trueBackground.g);
-      else estA.g = 1.0 - (bbColor.g / max(0.0001, trueBackground.g));
-      
-      if (bbColor.b > trueBackground.b) estA.b = (bbColor.b - trueBackground.b) / max(0.0001, 1.0 - trueBackground.b);
-      else estA.b = 1.0 - (bbColor.b / max(0.0001, trueBackground.b));
-      
-      float estimatedAlpha = saturate(max(max(estA.r, estA.g), estA.b));
-      float diffMax2 = max(max(abs(bbColor.r - trueBackground.r), abs(bbColor.g - trueBackground.g)), abs(bbColor.b - trueBackground.b));
+      // Loose Texture Compiler Emulation (Raw Alpha Mask)
+      float diffR = abs(bbColor.r - trueBackground.r);
+      float diffG = abs(bbColor.g - trueBackground.g);
+      float diffB = abs(bbColor.b - trueBackground.b);
+      float ltcGray = (0.299 * diffR) + (0.587 * diffG) + (0.114 * diffB);
       
       float nativeAlpha = BackBuffer.Sample(LinearSampler, input.uv).a;
       float unk68Alpha = Unk68.Sample(LinearSampler, input.uv).a;
@@ -109,9 +101,9 @@ float4 PS(VS_OUT input) : SV_TARGET {
       
       float trueAlpha = 0.0;
       if (isSkybox) {
-          trueAlpha = (diffMax2 > 0.02) ? estimatedAlpha : 0.0;
+          trueAlpha = (ltcGray > 0.0196) ? 1.0 : ltcGray;
       } else {
-          trueAlpha = saturate(max(estimatedAlpha, alphaDiff));
+          trueAlpha = saturate(max((ltcGray > 0.0196) ? 1.0 : ltcGray, alphaDiff));
       }
       
       color = float3(trueAlpha, trueAlpha, trueAlpha);
@@ -120,18 +112,42 @@ float4 PS(VS_OUT input) : SV_TARGET {
       color = saturate(1.0 - abs(bbColor - trueBackground));
   } else if (ShowMode == 4) {
       // Native SwapChain Alpha
-      float nativeAlpha = BackBuffer.Sample(LinearSampler, input.uv).a;
-      color = float3(nativeAlpha, nativeAlpha, nativeAlpha);
+      float a = BackBuffer.Sample(LinearSampler, input.uv).a;
+      color = float3(a, a, a);
   } else if (ShowMode == 5) {
       // Alpha Difference Map (The Holy Grail?)
       float nativeAlpha = BackBuffer.Sample(LinearSampler, input.uv).a;
       float unk68Alpha = Unk68.Sample(LinearSampler, input.uv).a;
       float alphaDiff = abs(nativeAlpha - unk68Alpha);
       color = float3(alphaDiff, alphaDiff, alphaDiff);
+  } else if (ShowMode == 6) {
+      // Loose Texture Compiler Emulation (Colored UI Extraction)
+      float diffR = abs(bbColor.r - trueBackground.r);
+      float diffG = abs(bbColor.g - trueBackground.g);
+      float diffB = abs(bbColor.b - trueBackground.b);
+      float ltcGray = (0.299 * diffR) + (0.587 * diffG) + (0.114 * diffB);
+      
+      float nativeAlpha = BackBuffer.Sample(LinearSampler, input.uv).a;
+      float unk68Alpha = Unk68.Sample(LinearSampler, input.uv).a;
+      float alphaDiff = abs(nativeAlpha - unk68Alpha);
+      
+      float4 albedo = GBuffer2.Sample(LinearSampler, input.uv);
+      bool isSkybox = (dot(albedo.rgb, albedo.rgb) < 0.0001);
+      
+      float trueAlpha = 0.0;
+      if (isSkybox) {
+          trueAlpha = (ltcGray > 0.0196) ? 1.0 : ltcGray;
+      } else {
+          trueAlpha = saturate(max((ltcGray > 0.0196) ? 1.0 : ltcGray, alphaDiff));
+      }
+      
+      // We output the actual game RGB color with the calculated alpha mask,
+      // so the exported transparent PNG contains the perfectly colored UI!
+      return float4(bbColor, trueAlpha);
   } else {
-      // Standard Reconstructed Scene
-      float3 uiDiff = bbColor - trueBackground;
-      color = saturate(color + uiDiff);
+      // Standard Reconstructed Scene (Without UI)
+      // 'color' is already unk68.rgb (trueBackground), so we just leave it alone
+      // rather than mathematically adding the UI back into it!
   }
   
   return float4(color, 1.0);
@@ -145,7 +161,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
     public ID3D11ShaderResourceView PreviewSRV => _previewSRV;
     public bool IsInitialized => _initialized;
 
-    public bool Initialize(int width = 800, int height = 450) {
+    public bool Initialize(int width = 1920, int height = 1080) {
       if (_initialized || _disposed) return _initialized;
 
       try {

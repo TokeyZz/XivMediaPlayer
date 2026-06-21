@@ -720,26 +720,12 @@ float4 PS(VS_OUT input) : SV_TARGET {
               float3 vignetteExtrapolated = VignetteExtrapolatedTexture.Sample(VideoSampler, screenUV).rgb;
               float3 trueBackground = saturate(preUiColor.rgb - vignetteExtrapolated);
               
-              // Mathematically estimate the true UI alpha.
-              // Since FFXIV writes alpha=1.0 for translucent chat boxes, we MUST estimate alpha from the color shift.
-              // Assuming the UI is either black or white (or saturated color), we can reverse-engineer A.
-              float3 estA;
-              
-              // Red channel estimate
-              if (bbColor.r > trueBackground.r) estA.r = (bbColor.r - trueBackground.r) / max(0.0001, 1.0 - trueBackground.r);
-              else estA.r = 1.0 - (bbColor.r / max(0.0001, trueBackground.r));
-              
-              // Green channel estimate
-              if (bbColor.g > trueBackground.g) estA.g = (bbColor.g - trueBackground.g) / max(0.0001, 1.0 - trueBackground.g);
-              else estA.g = 1.0 - (bbColor.g / max(0.0001, trueBackground.g));
-              
-              // Blue channel estimate
-              if (bbColor.b > trueBackground.b) estA.b = (bbColor.b - trueBackground.b) / max(0.0001, 1.0 - trueBackground.b);
-              else estA.b = 1.0 - (bbColor.b / max(0.0001, trueBackground.b));
-              
-              float estimatedAlpha = saturate(max(max(estA.r, estA.g), estA.b));
-              
               float diffMax2 = max(max(abs(bbColor.r - trueBackground.r), abs(bbColor.g - trueBackground.g)), abs(bbColor.b - trueBackground.b));
+                
+              // Estimate the true UI alpha cleanly using the color difference.
+              // We use a clean scaler (1.5x) rather than reverse-engineering the division formula 
+              // which causes massive floating point noise (as seen in earlier alpha mask previews).
+              float estimatedAlpha = saturate(diffMax2 * 1.5);
               
               float nativeAlpha = bbColor.a;
               float unk68Alpha = PreUITexture.Sample(VideoSampler, screenUV).a;
