@@ -723,8 +723,8 @@ float4 PS(VS_OUT input) : SV_TARGET {
               float diffMax2 = max(max(abs(bbColor.r - trueBackground.r), abs(bbColor.g - trueBackground.g)), abs(bbColor.b - trueBackground.b));
                 
               // Estimate the true UI alpha cleanly using the color difference.
-              // We use a clean scaler (1.5x) rather than reverse-engineering the division formula 
-              // which causes massive floating point noise (as seen in earlier alpha mask previews).
+              // We use a clean scaler (1.5x) rather than reverse-engineering the division formula.
+              
               float estimatedAlpha = saturate(diffMax2 * 1.5);
               
               float nativeAlpha = bbColor.a;

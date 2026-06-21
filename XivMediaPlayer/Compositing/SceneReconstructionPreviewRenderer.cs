@@ -86,11 +86,11 @@ float4 PS(VS_OUT input) : SV_TARGET {
       // Diff Map (RGB)
       color = abs(bbColor - trueBackground);
   } else if (ShowMode == 2) {
-      // Loose Texture Compiler Emulation (Raw Alpha Mask)
+      // Raw Alpha Mask View
       float diffR = abs(bbColor.r - trueBackground.r);
       float diffG = abs(bbColor.g - trueBackground.g);
       float diffB = abs(bbColor.b - trueBackground.b);
-      float ltcGray = (0.299 * diffR) + (0.587 * diffG) + (0.114 * diffB);
+      float ltcCenter = (0.299 * diffR) + (0.587 * diffG) + (0.114 * diffB);
       
       float nativeAlpha = BackBuffer.Sample(LinearSampler, input.uv).a;
       float unk68Alpha = Unk68.Sample(LinearSampler, input.uv).a;
@@ -100,11 +100,15 @@ float4 PS(VS_OUT input) : SV_TARGET {
       bool isSkybox = (dot(albedo.rgb, albedo.rgb) < 0.0001);
       
       float trueAlpha = 0.0;
+      // Same soft smoothstep band for the raw alpha mask view
       if (isSkybox) {
-          trueAlpha = (ltcGray > 0.0196) ? 1.0 : ltcGray;
+          trueAlpha = smoothstep(0.005, 0.3, ltcCenter);
       } else {
-          trueAlpha = saturate(max((ltcGray > 0.0196) ? 1.0 : ltcGray, alphaDiff));
+          trueAlpha = saturate(max(smoothstep(0.005, 0.3, ltcCenter), alphaDiff));
       }
+      
+      // If the center is literally just black sky, force it to 0 regardless of neighbors
+      if (ltcCenter < 0.005) trueAlpha = 0.0;
       
       color = float3(trueAlpha, trueAlpha, trueAlpha);
   } else if (ShowMode == 3) {
@@ -121,29 +125,56 @@ float4 PS(VS_OUT input) : SV_TARGET {
       float alphaDiff = abs(nativeAlpha - unk68Alpha);
       color = float3(alphaDiff, alphaDiff, alphaDiff);
   } else if (ShowMode == 6) {
-      // Loose Texture Compiler Emulation (Colored UI Extraction)
+      // Literal Inward-Eroding Distance Transform (Tight Inner Feather)
+      // This strictly erodes the alpha inwards towards the core, never expanding outwards!
+      float2 texel = float2(1.0 / 1920.0, 1.0 / 1080.0);
+      float maxRadius = 8.0;
+      float minDist = maxRadius;
+      
+      // Check if the current center pixel is background. If so, it stays 0.0.
       float diffR = abs(bbColor.r - trueBackground.r);
       float diffG = abs(bbColor.g - trueBackground.g);
       float diffB = abs(bbColor.b - trueBackground.b);
-      float ltcGray = (0.299 * diffR) + (0.587 * diffG) + (0.114 * diffB);
+      float centerG = (0.299 * diffR) + (0.587 * diffG) + (0.114 * diffB);
       
-      float nativeAlpha = BackBuffer.Sample(LinearSampler, input.uv).a;
-      float unk68Alpha = Unk68.Sample(LinearSampler, input.uv).a;
-      float alphaDiff = abs(nativeAlpha - unk68Alpha);
+      float featheredAlpha = 0.0;
       
-      float4 albedo = GBuffer2.Sample(LinearSampler, input.uv);
-      bool isSkybox = (dot(albedo.rgb, albedo.rgb) < 0.0001);
-      
-      float trueAlpha = 0.0;
-      if (isSkybox) {
-          trueAlpha = (ltcGray > 0.0196) ? 1.0 : ltcGray;
-      } else {
-          trueAlpha = saturate(max((ltcGray > 0.0196) ? 1.0 : ltcGray, alphaDiff));
+      if (centerG > 0.0196) {
+          // It's a UI pixel! Now we search the 17x17 neighborhood for the NEAREST background pixel.
+          int blackCount = 0;
+          
+          for (int y = -8; y <= 8; y++) {
+              for (int x = -8; x <= 8; x++) {
+                  float dist = length(float2(x, y));
+                  if (dist <= maxRadius) {
+                      float3 b = BackBuffer.Sample(LinearSampler, input.uv + float2(x * texel.x, y * texel.y)).rgb;
+                      float3 u = Unk68.Sample(LinearSampler, input.uv + float2(x * texel.x, y * texel.y)).rgb;
+                      float3 d = abs(b - u);
+                      float g = (0.299 * d.r) + (0.587 * d.g) + (0.114 * d.b);
+                      
+                      // If we found a background pixel, record its distance!
+                      if (g <= 0.0196) {
+                          blackCount++;
+                          if (dist < minDist) {
+                              minDist = dist;
+                          }
+                      }
+                  }
+              }
+          }
+          
+          // Noise Protection: If there are less than 5 background pixels in the massive 17x17 area,
+          // it's just visual noise deep inside the solid UI mask. Force it to be completely solid!
+          if (blackCount < 5) {
+              featheredAlpha = 1.0;
+          } else {
+              // The closer we are to the true background edge, the lower the alpha.
+              // This creates a perfectly tight, linear inward erode!
+              featheredAlpha = minDist / maxRadius;
+          }
       }
       
-      // We output the actual game RGB color with the calculated alpha mask,
-      // so the exported transparent PNG contains the perfectly colored UI!
-      return float4(bbColor, trueAlpha);
+      return float4(bbColor, featheredAlpha);
   } else {
       // Standard Reconstructed Scene (Without UI)
       // 'color' is already unk68.rgb (trueBackground), so we just leave it alone
