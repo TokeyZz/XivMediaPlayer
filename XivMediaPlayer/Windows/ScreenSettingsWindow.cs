@@ -29,6 +29,11 @@ namespace XivMediaPlayer.Windows {
     private bool _wasShiftPressed;
     private int _aspectRatio = 0; // 0 = 16:9, 1 = 4:3
 
+    private float _opacity = 1.0f;
+    private bool _isProjectorMode = false;
+    private Vector3 _screensaverColor = new Vector3(0.0f, 0.0f, 0.0f);
+    private int _screensaverStyle = 0;
+
     // Drag state for world-space interaction
     private bool _isDragging;
     private Vector2 _dragStartMouse;
@@ -62,13 +67,20 @@ namespace XivMediaPlayer.Windows {
       _rotation = new Vector2(_transform.RotationDegrees.Y, _transform.RotationDegrees.X); // yaw, pitch
       _scale = _transform.Scale;
       _enabled = _transform.Enabled;
+      _opacity = _transform.Opacity;
+      _isProjectorMode = _transform.IsProjectorMode;
+      _screensaverColor = _transform.ScreensaverColor;
+      _screensaverStyle = _transform.ScreensaverStyle;
     }
 
     private void SyncToTransform() {
       _transform.Position = _position;
       _transform.RotationDegrees = new Vector3(_rotation.Y, _rotation.X, 0); // pitch, yaw, roll
       _transform.Scale = _scale;
-      _transform.Enabled = _enabled;
+      _transform.Opacity = _opacity;
+      _transform.IsProjectorMode = _isProjectorMode;
+      _transform.ScreensaverColor = _screensaverColor;
+      _transform.ScreensaverStyle = _screensaverStyle;
     }
 
     public override void Draw() {
@@ -251,14 +263,23 @@ namespace XivMediaPlayer.Windows {
       aspectChanged |= ImGui.RadioButton("16:9", ref _aspectRatio, 0);
       ImGui.SameLine();
       aspectChanged |= ImGui.RadioButton("4:3", ref _aspectRatio, 1);
-      
+      ImGui.SameLine();
+      aspectChanged |= ImGui.RadioButton("Custom / Free", ref _aspectRatio, 2);
+
       bool scaleChanged = false;
-      scaleChanged |= ImGui.DragFloat("对角线尺寸##scale", ref _scale.X, 0.1f, 0.5f, 200f, "%.1f");
+      if (_aspectRatio != 2) {
+          scaleChanged |= ImGui.DragFloat("Diagonal Size##scale", ref _scale.X, 0.1f, 0.5f, 200f, "%.1f");
+      } else {
+          scaleChanged |= ImGui.DragFloat("Width##scaleX", ref _scale.X, 0.1f, 0.5f, 200f, "%.1f");
+          scaleChanged |= ImGui.DragFloat("Height##scaleY", ref _scale.Y, 0.1f, 0.5f, 200f, "%.1f");
+      }
       bool saveScale = ImGui.IsItemDeactivatedAfterEdit();
 
       if (aspectChanged || scaleChanged) {
-        float ratio = _aspectRatio == 0 ? (9f / 16f) : (3f / 4f);
-        _scale.Y = _scale.X * ratio;
+        if (_aspectRatio != 2) {
+            float ratio = _aspectRatio == 0 ? (9f / 16f) : (3f / 4f);
+            _scale.Y = _scale.X * ratio;
+        }
         _transform.Scale = _scale;
       }
       if (saveScale || aspectChanged) {
@@ -266,13 +287,40 @@ namespace XivMediaPlayer.Windows {
       }
 
       // Preset sizes
-      if (ImGui.Button("小 (2m)")) { _scale.X = 2f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
+      if (ImGui.Button("小 (2m)")) { _scale.X = 2f; _scale.Y = _scale.X * (_aspectRatio == 1 ? (3f/4f) : (9f/16f)); _transform.Scale = _scale; _onSave?.Invoke(); }
       ImGui.SameLine();
-      if (ImGui.Button("中 (4m)")) { _scale.X = 4f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
+      if (ImGui.Button("中 (4m)")) { _scale.X = 4f; _scale.Y = _scale.X * (_aspectRatio == 1 ? (3f/4f) : (9f/16f)); _transform.Scale = _scale; _onSave?.Invoke(); }
       ImGui.SameLine();
-      if (ImGui.Button("大 (8m)")) { _scale.X = 8f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
+      if (ImGui.Button("大 (8m)")) { _scale.X = 8f; _scale.Y = _scale.X * (_aspectRatio == 1 ? (3f/4f) : (9f/16f)); _transform.Scale = _scale; _onSave?.Invoke(); }
       ImGui.SameLine();
-      if (ImGui.Button("影院 (12m)")) { _scale.X = 12f; _scale.Y = _scale.X * (_aspectRatio == 0 ? (9f/16f) : (3f/4f)); _transform.Scale = _scale; _onSave?.Invoke(); }
+      if (ImGui.Button("影院 (12m)")) { _scale.X = 12f; _scale.Y = _scale.X * (_aspectRatio == 1 ? (3f/4f) : (9f/16f)); _transform.Scale = _scale; _onSave?.Invoke(); }
+
+      ImGui.Spacing();
+      ImGui.Separator();
+
+      // Projector & Transparency
+      ImGui.TextColored(new Vector4(0.7f, 0.9f, 1f, 1f), "Projector & Transparency");
+
+      bool appearanceChanged = false;
+      appearanceChanged |= ImGui.Checkbox("Projector Mode (Additive Blend)", ref _isProjectorMode);
+
+      appearanceChanged |= ImGui.SliderFloat("Opacity", ref _opacity, 0.05f, 1.0f, "%.2f");
+      appearanceChanged |= ImGui.ColorEdit3("Screensaver Color", ref _screensaverColor);
+
+      string[] screensaverStyles = new string[] { "Bouncing Logo", "VCR", "No Signal", "Static", "Test Pattern", "Matrix Rain" };
+      appearanceChanged |= ImGui.Combo("Screensaver Style", ref _screensaverStyle, screensaverStyles, screensaverStyles.Length);
+
+      bool saveAppearance = ImGui.IsItemDeactivatedAfterEdit() || ImGui.IsItemDeactivated();
+
+      if (appearanceChanged) {
+        _transform.Opacity = _opacity;
+        _transform.IsProjectorMode = _isProjectorMode;
+        _transform.ScreensaverColor = _screensaverColor;
+        _transform.ScreensaverStyle = _screensaverStyle;
+      }
+      if (saveAppearance || appearanceChanged) {
+        _onSave?.Invoke();
+      }
 
 
       ImGui.Spacing();
@@ -469,6 +517,12 @@ namespace XivMediaPlayer.Windows {
         RotationZ = _transform.RotationDegrees.Z,
         ScaleX = _scale.X,
         ScaleY = _scale.Y,
+        Opacity = _opacity,
+        IsProjectorMode = _isProjectorMode,
+        ScreensaverColorR = _screensaverColor.X,
+        ScreensaverColorG = _screensaverColor.Y,
+        ScreensaverColorB = _screensaverColor.Z,
+        ScreensaverStyle = _screensaverStyle,
         OwnerId = _plugin.Config.OwnerId,
         IsLocked = _plugin.CurrentTvPlacement?.IsLocked ?? (!locationKey.StartsWith("zone_") && !locationKey.StartsWith("island_")),
         BypassLock = _plugin.IsHousingMenuOpen || locationKey.StartsWith("zone_") || locationKey.StartsWith("island_")

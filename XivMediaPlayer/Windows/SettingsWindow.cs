@@ -115,6 +115,15 @@ namespace XivMediaPlayer.Windows {
         ImGui.SetTooltip("配合 skybox 模组使用。开启后插件会用备用渲染路径绕过室内天空盒遮挡，让电视在异空间中可见。");
       }
 
+      bool strictMasking = _plugin.Config.UIBlendThreshold > 0.5f;
+      if (ImGui.Checkbox("Strict UI Masking (AMD Fix / Invisible Drop Shadows)", ref strictMasking)) {
+        _plugin.Config.UIBlendThreshold = strictMasking ? (171.0f / 255.0f) : 0.0f;
+        _plugin.Config.Save();
+      }
+      if (ImGui.IsItemHovered()) {
+        ImGui.SetTooltip("Enable this if you have an AMD card and notice that the TV does not render. UI dropshadows are lost.");
+      }
+
       if (ImGui.Button("清除观看历史")) {
         _plugin.Config.WatchHistory.Clear();
         _plugin.Config.Save();

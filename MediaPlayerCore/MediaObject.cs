@@ -61,6 +61,7 @@ namespace MediaPlayerCore {
     private float _baseVolume = 1;
     private bool _vlcWasAbleToStart;
     private bool _disposed;
+    private bool _trueDimensionsExtracted;
     private bool _isDisposing;
     private readonly object _disposeLock = new object();
 
@@ -203,7 +204,7 @@ namespace MediaPlayerCore {
         }
       } catch (Exception e) { OnErrorReceived?.Invoke(this, new MediaError { Exception = e }); }
     }
-    public void Play(string mediaPath, float volume, int startTimeMs, Dictionary<string, string>? httpHeaders) {
+    public void Play(string mediaPath, float volume, int startTimeMs, Dictionary<string, string>? httpHeaders, string? slaveAudioPath = null) {
       Task.Run(async delegate {
         try {
           if (string.IsNullOrEmpty(mediaPath)) {
@@ -223,6 +224,8 @@ namespace MediaPlayerCore {
               _parent.LastFrame = Array.Empty<byte>();
               _parent.LastFrameWidth = 0;
               _parent.LastFrameHeight = 0;
+              _parent.LastFrameTrueWidth = 0;
+              _parent.LastFrameTrueHeight = 0;
               _parent.LastFrameCount++;
             }
 
@@ -246,6 +249,9 @@ namespace MediaPlayerCore {
               
               if (_audioOnly) {
                   media.AddOption(":no-video");
+              }
+              if (!string.IsNullOrEmpty(slaveAudioPath)) {
+                  media.AddOption($":input-slave={slaveAudioPath}");
               }
 
               if (mediaPath.StartsWith("rtsp")) {
@@ -292,6 +298,21 @@ namespace MediaPlayerCore {
               parseSw.Stop();
               Debug.WriteLine($"[MediaObject] Media parsed OK: duration={media.Duration}ms, tracks={media.Tracks?.Length ?? 0}, parsed in {parseSw.ElapsedMilliseconds}ms");
 
+              if (media.Tracks != null) {
+                  foreach (var track in media.Tracks) {
+                      if (track.TrackType == TrackType.Video) {
+                          int trueWidth = (int)track.Data.Video.Width;
+                          int trueHeight = (int)track.Data.Video.Height;
+                          if (trueWidth > 0 && trueHeight > 0 && _parent != null) {
+                              _parent.LastFrameTrueWidth = trueWidth;
+                              _parent.LastFrameTrueHeight = trueHeight;
+                              Debug.WriteLine($"[MediaObject] Extracted true video dimensions from track: {trueWidth}x{trueHeight}");
+                          }
+                          break;
+                      }
+                  }
+              }
+
               lock (_disposeLock) {
                 if (_disposed) {
                    media.Dispose();
@@ -325,6 +346,8 @@ namespace MediaPlayerCore {
                     _parent.LastFrame = Array.Empty<byte>();
                     _parent.LastFrameWidth = 0;
                     _parent.LastFrameHeight = 0;
+                    _parent.LastFrameTrueWidth = 0;
+                    _parent.LastFrameTrueHeight = 0;
                     _parent.LastFrameCount++;
                   }
                 };
@@ -384,7 +407,7 @@ namespace MediaPlayerCore {
         }
       });
     }
-    public void ChangeVideoStream(string soundPath, float width, int startTimeMs = 0, Dictionary<string, string>? httpHeaders = null) {
+    public void ChangeVideoStream(string soundPath, float width, int startTimeMs = 0, Dictionary<string, string>? httpHeaders = null, string? slaveAudioPath = null) {
       var shortPath = soundPath?.Length > 120 ? soundPath[..120] + "..." : soundPath;
       Debug.WriteLine($"[MediaObject] ChangeVideoStream START: path={shortPath}");
       Task.Run(async delegate {
@@ -394,9 +417,12 @@ namespace MediaPlayerCore {
             _ownedLibVLC = libVLC;
             var media = new Media(libVLC, soundPath, soundPath.StartsWith("http") || soundPath.StartsWith("rtmp") || soundPath.StartsWith("rtsp")
                      ? FromType.FromLocation : FromType.FromPath);
-            
+
             if (_audioOnly) {
                 media.AddOption(":no-video");
+            }
+            if (!string.IsNullOrEmpty(slaveAudioPath)) {
+                media.AddOption($":input-slave={slaveAudioPath}");
             }
 
             if (soundPath.StartsWith("rtsp")) {
@@ -450,6 +476,7 @@ namespace MediaPlayerCore {
                     return;
                 }
                 if (_vlcPlayer != null) {
+                    _trueDimensionsExtracted = false;
                     _vlcPlayer.Media = media;
                 }
             }
@@ -553,6 +580,10 @@ namespace MediaPlayerCore {
                 
                 _parent.LastFrameWidth = (int)(_pitch / _bytePerPixel);
                 _parent.LastFrameHeight = (int)_lines;
+                if (_parent.LastFrameTrueWidth == 0 || _parent.LastFrameTrueHeight == 0) {
+              _parent.LastFrameTrueWidth = (int)_width;
+              _parent.LastFrameTrueHeight = (int)_height;
+          }
                 _parent.LastFrameCount++;
               }
             } catch (Exception ex) {
@@ -586,6 +617,47 @@ namespace MediaPlayerCore {
             _vlcBuffer = _vlcMappedViewAccessor.SafeMemoryMappedViewHandle.DangerousGetHandle();
           }
         }
+
+        if (_parent != null && !_trueDimensionsExtracted) {
+            Task.Run(async () => {
+                try {
+                    while (!_trueDimensionsExtracted && _vlcPlayer != null && !_disposed) {
+                        try {
+                            uint px = 0, py = 0;
+                            if (_vlcPlayer.Size(0, ref px, ref py)) {
+                                if (px > 0 && py > 0) {
+                                    _parent.LastFrameTrueWidth = (int)px;
+                                    _parent.LastFrameTrueHeight = (int)py;
+                                    _trueDimensionsExtracted = true;
+                                    System.Diagnostics.Debug.WriteLine($"[MediaObject] MediaPlayer.Size polled true dimensions: {px}x{py}");
+                                }
+                            }
+                            if (!_trueDimensionsExtracted && _vlcPlayer.Media != null) {
+                                var tracks = _vlcPlayer.Media.Tracks;
+                                if (tracks != null) {
+                                    foreach (var track in tracks) {
+                                        if (track.TrackType == LibVLCSharp.Shared.TrackType.Video) {
+                                            int trueWidth = (int)track.Data.Video.Width;
+                                            int trueHeight = (int)track.Data.Video.Height;
+                                            if (trueWidth > 0 && trueHeight > 0) {
+                                                _parent.LastFrameTrueWidth = trueWidth;
+                                                _parent.LastFrameTrueHeight = trueHeight;
+                                                _trueDimensionsExtracted = true;
+                                                System.Diagnostics.Debug.WriteLine($"[MediaObject] Task extracted true dimensions: {trueWidth}x{trueHeight}");
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        } catch { /* Silently handle disposal races */ }
+                        if (_trueDimensionsExtracted) break;
+                        await Task.Delay(500);
+                    }
+                } catch { /* Silently handle disposal races */ }
+            });
+        }
+
         return 1;
       }
 

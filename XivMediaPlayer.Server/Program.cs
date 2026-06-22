@@ -31,22 +31,41 @@ logger.LogInformation("[Server] XivMediaPlayer Server v2 starting on port {Port}
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<XivMediaPlayer.Server.Models.AppDbContext>();
-    
+
     // Check if the old pre-migrations table exists
     var tables = db.Database.SqlQueryRaw<string>("SELECT name FROM sqlite_master WHERE type='table' AND name='TvPlacements'").ToList();
-    var history = db.Database.SqlQueryRaw<string>("SELECT name FROM sqlite_master WHERE type='table' AND name='__EFMigrationsHistory'").ToList();
-    
-    if (tables.Any() && !history.Any()) {
-        // This is an existing database from before we added EF Core Migrations!
-        // We need to fake the InitialCreate migration so data isn't destroyed.
+
+    if (tables.Any()) {
         db.Database.ExecuteSqlRaw(@"
-            CREATE TABLE ""__EFMigrationsHistory"" (
+            CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
                 ""MigrationId"" TEXT NOT NULL CONSTRAINT ""PK___EFMigrationsHistory"" PRIMARY KEY,
                 ""ProductVersion"" TEXT NOT NULL
             );
-            INSERT INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"")
-            VALUES ('20260606020813_InitialCreate', '10.0.8');
         ");
+
+        var history = db.Database.SqlQueryRaw<string>("SELECT MigrationId FROM __EFMigrationsHistory").ToList();
+
+        if (!history.Contains("20260606020813_InitialCreate")) {
+            db.Database.ExecuteSqlRaw("INSERT INTO \"__EFMigrationsHistory\" (\"MigrationId\", \"ProductVersion\") VALUES ('20260606020813_InitialCreate', '10.0.8');");
+        }
+
+        // Check for DurationMs
+        var roomCols = db.Database.SqlQueryRaw<string>("SELECT name FROM pragma_table_info('RoomMediaStates') WHERE name='DurationMs'").ToList();
+        if (roomCols.Any() && !history.Contains("20260606020852_AddDurationMs")) {
+            db.Database.ExecuteSqlRaw("INSERT INTO \"__EFMigrationsHistory\" (\"MigrationId\", \"ProductVersion\") VALUES ('20260606020852_AddDurationMs', '10.0.8');");
+        }
+
+        // Check for IsProjectorMode
+        var projCols = db.Database.SqlQueryRaw<string>("SELECT name FROM pragma_table_info('TvPlacements') WHERE name='IsProjectorMode'").ToList();
+        if (projCols.Any() && !history.Contains("20260622043315_AddProjectorSettings")) {
+            db.Database.ExecuteSqlRaw("INSERT INTO \"__EFMigrationsHistory\" (\"MigrationId\", \"ProductVersion\") VALUES ('20260622043315_AddProjectorSettings', '10.0.8');");
+        }
+
+        // Check for ScreensaverStyle
+        var ssCols = db.Database.SqlQueryRaw<string>("SELECT name FROM pragma_table_info('TvPlacements') WHERE name='ScreensaverStyle'").ToList();
+        if (ssCols.Any() && !history.Contains("20260622061404_AddScreensaverSettings")) {
+            db.Database.ExecuteSqlRaw("INSERT INTO \"__EFMigrationsHistory\" (\"MigrationId\", \"ProductVersion\") VALUES ('20260622061404_AddScreensaverSettings', '10.0.8');");
+        }
     }
 
     db.Database.Migrate();

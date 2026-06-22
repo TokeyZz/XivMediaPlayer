@@ -283,10 +283,10 @@ namespace XivMediaPlayer
                         return;
                     }
 
-                    string? streamUrl = null;
+                    string[]? streamUrls = null;
                     try
                     {
-                        streamUrl = await resolveTask;
+                        streamUrls = await resolveTask;
                         if (resolutionId != _currentResolutionId) return;
                     }
                     catch (Exception resolveEx)
@@ -328,7 +328,7 @@ namespace XivMediaPlayer
                         }
                     }
 
-                    if (string.IsNullOrEmpty(streamUrl))
+                    if (streamUrls == null || streamUrls.Length == 0 || string.IsNullOrEmpty(streamUrls[0]))
                         {
                             // Fallback to CefSharp for heavily protected sites
                             EnqueueFrameworkAction(() => PrintChat("[媒体播放器] yt-dlp 解析失败, 正在使用内置浏览器解析...", ChatSeverity.Info));
@@ -346,14 +346,14 @@ namespace XivMediaPlayer
 
                         if (cefResult != null && !string.IsNullOrEmpty(cefResult.Url))
                         {
-                            streamUrl = cefResult.Url;
+                            streamUrls = new string[] { cefResult.Url };
                             metadata = new MediaPlayerCore.YtDlp.YtDlpMetadata { HttpHeaders = cefResult.Headers };
                             _cefBrowserHandle = cefResult.BrowserHandle;
 
-                            if (!_isLocalDj && url != streamUrl && startTimeMs < 5000)
+                            if (!_isLocalDj && url != streamUrls[0] && startTimeMs < 5000)
                             {
                                 _pluginLog.Information("[Social] Guest successfully resolved a raw Cef URL to a direct stream. Rescuing the host by pushing the .m3u8 back to the server!");
-                                string rescuedStreamUrl = streamUrl;
+                                string rescuedStreamUrl = streamUrls[0];
                                 EnqueueFrameworkAction(() =>
                                 {
                                     _lastStreamURL = rescuedStreamUrl;
@@ -374,8 +374,8 @@ namespace XivMediaPlayer
                             // Proxy the stream so VLC can bypass Cloudflare using our extracted Cookies and Headers
                             try
                             {
-                                streamUrl = MediaPlayerCore.StreamProxy.Instance.RegisterStream(cefResult.Url, metadata.HttpHeaders, cefResult.M3u8Content);
-                                _pluginLog.Info($"[Media Player] Proxying stream URL: {streamUrl}");
+                                streamUrls[0] = MediaPlayerCore.StreamProxy.Instance.RegisterStream(cefResult.Url, metadata.HttpHeaders, cefResult.M3u8Content);
+                                _pluginLog.Info($"[Media Player] Proxying stream URL: {streamUrls[0]}");
                             }
                             catch (Exception proxyEx)
                             {
@@ -401,7 +401,8 @@ namespace XivMediaPlayer
                     // Also explicitly check if it's a twitch channel URL (not a video)
                     bool isTwitchLive = url.Contains("twitch.tv") && !url.Contains("/videos/");
                     bool isLive = (metadata?.IsLive == true) || (metadata != null && metadata.Duration == null) || isTwitchLive;
-                    var resolvedStreamUrl = streamUrl;
+                    var resolvedStreamUrl = streamUrls[0];
+                    var resolvedSlaveAudioUrl = streamUrls.Length > 1 ? streamUrls[1] : null;
                     var resolvedHeaders = metadata?.HttpHeaders;
 
                     // Cookie fallback: if yt-dlp didn't return headers but we have local cookies, inject them
@@ -444,7 +445,7 @@ namespace XivMediaPlayer
                         if (isAutoSync && !isLive)
                             finalStartTimeMs += (int)(DateTime.UtcNow - resolutionStartTime).TotalMilliseconds;
 
-                        _mediaManager.PlayStream(audioGameObject, playUrl, _config.SpatialAudioEnabled, finalStartTimeMs, resolvedHeaders);
+                        _mediaManager.PlayStream(audioGameObject, playUrl, _config.SpatialAudioEnabled, finalStartTimeMs, resolvedHeaders, false, resolvedSlaveAudioUrl);
                         _lastStreamURL = url;
                         _currentMediaDurationMs = resolvedDurationMs;
                         _currentStreamer = !string.IsNullOrEmpty(uploader) ? uploader : title;

@@ -32,6 +32,8 @@ namespace MediaPlayerCore {
     public ulong LastFrameCount { get; set; } = 0;
     public int LastFrameWidth { get; set; } = 0;
     public int LastFrameHeight { get; set; } = 0;
+    public int LastFrameTrueWidth { get; set; } = 0;
+    public int LastFrameTrueHeight { get; set; } = 0;
     public bool Invalidated { get => _invalidated; set => _invalidated = value; }
 
     public MediaObject? GetActiveStream() {
@@ -80,14 +82,14 @@ namespace MediaPlayerCore {
       }
     }
 
-    public void PlayStream(IMediaGameObject playerObject, string audioPath, bool spatialAllowed, int startTimeMs = 0, Dictionary<string, string>? httpHeaders = null, bool audioOnly = false) {
+    public void PlayStream(IMediaGameObject playerObject, string audioPath, bool spatialAllowed, int startTimeMs = 0, Dictionary<string, string>? httpHeaders = null, bool audioOnly = false, string? slaveAudioPath = null) {
       var shortPath = audioPath?.Length > 120 ? audioPath[..120] + "..." : audioPath;
       Debug.WriteLine($"[Play] PlayStream called: path={shortPath}, spatial={spatialAllowed}, startMs={startTimeMs}, audioOnly={audioOnly}");
       Task.Run(() => {
         try {
           if (!audioOnly) StopFFmpegStream();
           if (!string.IsNullOrEmpty(audioPath)) {
-            ConfigureStream(playerObject, audioPath, spatialAllowed, startTimeMs, httpHeaders, audioOnly);
+            ConfigureStream(playerObject, audioPath, spatialAllowed, startTimeMs, httpHeaders, audioOnly, slaveAudioPath);
           }
         } catch (Exception e) {
           Debug.WriteLine($"[Play] PlayStream exception: {e.Message}");
@@ -148,13 +150,13 @@ namespace MediaPlayerCore {
         }
     }
 
-    public void ChangeStream(IMediaGameObject playerObject, string audioPath, float width) {
+    public void ChangeStream(IMediaGameObject playerObject, string audioPath, float width, string? slaveAudioPath = null) {
       Task.Run(() => {
         try {
           OnNewMediaTriggered?.Invoke(this, EventArgs.Empty);
           if (!string.IsNullOrEmpty(audioPath)) {
             if (_playbackStreams.ContainsKey(playerObject.Name)) {
-              _playbackStreams[playerObject.Name].ChangeVideoStream(audioPath, width);
+              _playbackStreams[playerObject.Name].ChangeVideoStream(audioPath, width, 0, null, slaveAudioPath);
             }
           }
         } catch (Exception e) {
@@ -183,7 +185,7 @@ namespace MediaPlayerCore {
       return _playbackStreams.Values.All(s => s.PlaybackState == PlaybackState.Stopped);
     }
 
-    public void ConfigureStream(IMediaGameObject playerObject, string audioPath, bool spatialAllowed, int startTimeMs, Dictionary<string, string>? httpHeaders = null, bool audioOnly = false) {
+    public void ConfigureStream(IMediaGameObject playerObject, string audioPath, bool spatialAllowed, int startTimeMs, Dictionary<string, string>? httpHeaders = null, bool audioOnly = false, string? slaveAudioPath = null) {
       if (playerObject == null) { Debug.WriteLine("[Play] ConfigureStream: playerObject is NULL!"); return; }
       var shortPath = audioPath?.Length > 120 ? audioPath[..120] + "..." : audioPath;
       MediaObject stream = null;
@@ -213,13 +215,13 @@ namespace MediaPlayerCore {
           stream.OnErrorReceived += MediaManager_OnErrorReceived;
           stream.PlaybackFinished += (s, e) => { OnPlaybackFinished?.Invoke(this, e); };
           Debug.WriteLine($"[Play] ConfigureStream: calling stream.Play(path={shortPath}, vol={_livestreamVolume}, startMs={startTimeMs})");
-          stream.Play(audioPath, _livestreamVolume, startTimeMs, httpHeaders);
+          stream.Play(audioPath, _livestreamVolume, startTimeMs, httpHeaders, slaveAudioPath);
           Debug.WriteLine("[Play] ConfigureStream: stream.Play() returned, firing OnNewMediaTriggered");
           OnNewMediaTriggered?.Invoke(this, EventArgs.Empty);
         }
       } else {
          Debug.WriteLine($"[Play] ConfigureStream: calling ChangeVideoStream(path={shortPath}, width={LastFrameWidth})");
-         stream.ChangeVideoStream(audioPath, LastFrameWidth, startTimeMs, httpHeaders);
+         stream.ChangeVideoStream(audioPath, LastFrameWidth, startTimeMs, httpHeaders, slaveAudioPath);
       }
     }
     public void UpdateVolumes(ConcurrentDictionary<string, MediaObject> sounds) {
@@ -318,6 +320,8 @@ namespace MediaPlayerCore {
           _lastFrame = Array.Empty<byte>();
           LastFrameWidth = 0;
           LastFrameHeight = 0;
+          LastFrameTrueWidth = 0;
+          LastFrameTrueHeight = 0;
           LastFrameCount++;
         }
         StopFFmpegStream();

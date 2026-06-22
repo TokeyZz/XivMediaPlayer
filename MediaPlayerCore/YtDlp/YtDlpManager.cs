@@ -245,7 +245,7 @@ namespace MediaPlayerCore.YtDlp
         /// Retries up to maxRetries times on failure.
         /// Returns null if resolution fails after all retries.
         /// </summary>
-        public async Task<string?> ResolveStreamUrl(string url, int maxRetries = 2)
+        public async Task<string[]?> ResolveStreamUrl(string url, int maxRetries = 2)
         {
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
@@ -254,7 +254,7 @@ namespace MediaPlayerCore.YtDlp
                     if (attempt > 0)
                         Debug.WriteLine($"[yt-dlp] Retry attempt {attempt}/{maxRetries} for {url}");
                     var result = await ResolveStreamUrlInternal(url);
-                    if (!string.IsNullOrEmpty(result)) return result;
+                    if (result != null && result.Length > 0 && !string.IsNullOrEmpty(result[0])) return result;
                     if (attempt < maxRetries) await Task.Delay(500 * (attempt + 1));
                 }
                 catch (TimeoutException)
@@ -271,7 +271,7 @@ namespace MediaPlayerCore.YtDlp
             return null;
         }
 
-        private async Task<string?> ResolveStreamUrlInternal(string url)
+        private async Task<string[]?> ResolveStreamUrlInternal(string url)
         {
             if (!IsAvailable())
             {
@@ -284,16 +284,16 @@ namespace MediaPlayerCore.YtDlp
                 OnStatusUpdate?.Invoke(this, "Resolving stream URL...");
 
                 string formatArg = _preferredMaxHeight > 0
-                  ? $"b[height<={_preferredMaxHeight}]/b"
-                  : "b";
+                  ? $"bv[height<={_preferredMaxHeight}]+ba/b"
+                  : "bv+ba/b";
 
                 string result = await RunYtDlp($"--get-url --no-playlist -f \"{formatArg}\" \"{url}\"");
-                string? streamUrl = result?.Trim().Split('\n').FirstOrDefault()?.Trim();
+                string[]? streamUrls = result?.Trim().Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
-                if (!string.IsNullOrEmpty(streamUrl))
+                if (streamUrls != null && streamUrls.Length > 0)
                 {
-                    OnStatusUpdate?.Invoke(this, "Stream URL resolved.");
-                    return streamUrl;
+                    OnStatusUpdate?.Invoke(this, $"Stream URL resolved ({streamUrls.Length} streams).");
+                    return streamUrls;
                 }
 
                 OnError?.Invoke(this, new Exception("yt-dlp returned empty URL for: " + url));
@@ -400,10 +400,10 @@ namespace MediaPlayerCore.YtDlp
                 }
 
                 // Fallback: just get best URL
-                string? bestUrl = await ResolveStreamUrl(url);
-                if (!string.IsNullOrEmpty(bestUrl))
+                string[]? bestUrls = await ResolveStreamUrl(url);
+                if (bestUrls != null && bestUrls.Length > 0 && !string.IsNullOrEmpty(bestUrls[0]))
                 {
-                    return new string[] { bestUrl, bestUrl, bestUrl, bestUrl, bestUrl };
+                    return new string[] { bestUrls[0], bestUrls[0], bestUrls[0], bestUrls[0], bestUrls[0] };
                 }
             } catch (Exception e)
             {

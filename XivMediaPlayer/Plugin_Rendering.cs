@@ -39,8 +39,9 @@ namespace XivMediaPlayer
             if (_config.EnableWanderersCampfireFix && _objectTable != null) {
                 foreach (var obj in _objectTable) {
                     if (obj == null || obj.Name == null) continue;
-                    var name = obj.Name.TextValue;
-                    if (name != null && (name.Contains("Wanderer's Campfire", StringComparison.OrdinalIgnoreCase) || 
+                    var name = obj.Name.ToString();
+                    // Wanderer's Campfire, Feu de camp du vagabond, Wanderers Lagerfeuer
+                    if (obj.DataId == 197274 || (name.Contains("Wanderer's Campfire", StringComparison.OrdinalIgnoreCase) ||
                                          name.Contains("Wanderers Lagerfeuer", StringComparison.OrdinalIgnoreCase) ||
                                          name.Contains("Feu de camp du vagabond", StringComparison.OrdinalIgnoreCase) ||
                                          name.Contains("放浪神の焚き火", StringComparison.OrdinalIgnoreCase))) {
@@ -98,7 +99,7 @@ namespace XivMediaPlayer
                 if (_depthCapture != null)
                     _depthCapture.ReadDepthEnabled = _worldRenderer.UseDepthOcclusion;
 
-                _videoWindow.GetCurrentVideoTexture(out IntPtr videoSrv, out int videoWidth, out int videoHeight);
+                _videoWindow.GetCurrentVideoTexture(out IntPtr videoSrv, out int videoWidth, out int videoHeight, out int videoTrueWidth, out int videoTrueHeight);
                 if (videoSrv != IntPtr.Zero)
                 {
                     // Get camera info for depth occlusion
@@ -154,6 +155,7 @@ namespace XivMediaPlayer
                     System.Numerics.Vector2? hoverUV = null;
                     float progress = 0f;
                     bool isPlaying = false;
+                    float playbackState = 0.0f; // 0 = Stop, 1 = Play, 2 = Paused
 
                     var activeStream = _mediaManager?.GetActiveStream();
                     if (activeStream != null)
@@ -162,20 +164,27 @@ namespace XivMediaPlayer
                             progress = activeStream.Time / (float)activeStream.Length;
 
                         isPlaying = activeStream.PlaybackState == NAudio.Wave.PlaybackState.Playing;
+                        if (isPlaying) playbackState = 1.0f;
+                        else if (activeStream.PlaybackState == NAudio.Wave.PlaybackState.Paused) playbackState = 2.0f;
                     }
                     if (_mediaManager != null && _mediaManager.IsFFmpegPlaying)
                     {
                         isPlaying = true;
+                        playbackState = 1.0f;
                     }
-                    
+
+                    if (_isResolvingMedia) {
+                        playbackState = 1.0f;
+                    }
+
                     if (isPlaying || _isResolvingMedia) {
                         _screensaverTimer.Stop();
                         _screensaverTimer.Reset();
                     } else {
                         if (!_screensaverTimer.IsRunning) _screensaverTimer.Start();
                     }
-                    
-                    float showScreensaver = _screensaverTimer.ElapsedMilliseconds > 5000 ? 1.0f : 0.0f;
+
+                    float showScreensaver = (_screensaverTimer.ElapsedMilliseconds > 5000 || (_isResolvingMedia && !isPlaying)) ? 1.0f : 0.0f;
                     float timeSeconds = (float)(((DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + _serverTimeOffsetMs) / 1000.0) % 864000.0);
 
                     var mousePos = ImGui.GetIO().MousePos;
@@ -569,10 +578,10 @@ namespace XivMediaPlayer
                     
                     var mainViewport = ImGui.GetMainViewport();
                     
-                    _worldRenderer.Render(videoSrv, videoWidth, videoHeight, _depthCapture, 
-                        _prevCameraPos ?? cameraPos, _prevCameraForward ?? cameraForward, _prevCameraRight ?? cameraRight, _prevCameraUp ?? cameraUp, 
-                        fovY, aspectRatio, _uiCapture, nearPlane, farPlane, hoverUV, progress, isPlaying, lockState, volume, srvPtr, _config.LoopEnabled, _config.ShuffleEnabled, timeSeconds, showScreensaver, useDifferenceFallback: useDifferenceFallback, 
-                        viewProjMatrix: _prevViewProjMatrix ?? viewProjMatrix, viewportPos: mainViewport.Pos, viewportSize: mainViewport.Size);
+                    _worldRenderer.Render(videoSrv, videoWidth, videoHeight, videoTrueWidth, videoTrueHeight, _depthCapture,
+                        _prevCameraPos ?? cameraPos, _prevCameraForward ?? cameraForward, _prevCameraRight ?? cameraRight, _prevCameraUp ?? cameraUp,
+                        fovY, aspectRatio, _uiCapture, nearPlane, farPlane, hoverUV, progress, playbackState, lockState, volume, srvPtr, _config.LoopEnabled, _config.ShuffleEnabled, timeSeconds, showScreensaver, useDifferenceFallback: useDifferenceFallback,
+                        viewProjMatrix: _prevViewProjMatrix ?? viewProjMatrix, viewportPos: mainViewport.Pos, viewportSize: mainViewport.Size, uiBlendThreshold: _config.UIBlendThreshold);
                         
                     _prevCameraPos = cameraPos;
                     _prevCameraForward = cameraForward;

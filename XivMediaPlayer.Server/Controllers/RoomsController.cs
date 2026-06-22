@@ -68,6 +68,12 @@ namespace XivMediaPlayer.Server.Controllers
                 existing.RotationZ = placement.RotationZ;
                 existing.ScaleX = placement.ScaleX;
                 existing.ScaleY = placement.ScaleY;
+                existing.Opacity = placement.Opacity;
+                existing.IsProjectorMode = placement.IsProjectorMode;
+                existing.ScreensaverColorR = placement.ScreensaverColorR;
+                existing.ScreensaverColorG = placement.ScreensaverColorG;
+                existing.ScreensaverColorB = placement.ScreensaverColorB;
+                existing.ScreensaverStyle = placement.ScreensaverStyle;
                 existing.IsLocked = placement.IsLocked;
                 existing.OwnerId = placement.OwnerId;
                 existing.LastUpdated = placement.LastUpdated;
@@ -178,32 +184,74 @@ namespace XivMediaPlayer.Server.Controllers
             if (tv != null && tv.IsLocked && tv.OwnerId != state.OwnerId && !state.BypassLock)
                 return StatusCode(403);
             state.TimestampUtc = DateTime.UtcNow;
-            var existing = await _db.RoomMediaStates.FindAsync(locationKey);
+
+            int retries = 3;
             bool isNewPlay = false;
-            if (existing != null)
+            while (retries > 0)
             {
-                if (state.IsBackgroundSync && existing.OwnerId != state.OwnerId)
-                    return Conflict();
-                if (existing.CurrentUrl != state.CurrentUrl && !string.IsNullOrEmpty(state.CurrentUrl))
-                    isNewPlay = true;
-                existing.CurrentUrl = state.CurrentUrl;
-                existing.TimecodeMs = state.TimecodeMs;
-                existing.IsPlaying = state.IsPlaying;
-                existing.TimestampUtc = state.TimestampUtc;
-                existing.PlaylistJson = state.PlaylistJson;
-                existing.OwnerId = state.OwnerId;
-                existing.DurationMs = state.DurationMs;
-                _db.RoomMediaStates.Update(existing);
+                try
+                {
+                    var existing = await _db.RoomMediaStates.FindAsync(locationKey);
+                    isNewPlay = false;
+
+                    if (existing != null)
+                    {
+                        if (state.IsBackgroundSync && existing.OwnerId != state.OwnerId)
+                        {
+                            return Conflict();
+                        }
+
+                        if (existing.CurrentUrl != state.CurrentUrl && !string.IsNullOrEmpty(state.CurrentUrl))
+                        {
+                            isNewPlay = true;
+                        }
+
+                        existing.CurrentUrl = state.CurrentUrl;
+                        existing.TimecodeMs = state.TimecodeMs;
+                        existing.IsPlaying = state.IsPlaying;
+                        existing.TimestampUtc = state.TimestampUtc;
+                        existing.PlaylistJson = state.PlaylistJson;
+                        existing.OwnerId = state.OwnerId;
+                        existing.DurationMs = state.DurationMs;
+                        _db.RoomMediaStates.Update(existing);
+                    }
+                    else
+                    {
+                        if (!string.IsNullOrEmpty(state.CurrentUrl))
+                        {
+                            isNewPlay = true;
+                        }
+
+                        var newState = new RoomMediaStateSync {
+                            LocationKey = state.LocationKey,
+                            CurrentUrl = state.CurrentUrl,
+                            TimecodeMs = state.TimecodeMs,
+                            IsPlaying = state.IsPlaying,
+                            TimestampUtc = state.TimestampUtc,
+                            PlaylistJson = state.PlaylistJson,
+                            OwnerId = state.OwnerId,
+                            DurationMs = state.DurationMs
+                        };
+                        _db.RoomMediaStates.Add(newState);
+                    }
+
+                    await _db.SaveChangesAsync();
+                    break;
+                }
+                catch (DbUpdateException)
+                {
+                    retries--;
+                    if (retries == 0) throw;
+                    _db.ChangeTracker.Clear();
+                }
             }
-            else
-            {
-                if (!string.IsNullOrEmpty(state.CurrentUrl))
-                    isNewPlay = true;
-                _db.RoomMediaStates.Add(state);
-            }
+
             if (isNewPlay)
+            {
                 await RecordMediaPlay(state.CurrentUrl, locationKey, state.OwnerId);
-            await _db.SaveChangesAsync();
+                await _db.SaveChangesAsync();
+            }
+
             if (!state.IsBackgroundSync)
                 _logger.LogInformation(
                     "[Media] UpdateMedia (legacy): locationKey={Key}, url={Url}, playing={Playing}, ownerId={OwnerId}, isNewPlay={New}, duration={Dur}ms, queueSize={QSize}",

@@ -66,7 +66,7 @@ namespace XivMediaPlayer.Compositing {
       // New fields appended at the end
       public Vector2 HoverUV;
       public float Progress;
-      public float IsPlaying;
+      public float PlaybackState;
       public float DynamicMinDepth;
       public float DynamicMaxDepth;
       public float HasBackBuffer;
@@ -79,9 +79,15 @@ namespace XivMediaPlayer.Compositing {
       public float Time;
       public float ShowScreensaver;
       public float HasPreUI;
-      
       public float UseDifferenceFallback;
-      public Vector2 padding3;
+      public float Opacity;
+      public float IsProjectorMode;
+      public Vector3 ScreensaverColor;
+      public float ScreensaverStyle;
+      public float UIBlendThreshold;
+      public float UVBottomEdge;
+        public float UVRightEdge;
+        public float _pad7;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -123,7 +129,7 @@ cbuffer Constants : register(b0) {
 
   float2 HoverUV;
   float Progress;
-  float IsPlaying;
+  float PlaybackState;
   float DynamicMinDepth;
   float DynamicMaxDepth;
   float HasBackBuffer;
@@ -137,10 +143,18 @@ cbuffer Constants : register(b0) {
   float ShowScreensaver;
   float HasPreUI;
   float UseDifferenceFallback;
-  float2 padding3;
-};
+  float Opacity;
+  float IsProjectorMode;
 
-cbuffer UIConsts : register(b1) {
+  float3 ScreensaverColor;
+  float ScreensaverStyle;
+  float UIBlendThreshold;
+    float UVBottomEdge;
+    float UVRightEdge;
+    float2 _pad7;
+  };
+  
+  cbuffer UIConsts : register(b1) {
   float4 UIRects[64];
   float4 UIRectTypes[16]; // 64 floats packed into 16 vectors
   int UIRectCount;
@@ -162,6 +176,84 @@ struct VS_OUT {
   float4 pos : SV_POSITION;
   float2 uv : TEXCOORD;
 };
+
+bool DrawXMPLogo(float2 p) {
+    float2 pText = float2(p.x + p.y * 0.35, p.y);
+    bool draw = false;
+    if (p.x > -2.0 && p.x < 2.0 && p.y > -0.7 && p.y < 0.7) {
+        if (pText.x > -1.53 && pText.x < 1.25 && pText.y > -0.6 && pText.y < -0.45) draw = true;
+        if (pText.x > -1.5 && pText.x < -0.5 && pText.y > -0.5 && pText.y < 0.2) {
+            float dx1 = abs((pText.x + 1.0) - (pText.y + 0.15) * 1.2);
+            float dx2 = abs((pText.x + 1.0) + (pText.y + 0.15) * 1.2);
+            if (dx1 < 0.11 || dx2 < 0.11) draw = true;
+        }
+        if (pText.x > -0.6 && pText.x < 0.6 && pText.y > -0.5) {
+            if (pText.y < 0.2) {
+                if (abs(pText.x + 0.4) < 0.11) draw = true;
+                if (abs(pText.x - 0.4) < 0.11) draw = true;
+            }
+            float dm1 = abs(pText.x - (pText.y * 0.4 - 0.2));
+            float dm2 = abs(pText.x - (-pText.y * 0.4 + 0.2));
+            if (pText.x <= 0.0 && dm1 < 0.12 && pText.y < 0.55) draw = true;
+            if (pText.x >= 0.0 && dm2 < 0.12 && pText.y < 0.55) draw = true;
+        }
+        if (pText.x > 0.5 && pText.x < 1.6 && pText.y > -0.61 && pText.y < 0.2) {
+            if (abs(pText.x - 0.8) < 0.11) draw = true;
+            if (pText.x >= 0.8 && pText.x <= 1.25) {
+                if (abs(pText.y - (-0.05)) < 0.11) draw = true; 
+            }
+            if (pText.x > 1.25) {
+                if (distance(float2(pText.x, pText.y), float2(1.25, -0.27)) < 0.33) {
+                    if (distance(float2(pText.x, pText.y), float2(1.25, -0.305)) >= 0.145) {
+                        draw = true;
+                    }
+                }
+            }
+        }
+        if (distance(float2(p.x * 0.08, p.y - 0.45), float2(0,0)) < 0.12) {
+            float dm1 = abs(pText.x - (pText.y * 0.5 - 0.25));
+            float dm2 = abs(pText.x - (-pText.y * 0.5 + 0.25));
+            float distToV = (pText.x < 0.0) ? dm1 : dm2;
+            if (distToV > 0.16) {
+                draw = true;
+                if (p.x > -0.8 && p.x < 0.8 && abs(p.y - 0.45) < 0.025) draw = false;
+            }
+        }
+        if (p.y < -0.6) draw = false;
+    }
+    return draw;
+}
+
+bool DrawLetter(float2 p, int letter) {
+    if (p.x < 0.0 || p.x > 0.08 || p.y < 0.0 || p.y > 0.12) return false;
+    
+    if (letter == 0) { // P
+        if (p.x < 0.02 || p.y < 0.02 || (p.y > 0.04 && p.y < 0.06) || (p.x > 0.06 && p.y < 0.05)) return true;
+    } else if (letter == 1) { // L
+        if (p.x < 0.02 || p.y > 0.1) return true;
+    } else if (letter == 2) { // A
+        if (p.x < 0.02 || p.x > 0.06 || p.y < 0.02 || (p.y > 0.04 && p.y < 0.06)) return true;
+    } else if (letter == 3) { // Y
+        if ((p.y < 0.06 && (p.x < 0.02 || p.x > 0.06)) || (p.y >= 0.05 && p.x > 0.03 && p.x < 0.05) || (p.y > 0.04 && p.y < 0.06)) return true;
+    } else if (letter == 4) { // U
+        if (p.x < 0.02 || p.x > 0.06 || p.y > 0.1) return true;
+    } else if (letter == 5) { // S
+        if (p.y < 0.02 || p.y > 0.1 || (p.y > 0.05 && p.y < 0.07) || (p.x < 0.02 && p.y < 0.06) || (p.x > 0.06 && p.y > 0.06)) return true;
+    } else if (letter == 6) { // E
+        if (p.x < 0.02 || p.y < 0.02 || p.y > 0.1 || (p.y > 0.05 && p.y < 0.07)) return true;
+    } else if (letter == 7) { // T
+        if (p.y < 0.02 || (p.x > 0.03 && p.x < 0.05)) return true;
+    } else if (letter == 8) { // O
+        if (p.x < 0.02 || p.x > 0.06 || p.y < 0.02 || p.y > 0.1) return true;
+    } else if (letter == 9) { // N
+        if (p.x < 0.02 || p.x > 0.06 || (p.y > p.x * 1.5 - 0.02 && p.y < p.x * 1.5 + 0.02)) return true;
+    } else if (letter == 10) { // I
+        if (p.y < 0.02 || p.y > 0.1 || (p.x > 0.03 && p.x < 0.05)) return true;
+    } else if (letter == 11) { // G
+        if (p.x < 0.02 || p.y < 0.02 || p.y > 0.1 || (p.x > 0.06 && p.y > 0.06) || (p.y > 0.05 && p.y < 0.07 && p.x > 0.04)) return true;
+    }
+    return false;
+}
 
 VS_OUT VS(uint id : SV_VertexID) {
   VS_OUT o;
@@ -207,16 +299,13 @@ float4 PS(VS_OUT input) : SV_TARGET {
       
       sampleUV = uv;
       if (VideoAspectRatio > 0) {
-          float tvAspect = length(tvRight) / length(tvDown);
-          if (VideoAspectRatio > tvAspect) {
-              float scale = tvAspect / VideoAspectRatio;
-              sampleUV.y = (sampleUV.y - 0.5) / scale + 0.5;
-          } else {
-              float scale = VideoAspectRatio / tvAspect;
-              sampleUV.x = (sampleUV.x - 0.5) / scale + 0.5;
-          }
+            float tvAspect = length(tvRight) / length(tvDown);
+            float scale = tvAspect / VideoAspectRatio;
+            sampleUV.x = (sampleUV.x - 0.5) * scale + 0.5;
+        }
+        sampleUV.y = sampleUV.y * UVBottomEdge;
+          sampleUV.x = sampleUV.x * UVRightEdge;
       }
-  }
   
   // Dynamic Resolution scaling: the depth buffer texture size might be larger than the actual rendered area
   float2 renderScale = float2(1.0, 1.0);
@@ -265,104 +354,419 @@ float4 PS(VS_OUT input) : SV_TARGET {
 
   if (isInside && occlusion < 0.999) {
       // Draw unoccluded TV
-      if (sampleUV.x < 0 || sampleUV.x > 1 || sampleUV.y < 0 || sampleUV.y > 1) {
-          color = float4(0, 0, 0, 1);
-      } else {
-          color = VideoTexture.Sample(VideoSampler, sampleUV);
-          color.a = 1.0;
-      }
+      bool isOutOfBounds = (sampleUV.x < 0 || sampleUV.x > 1 || sampleUV.y < 0 || sampleUV.y > 1);
       
-      // XMP Screensaver
-      if (ShowScreensaver > 0.5) {
-          color.rgb *= 0.2; // Dim background
-          float aspect = 16.0 / 9.0;
-          if (RenderResolution.y > 0) aspect = RenderResolution.x / RenderResolution.y;
+      if (isOutOfBounds && ShowScreensaver < 0.5) {
+          color = float4(0, 0, 0, IsProjectorMode > 0.5 ? 0.0 : 1.0);
+      } else {
+          color = isOutOfBounds ? float4(0, 0, 0, 1.0) : VideoTexture.Sample(VideoSampler, sampleUV);
           
-          float speedX = 0.1;
-          float speedY = 0.075;
-          float bx = Time * speedX;
-          float by = Time * speedY;
-          
-          float logoSize = 0.15;
-          float logoW = logoSize * 3.0 / aspect;
-          float logoH = logoSize * 1.0;
-          
-          float rangeX = 1.0 - logoW;
-          float rangeY = 1.0 - logoH;
-          
-          float posX = (logoW / 2.0) + abs(fmod(bx, 2.0) - 1.0) * rangeX;
-          float posY = (logoH / 2.0) + abs(fmod(by, 2.0) - 1.0) * rangeY;
-          
-          float2 p = float2((uv.x - posX) * aspect / logoSize, (uv.y - posY) / logoSize);
-          float2 pText = float2(p.x + p.y * 0.35, p.y);
-          
-          bool draw = false;
-          if (p.x > -2.0 && p.x < 2.0 && p.y > -0.7 && p.y < 0.7) {
+          // XMP Screensaver
+          if (ShowScreensaver > 0.5) {
+              color.rgb = ScreensaverColor; // Fill the backdrop
+              float aspect = 16.0 / 9.0;
+              if (RenderResolution.y > 0) aspect = RenderResolution.x / RenderResolution.y;
               
-              // Top connection line
-              if (pText.x > -1.53 && pText.x < 1.25 && pText.y > -0.6 && pText.y < -0.45) draw = true;
-              
-              // X
-              if (pText.x > -1.5 && pText.x < -0.5 && pText.y > -0.5 && pText.y < 0.2) {
-                  float dx1 = abs((pText.x + 1.0) - (pText.y + 0.15) * 1.2);
-                  float dx2 = abs((pText.x + 1.0) + (pText.y + 0.15) * 1.2);
-                  if (dx1 < 0.11 || dx2 < 0.11) draw = true;
-              }
-              
-              // M
-              if (pText.x > -0.6 && pText.x < 0.6 && pText.y > -0.5) {
-                  if (pText.y < 0.2) {
-                      if (abs(pText.x + 0.4) < 0.11) draw = true;
-                      if (abs(pText.x - 0.4) < 0.11) draw = true;
+              if (ScreensaverStyle < 0.5) {
+                  // Style 0: Bouncing Logo
+                  float speedX = 0.1;
+                  float speedY = 0.075;
+                  float bx = Time * speedX;
+                  float by = Time * speedY;
+                  
+                  float logoSize = 0.15;
+                  float logoW = logoSize * 3.0 / aspect;
+                  float logoH = logoSize * 1.0;
+                  
+                  float rangeX = 1.0 - logoW;
+                  float rangeY = 1.0 - logoH;
+                  
+                  float posX = (logoW / 2.0) + abs(fmod(bx, 2.0) - 1.0) * rangeX;
+                  float posY = (logoH / 2.0) + abs(fmod(by, 2.0) - 1.0) * rangeY;
+                  
+                  float2 p = float2((uv.x - posX) * aspect / logoSize, (uv.y - posY) / logoSize);
+                  bool draw = DrawXMPLogo(p);
+                  
+                  if (draw) {
+                      int colorIdx = (int(floor(bx)) + int(floor(by))) % 6;
+                      float3 logoColor = float3(1, 1, 1);
+                      if (colorIdx == 0) logoColor = float3(1.0, 0.3, 0.3);
+                      else if (colorIdx == 1) logoColor = float3(0.3, 1.0, 0.3);
+                      else if (colorIdx == 2) logoColor = float3(0.3, 0.6, 1.0);
+                      else if (colorIdx == 3) logoColor = float3(1.0, 1.0, 0.3);
+                      else if (colorIdx == 4) logoColor = float3(1.0, 0.3, 1.0);
+                      else if (colorIdx == 5) logoColor = float3(0.3, 1.0, 1.0);
+                      
+                      color.rgb = logoColor;
                   }
-                  float dm1 = abs(pText.x - (pText.y * 0.4 - 0.2));
-                  float dm2 = abs(pText.x - (-pText.y * 0.4 + 0.2));
-                  if (pText.x <= 0.0 && dm1 < 0.12 && pText.y < 0.55) draw = true;
-                  if (pText.x >= 0.0 && dm2 < 0.12 && pText.y < 0.55) draw = true;
-              }
-              
-              // P
-              if (pText.x > 0.5 && pText.x < 1.6 && pText.y > -0.61 && pText.y < 0.2) {
-                  if (abs(pText.x - 0.8) < 0.11) draw = true;
-                  if (pText.x >= 0.8 && pText.x <= 1.25) {
-                      if (abs(pText.y - (-0.05)) < 0.11) draw = true; 
-                  }
-                  if (pText.x > 1.25) {
-                      if (distance(float2(pText.x, pText.y), float2(1.25, -0.27)) < 0.33) {
-                          if (distance(float2(pText.x, pText.y), float2(1.25, -0.305)) >= 0.145) {
-                              draw = true;
+              } else if (ScreensaverStyle > 4.5) {
+                  // Style 5: Matrix Rain
+                  float2 screenUv = uv;
+                  float aspect = 16.0 / 9.0;
+                  if (RenderResolution.y > 0) aspect = RenderResolution.x / RenderResolution.y;
+                  
+                  // Setup grid (roughly 80 columns)
+                  float cols = 80.0;
+                  float rows = cols / aspect;
+                  
+                  float2 cell = floor(screenUv * float2(cols, rows));
+                  float2 cellUv = frac(screenUv * float2(cols, rows));
+                  
+                  // Random hashes
+                  float colHash = frac(sin(cell.x * 12.9898) * 43758.5453);
+                  
+                  // Column speed and drop offset
+                  float speed = colHash * 0.5 + 0.3; // screen heights per second
+                  float offset = frac(sin(cell.x * 78.233) * 43758.5453) * 100.0;
+                  
+                  // The continuous head of the drop for this column
+                  float head = (Time * speed + offset) * rows; // in row units
+                  
+                  // Wrap distance from head
+                  float dist = head - cell.y;
+                  dist = fmod(dist, rows * 1.5);
+                  if (dist < 0.0) dist += rows * 1.5;
+                  
+                  float tailLength = colHash * 15.0 + 10.0;
+                  
+                  float3 cellColor = float3(0.0, 0.0, 0.0);
+                  
+                  if (dist < tailLength) {
+                      float brightness = 1.0 - (dist / tailLength);
+                      brightness = max(0.0, brightness);
+                      
+                      // Head is bright/white, tail is green
+                      float3 baseColor = (dist < 1.0) ? float3(0.6, 1.0, 0.6) : float3(0.0, brightness * 0.8, 0.0);
+                      
+                      // Draw random glyph
+                      // Shrink UV to add padding between cells
+                      float2 charUv = (cellUv - 0.15) / 0.7;
+                      if (charUv.x >= 0.0 && charUv.x <= 1.0 && charUv.y >= 0.0 && charUv.y <= 1.0) {
+                          // 3x4 pixel grid for characters
+                          float gx = floor(charUv.x * 3.0);
+                          float gy = floor(charUv.y * 4.0);
+                          
+                          // Change character periodically
+                          float charTime = floor(Time * (colHash * 3.0 + 2.0));
+                          float glyphSeed = frac(sin(dot(cell + charTime, float2(12.9898, 78.233))) * 43758.5453);
+                          
+                          // Hash the pixel to see if it's filled
+                          float pixelHash = frac(sin(glyphSeed + gx * 13.0 + gy * 7.0) * 43758.5453);
+                          if (pixelHash > 0.4) {
+                              cellColor = baseColor;
                           }
                       }
                   }
-              }
-              
-              // Ellipse (Use original un-slanted p)
-              if (distance(float2(p.x * 0.08, p.y - 0.45), float2(0,0)) < 0.12) {
-                  float dm1 = abs(pText.x - (pText.y * 0.5 - 0.25));
-                  float dm2 = abs(pText.x - (-pText.y * 0.5 + 0.25));
-                  float distToV = (pText.x < 0.0) ? dm1 : dm2;
                   
-                  if (distToV > 0.16) {
-                      draw = true;
-                      // Slit for VIDEO parody
-                      if (p.x > -0.8 && p.x < 0.8 && abs(p.y - 0.45) < 0.025) draw = false;
+                  // Tint with ScreensaverColor if it is not black (allow color overriding)
+                  float colorIntensity = length(ScreensaverColor);
+                  if (colorIntensity > 0.05) {
+                      // Apply custom color but keep brightness
+                      float luma = max(cellColor.r, max(cellColor.g, cellColor.b));
+                      cellColor = luma * normalize(ScreensaverColor) * 1.5;
+                      if (dist < 1.0 && luma > 0.1) cellColor += float3(0.5, 0.5, 0.5); // Keep head somewhat white
+                  }
+                  
+                  // Add subtle XMP Logo overlay
+                  float logoScale = 0.15;
+                  float2 logoP = float2((uv.x - 0.5) * aspect / logoScale, (uv.y - 0.5) / logoScale);
+                  if (DrawXMPLogo(logoP)) {
+                      cellColor = lerp(cellColor, float3(1.0, 1.0, 1.0), 0.3);
+                  }
+                  
+                  color.rgb = cellColor;
+              } else if (ScreensaverStyle > 3.5) {
+                  // Style 4: Geometric Test Pattern
+                  float2 centerUv = uv - 0.5;
+                  
+                  // Fix aspect ratio (TV is 16:9)
+                  centerUv.x *= 1.7777777;
+                  
+                  // Base color white
+                  float3 testColor = float3(1.0, 1.0, 1.0);
+                  
+                  // 1. Grid background
+                  float gridX = abs(frac((centerUv.x + 0.5) * 8.0 + 0.5) - 0.5) * 16.0;
+                  float gridY = abs(frac((centerUv.y + 0.5) * 8.0 + 0.5) - 0.5) * 16.0;
+                  float grid = min(gridX, gridY);
+                  // Dashed grid logic
+                  float dashed = frac(centerUv.x * 40.0) < 0.5 && frac(centerUv.y * 40.0) < 0.5 ? 1.0 : 0.0;
+                  if (grid < 0.03 && dashed > 0.5) testColor = float3(0.0, 0.0, 0.0);
+                  if (grid < 0.01) testColor = float3(0.0, 0.0, 0.0); // thin solid core line
+                  
+                  float dist = length(centerUv);
+                  
+                  // 1b. Diagonal lines (X pattern) inside the large circle
+                  // In the reference, they stop at the bullseye (dist > 0.25)
+                  if (dist < 0.45 && dist > 0.25) {
+                      float diag1 = abs(centerUv.x - centerUv.y);
+                      float diag2 = abs(centerUv.x + centerUv.y);
+                      if (diag1 < 0.003 || diag2 < 0.003) testColor = float3(0.0, 0.0, 0.0);
+                  }
+                  
+                  // 2. Large Outer Circle
+                  if (abs(dist - 0.45) < 0.006) testColor = float3(0.0, 0.0, 0.0);
+                  if (abs(dist - 0.43) < 0.002) testColor = float3(0.0, 0.0, 0.0);
+                  
+                  // 3. Corner circles
+                  // The corners in the original overlap the outer circle, so draw them AFTER the outer circle
+                  float2 corners[4] = { float2(-0.35, -0.32), float2(0.35, -0.32), float2(-0.35, 0.32), float2(0.35, 0.32) };
+                  for (int i = 0; i < 4; i++) {
+                      float2 cornerUv = centerUv - corners[i];
+                      float cDist = length(cornerUv);
+                      if (cDist < 0.12) {
+                          testColor = float3(1.0, 1.0, 1.0); // fill white
+                          if (abs(cDist - 0.11) < 0.004) testColor = float3(0.0, 0.0, 0.0);
+                          if (abs(cDist - 0.10) < 0.002) testColor = float3(0.0, 0.0, 0.0);
+                          
+                          // Crosshairs in corners
+                          if (abs(cornerUv.x) < 0.003 && cDist < 0.1) testColor = float3(0.0, 0.0, 0.0);
+                          if (abs(cornerUv.y) < 0.003 && cDist < 0.1) testColor = float3(0.0, 0.0, 0.0);
+                          
+                          // Inner tiny circle
+                          if (cDist < 0.04) testColor = float3(1.0, 1.0, 1.0);
+                          if (abs(cDist - 0.04) < 0.004) testColor = float3(0.0, 0.0, 0.0);
+                          if (abs(cDist - 0.035) < 0.002) testColor = float3(0.0, 0.0, 0.0);
+                      }
+                  }
+                  
+                  // 2b. Bottom Horizontal Bars (Low Frequency Response)
+                  if (centerUv.y > 0.28 && centerUv.y < 0.44 && abs(centerUv.x) < 0.25) {
+                      if (centerUv.y < 0.29) {
+                          testColor = float3(0.0, 0.0, 0.0); // Thick top bar
+                      } else {
+                          // 10 distinct rectangular bars
+                          float barDist = (centerUv.y - 0.29) / 0.15; // 0 to 1
+                          float barIndex = floor(barDist * 10.0);
+                          float barWidth = lerp(0.25, 0.02, barIndex / 9.0);
+                          if (abs(centerUv.x) < barWidth) {
+                              float barY = frac(barDist * 10.0);
+                              // Make the bar solid black with a little gap
+                              if (barY < 0.5) testColor = float3(0.0, 0.0, 0.0);
+                          }
+                      }
+                  }
+                  
+                  // 4. Center Bullseye and Wedges
+                  if (dist < 0.25) {
+                      testColor = float3(1.0, 1.0, 1.0); // fill white
+                      
+                      float angle = atan2(centerUv.y, centerUv.x); // -PI to PI
+                      
+                      // Vertical wedges bounded by V-shapes
+                      if (abs(centerUv.x) < abs(centerUv.y) * 0.45 && dist > 0.09) {
+                          // Use a lower frequency to get ~9 thick lines instead of 60 thin ones
+                          float ray = sin(angle * 40.0);
+                          if (ray > 0.0) testColor = float3(0.0, 0.0, 0.0);
+                      }
+                      
+                      // Horizontal wedges bounded by V-shapes
+                      if (abs(centerUv.y) < abs(centerUv.x) * 0.45 && dist > 0.09) {
+                          float ray = sin(angle * 40.0);
+                          if (ray > 0.0) testColor = float3(0.0, 0.0, 0.0);
+                      }
+                      
+                      // Grayscale stepped wedges (Top-Left and Bottom-Right quadrants)
+                      bool inTopLeft = centerUv.x < 0.0 && centerUv.y < 0.0 && abs(centerUv.x) > abs(centerUv.y) * 0.45 && abs(centerUv.y) > abs(centerUv.x) * 0.45;
+                      if (inTopLeft && dist > 0.09 && dist < 0.25) {
+                          // 6 distinct rings
+                          float ringDist = floor((dist - 0.09) / 0.16 * 6.0);
+                          float shade = ringDist / 5.0; // 0 to 1
+                          testColor = float3(shade, shade, shade);
+                          // Black border lines between rings
+                          if (frac((dist - 0.09) / 0.16 * 6.0) < 0.1) testColor = float3(0.0, 0.0, 0.0);
+                      }
+                      
+                      bool inBottomRight = centerUv.x > 0.0 && centerUv.y > 0.0 && abs(centerUv.x) > abs(centerUv.y) * 0.45 && abs(centerUv.y) > abs(centerUv.x) * 0.45;
+                      if (inBottomRight && dist > 0.09 && dist < 0.25) {
+                          float ringDist = floor((dist - 0.09) / 0.16 * 6.0);
+                          float shade = 1.0 - (ringDist / 5.0); // 1 to 0
+                          testColor = float3(shade, shade, shade);
+                          if (frac((dist - 0.09) / 0.16 * 6.0) < 0.1) testColor = float3(0.0, 0.0, 0.0);
+                      }
+                      
+                      // Center inner circles
+                      // Thick outer ring of the center bullseye
+                      if (abs(dist - 0.25) < 0.005) testColor = float3(0.0, 0.0, 0.0);
+                      if (abs(dist - 0.23) < 0.002) testColor = float3(0.0, 0.0, 0.0);
+                      
+                      // Inner ring boundary around the checkerboard
+                      if (dist < 0.09) testColor = float3(1.0, 1.0, 1.0);
+                      if (abs(dist - 0.09) < 0.005) testColor = float3(0.0, 0.0, 0.0);
+                      if (abs(dist - 0.08) < 0.002) testColor = float3(0.0, 0.0, 0.0);
+                      
+                      // XMP Logo target
+                      if (dist < 0.078) {
+                          float logoScale = 0.038;
+                          float2 p = float2(centerUv.x / logoScale, centerUv.y / logoScale);
+                          bool draw = DrawXMPLogo(p);
+                          testColor = draw ? float3(0.0, 0.0, 0.0) : float3(1.0, 1.0, 1.0);
+                      }
+                  }
+                  
+                  // Tint with ScreensaverColor if it is not black
+                  float colorIntensity = length(ScreensaverColor);
+                  if (colorIntensity > 0.05) {
+                      testColor = lerp(testColor, testColor * ScreensaverColor * 1.5, min(colorIntensity, 1.0));
+                  }
+                  
+                  color.rgb = testColor;
+              } else if (ScreensaverStyle > 2.5) {
+                  // Style 3: TV Static
+                  // Use frac(Time) to avoid huge float precision loss inside sin()
+                  float timeVal = frac(Time) * 1000.0;
+                  float2 noiseUv = floor(uv * float2(320.0, 240.0));
+                  
+                  // Simple pseudo-random
+                  float random = frac(sin(dot(noiseUv + float2(timeVal, -timeVal), float2(12.9898, 78.233))) * 43758.5453);
+                  
+                  // Darken it slightly to look more like typical TV static (grayish rather than harsh white)
+                  float luminance = lerp(0.1, 0.8, random);
+                  float3 staticColor = float3(luminance, luminance, luminance);
+                  
+                  // Tint with ScreensaverColor if it is not black
+                  float colorIntensity = length(ScreensaverColor);
+                  if (colorIntensity > 0.05) {
+                      staticColor = lerp(staticColor, staticColor * ScreensaverColor * 1.5, min(colorIntensity, 1.0));
+                  }
+                  
+                  // Add subtle faint XMP Logo in center
+                  float logoScale = 0.25;
+                  float2 logoP = float2((uv.x - 0.5) * aspect / logoScale, (uv.y - 0.5) / logoScale);
+                  if (DrawXMPLogo(logoP)) staticColor = lerp(staticColor, float3(1.0, 1.0, 1.0), 0.15);
+                  
+                  color.rgb = staticColor;
+              } else if (ScreensaverStyle > 1.5) {
+                  // Style 2: No Signal (SMPTE Color Bars)
+                  
+                  // Noise
+                  float noise = frac(sin(dot(uv * Time, float2(12.9898, 78.233))) * 43758.5453);
+                  float2 uvNoise = uv + float2(noise * 0.005, 0.0);
+                  
+                  // 7 Vertical Bars (Top 67%)
+                  // White, Yellow, Cyan, Green, Magenta, Red, Blue
+                  float3 bars[7];
+                  bars[0] = float3(0.75, 0.75, 0.75);
+                  bars[1] = float3(0.75, 0.75, 0.0);
+                  bars[2] = float3(0.0, 0.75, 0.75);
+                  bars[3] = float3(0.0, 0.75, 0.0);
+                  bars[4] = float3(0.75, 0.0, 0.75);
+                  bars[5] = float3(0.75, 0.0, 0.0);
+                  bars[6] = float3(0.0, 0.0, 0.75);
+                  
+                  int barIndex = clamp(int(uvNoise.x * 7.0), 0, 6);
+                  if (uvNoise.y < 0.67) {
+                      color.rgb = bars[barIndex];
+                  } else if (uvNoise.y < 0.75) {
+                      // Middle small blocks
+                      // Blue, Black, Magenta, Black, Cyan, Black, White
+                      float3 midBars[7];
+                      midBars[0] = float3(0.0, 0.0, 0.75);
+                      midBars[1] = float3(0.0, 0.0, 0.0);
+                      midBars[2] = float3(0.75, 0.0, 0.75);
+                      midBars[3] = float3(0.0, 0.0, 0.0);
+                      midBars[4] = float3(0.0, 0.75, 0.75);
+                      midBars[5] = float3(0.0, 0.0, 0.0);
+                      midBars[6] = float3(0.75, 0.75, 0.75);
+                      color.rgb = midBars[barIndex];
+                  } else {
+                      // Bottom blocks
+                      // -I, White, Q, Black
+                      if (uvNoise.x < 0.18) color.rgb = float3(0.0, 0.2, 0.4);
+                      else if (uvNoise.x < 0.35) color.rgb = float3(1.0, 1.0, 1.0);
+                      else if (uvNoise.x < 0.53) color.rgb = float3(0.2, 0.0, 0.4);
+                      else color.rgb = float3(0.0, 0.0, 0.0);
+                  }
+                  
+                  // Add static/noise over everything
+                  color.rgb += (noise - 0.5) * 0.15;
+                  
+                  // NO SIGNAL text box in center
+                  float2 p = float2(uv.x * aspect - aspect * 0.5 + 0.45, uv.y - 0.45);
+                  
+                  // Black background box for NO SIGNAL
+                  if (uv.x * aspect > aspect * 0.5 - 0.55 && uv.x * aspect < aspect * 0.5 + 0.55 && uv.y > 0.4 && uv.y < 0.6) {
+                      color.rgb = float3(0.0, 0.0, 0.0);
+                      
+                      bool playDraw = false;
+                      // N O   S I G N A L
+                      if (DrawLetter(p, 9)) playDraw = true;
+                      if (DrawLetter(p - float2(0.12, 0.0), 8)) playDraw = true;
+                      
+                      if (DrawLetter(p - float2(0.36, 0.0), 5)) playDraw = true;
+                      if (DrawLetter(p - float2(0.48, 0.0), 10)) playDraw = true;
+                      if (DrawLetter(p - float2(0.60, 0.0), 11)) playDraw = true;
+                      if (DrawLetter(p - float2(0.72, 0.0), 9)) playDraw = true;
+                      if (DrawLetter(p - float2(0.84, 0.0), 2)) playDraw = true;
+                      if (DrawLetter(p - float2(0.96, 0.0), 1)) playDraw = true;
+                      
+                      if (playDraw) {
+                          // Text has some chromatic aberration
+                          color.r = 1.0;
+                          color.g = 1.0;
+                          color.b = 1.0;
+                      }
+                  }
+                  
+                  // Add XMP logo under the text
+                  float logoScale = 0.05;
+                  float2 logoP = float2((uv.x - 0.5) * aspect / logoScale, (uv.y - 0.65) / logoScale);
+                  if (DrawXMPLogo(logoP)) color.rgb = float3(1.0, 1.0, 1.0);
+              } else {
+                  // Style 1: VCR
+                  // Noise:
+                  float noise = frac(sin(dot(uv * Time, float2(12.9898, 78.233))) * 43758.5453);
+                  color.rgb += noise * 0.05;
+                  
+                  // Scanlines
+                  color.rgb -= sin(uv.y * 800.0) * 0.04;
+                  
+                  // State Text
+                  float2 p = float2(uv.x * aspect - 0.2, uv.y - 0.1);
+                  bool playDraw = false;
+                  
+                  if (PlaybackState == 1.0) { // PLAY
+                      if (DrawLetter(p, 0)) playDraw = true;
+                      if (DrawLetter(p - float2(0.12, 0.0), 1)) playDraw = true;
+                      if (DrawLetter(p - float2(0.24, 0.0), 2)) playDraw = true;
+                      if (DrawLetter(p - float2(0.36, 0.0), 3)) playDraw = true;
+                  } else if (PlaybackState == 2.0) { // PAUSE
+                      if (DrawLetter(p, 0)) playDraw = true;
+                      if (DrawLetter(p - float2(0.12, 0.0), 2)) playDraw = true;
+                      if (DrawLetter(p - float2(0.24, 0.0), 4)) playDraw = true;
+                      if (DrawLetter(p - float2(0.36, 0.0), 5)) playDraw = true;
+                      if (DrawLetter(p - float2(0.48, 0.0), 6)) playDraw = true;
+                  } else { // STOP
+                      if (DrawLetter(p, 5)) playDraw = true;
+                      if (DrawLetter(p - float2(0.12, 0.0), 7)) playDraw = true;
+                      if (DrawLetter(p - float2(0.24, 0.0), 8)) playDraw = true;
+                      if (DrawLetter(p - float2(0.36, 0.0), 0)) playDraw = true;
+                  }
+                  
+                  bool logoDraw = false;
+                  
+                  // Add XMP logo in bottom right
+                  float logoScale = 0.08;
+                  float2 logoP = float2((uv.x - 1.0) * aspect / logoScale + 1.8, (uv.y - 1.0) / logoScale + 1.2);
+                  if (DrawXMPLogo(logoP)) logoDraw = true;
+
+                  if (playDraw || logoDraw) {
+                      color.rgb = float3(1.0, 1.0, 1.0); // White text
+                      // Add chromatic aberration for VHS look
+                      if (frac(uv.y * 300.0 + Time * 5.0) < 0.5) {
+                          color.r += 0.4;
+                          color.b += 0.4;
+                      }
                   }
               }
-              
-              if (p.y < -0.6) draw = false;
           }
-          
-          if (draw) {
-              int colorIdx = (int(floor(bx)) + int(floor(by))) % 6;
-              float3 logoColor = float3(1, 1, 1);
-              if (colorIdx == 0) logoColor = float3(1.0, 0.3, 0.3);
-              else if (colorIdx == 1) logoColor = float3(0.3, 1.0, 0.3);
-              else if (colorIdx == 2) logoColor = float3(0.3, 0.6, 1.0);
-              else if (colorIdx == 3) logoColor = float3(1.0, 1.0, 0.3);
-              else if (colorIdx == 4) logoColor = float3(1.0, 0.3, 1.0);
-              else if (colorIdx == 5) logoColor = float3(0.3, 1.0, 1.0);
-              
-              color.rgb = logoColor;
+
+          if (IsProjectorMode > 0.5 && HasBackBuffer > 0.5) {
+              float3 sceneColor = BackBufferTexture.Sample(VideoSampler, screenUV).rgb;
+              color.rgb = sceneColor + color.rgb * Opacity;
+              color.a = 1.0;
+          } else {
+              color.a = clamp(Opacity, 0.0, 1.0);
           }
       }
 
@@ -425,7 +829,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
           float alpha = saturate(depthMask * luminance * 3.5); 
           
           // Clamp intensity ceiling to prevent extreme highlights overexposure.
-          alpha = clamp(alpha, 0.0, 0.45); 
+          alpha = clamp(alpha, 0.0, 0.45) * Opacity; 
           
           // Compute additive backlight intensity.
           float3 light = prominentColor * alpha;
@@ -501,7 +905,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
 
       // Play/Pause (0.12 - 0.16)
       if (uv.x > 0.12 && uv.x < 0.16 && uv.y > 0.88 && uv.y < 0.94) {
-         if (IsPlaying > 0.5) {
+         if (PlaybackState == 1.0) {
             float px = (uv.x - 0.12) / 0.04;
             if ((px > 0.2 && px < 0.4) || (px > 0.6 && px < 0.8)) color.rgb = float3(1, 1, 1);
          } else {
@@ -791,13 +1195,16 @@ float4 PS(VS_OUT input) : SV_TARGET {
               float3 blendedBlack = color.rgb * saturate(1.0 - bbAlpha);
               color.rgb = blendedBlack + (bbColor.rgb * bbAlpha * isPureWhite);
           } else {
-              // For all other UI (standard game UI)
-              // Standard mode with shadow backdrop
-              float threshold = 152.0 / 255.0;
-              float isPureWhite = smoothstep(threshold - 0.02, 1.0, bbAlpha);
-              float3 shadowColor = float3(0.0, 0.0, 0.0);
-              float3 targetColor = lerp(shadowColor, bbColor.rgb, isPureWhite);
-              color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
+              // For all other UI (standard game UI), use the pure standard alpha blend
+              if (UIBlendThreshold > 0.5) {
+                  float threshold = UIBlendThreshold;
+                  float isPureWhite = smoothstep(threshold - 0.02, 1.0, bbAlpha);
+                  float3 shadowColor = float3(0.0, 0.0, 0.0);
+                  float3 targetColor = lerp(shadowColor, bbColor.rgb, isPureWhite);
+                  color.rgb = color.rgb * saturate(1.0 - bbAlpha) + targetColor * bbAlpha;
+              } else {
+                  color.rgb = color.rgb * saturate(1.0 - bbAlpha) + bbColor.rgb * bbAlpha;
+              }
           }
       }
     }
@@ -916,12 +1323,12 @@ float4 PS(VS_OUT input) : SV_TARGET {
       float nearPlane, float farPlane,
       int screenWidth, int screenHeight,
       ID3D11ShaderResourceView uiLayerSrv,
-      Vector2? hoverUV, float progress, bool isPlaying, float lockState,
+      Vector2? hoverUV, float progress, float playbackState, float lockState,
       float minDepth, float maxDepth, float volume,
       float renderWidth, float renderHeight,
       List<(int X, int Y, int W, int H, string Name)> uiRects, IntPtr titleSrvPtr = default,
       bool isLooping = false, bool isShuffle = false, float time = 0, float showScreensaver = 0,
-      float videoAspectRatio = 0, IntPtr gbuffer2SrvPtr = default, IntPtr gbuffer3SrvPtr = default, IntPtr transparentUiSrvPtr = default, IntPtr vignetteExtrapolatedSrvPtr = default, bool useDifferenceFallback = false) {
+      float videoAspectRatio = 0, IntPtr gbuffer2SrvPtr = default, IntPtr gbuffer3SrvPtr = default, IntPtr transparentUiSrvPtr = default, IntPtr vignetteExtrapolatedSrvPtr = default, bool useDifferenceFallback = false, float opacity = 1.0f, bool isProjectorMode = false, Vector3? screensaverColor = null, int screensaverStyle = 0, float uiBlendThreshold = 0.0f, float uvBottom = 1.0f, float uvRight = 1.0f) {
 
       if (!_initialized || _disposed || videoSrvPtr == IntPtr.Zero || depthSrv == null) return false;
 
@@ -959,7 +1366,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
           VideoAspectRatio = videoAspectRatio,
 
           Progress = progress,
-          IsPlaying = isPlaying ? 1.0f : 0.0f,
+          PlaybackState = playbackState,
           DynamicMinDepth = minDepth,
           DynamicMaxDepth = maxDepth,
           HasBackBuffer = uiLayerSrv != null ? 1.0f : 0.0f,
@@ -972,9 +1379,16 @@ float4 PS(VS_OUT input) : SV_TARGET {
           Time = time,
           ShowScreensaver = showScreensaver,
           HasPreUI = transparentUiSrvPtr != IntPtr.Zero ? 1.0f : 0.0f,
-          UseDifferenceFallback = useDifferenceFallback ? 1.0f : 0.0f
-        };
-        _context.UpdateSubresource(constants, _constantBuffer);
+          UseDifferenceFallback = useDifferenceFallback ? 1.0f : 0.0f,
+          Opacity = opacity,
+          IsProjectorMode = isProjectorMode ? 1.0f : 0.0f,
+          ScreensaverColor = screensaverColor ?? new Vector3(0.0f, 0.0f, 0.0f),
+          ScreensaverStyle = screensaverStyle,
+            UIBlendThreshold = uiBlendThreshold,
+            UVBottomEdge = uvBottom,
+            UVRightEdge = uvRight
+          };
+          _context.UpdateSubresource(constants, _constantBuffer);
 
         var uiConsts = new UIConstants {
             UIRectCount = Math.Min(64, uiRects?.Count ?? 0)
@@ -1073,4 +1487,12 @@ float4 PS(VS_OUT input) : SV_TARGET {
     }
   }
 }
+
+
+
+
+
+
+
+
 

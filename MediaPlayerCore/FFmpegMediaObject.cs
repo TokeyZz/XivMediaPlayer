@@ -103,6 +103,8 @@ namespace MediaPlayerCore
                         _parent.LastFrame = new byte[_frameSize];
                         _parent.LastFrameWidth = _width;
                         _parent.LastFrameHeight = _height;
+                        _parent.LastFrameTrueWidth = _width;
+                        _parent.LastFrameTrueHeight = _height;
                         _parent.LastFrameCount++;
                     }
 
@@ -185,6 +187,8 @@ namespace MediaPlayerCore
 
                                               _parent.LastFrameWidth = _width;
                                             _parent.LastFrameHeight = _height;
+                                            _parent.LastFrameTrueWidth = _width;
+                                            _parent.LastFrameTrueHeight = _height;
                                             _parent.LastFrameCount++;
                                         }
                                     }
@@ -285,6 +289,8 @@ namespace MediaPlayerCore
                 _parent.LastFrame = Array.Empty<byte>();
                 _parent.LastFrameWidth = 0;
                 _parent.LastFrameHeight = 0;
+                _parent.LastFrameTrueWidth = 0;
+                _parent.LastFrameTrueHeight = 0;
                 _parent.LastFrameCount++;
             }
         }
