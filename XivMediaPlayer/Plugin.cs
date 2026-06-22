@@ -966,10 +966,7 @@ namespace XivMediaPlayer
                     _streamURLs = new string[] { normalizedUrl };
                     _videoWindow.IsOpen = _config.DefaultVideoOpen == 0;
 
-                    if (!isAutoSync)
-                    {
-            // Deprecated: v2 heartbeat handles pushing state
-                    }
+                    if (!isAutoSync && _config.SyncWithRoom) _ = ClaimDjAsync();
                     _streamWasPlaying = true;
 
                     try { MuteBgm(); } catch { }
@@ -1008,10 +1005,7 @@ namespace XivMediaPlayer
                   "\r\nUse \"/media stop\" to stop the stream.");
             }
 
-            if (!isAutoSync)
-            {
-            // Deprecated: v2 heartbeat handles pushing state
-            }
+            if (!isAutoSync && _config.SyncWithRoom) _ = ClaimDjAsync();
             _streamWasPlaying = true;
             try
             {
