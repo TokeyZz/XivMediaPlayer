@@ -97,6 +97,15 @@ namespace XivMediaPlayer.Windows {
         _plugin.Config.Save();
       }
 
+      bool tvGlow = _plugin.Config.TvGlowEnabled;
+      if (ImGui.Checkbox("Enable TV Glow (Ambient Lighting)", ref tvGlow)) {
+        _plugin.Config.TvGlowEnabled = tvGlow;
+        _plugin.Config.Save();
+      }
+      if (ImGui.IsItemHovered()) {
+        ImGui.SetTooltip("Enables the realistic ambient light that shines on the walls around the TV.");
+      }
+
       bool disableUiBlock = _plugin.Config.DisableUIBlockDetection;
       if (ImGui.Checkbox("禁用 UI 遮挡检测", ref disableUiBlock)) {
         _plugin.Config.DisableUIBlockDetection = disableUiBlock;

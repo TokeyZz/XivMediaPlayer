@@ -87,7 +87,7 @@ namespace XivMediaPlayer.Compositing {
       public float UIBlendThreshold;
       public float UVBottomEdge;
         public float UVRightEdge;
-        public float _pad7;
+      public float EnableTvGlow;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -149,10 +149,10 @@ cbuffer Constants : register(b0) {
   float3 ScreensaverColor;
   float ScreensaverStyle;
   float UIBlendThreshold;
-    float UVBottomEdge;
-    float UVRightEdge;
-    float2 _pad7;
-  };
+  float UVBottomEdge;
+  float UVRightEdge;
+  float EnableTvGlow;
+};
   
   cbuffer UIConsts : register(b1) {
   float4 UIRects[64];
@@ -279,7 +279,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
 
   float3 tvRight = CornerTR3D - CornerTL3D;
   float3 tvDown = CornerBL3D - CornerTL3D;
-  float3 tvNormal = normalize(cross(tvRight, tvDown));
+  float3 tvNormal = normalize(cross(tvDown, tvRight));
 
   float denom = dot(tvNormal, rayDir);
   bool isInside = false;
@@ -829,8 +829,10 @@ float4 PS(VS_OUT input) : SV_TARGET {
           float alpha = saturate(depthMask * luminance * 3.5); 
           
           // Clamp intensity ceiling to prevent extreme highlights overexposure.
-          alpha = clamp(alpha, 0.0, 0.45) * Opacity; 
-          
+          alpha = clamp(alpha, 0.0, 0.45) * Opacity;
+
+          if (EnableTvGlow < 0.5) alpha = 0.0;
+
           // Compute additive backlight intensity.
           float3 light = prominentColor * alpha;
           
@@ -1328,7 +1330,7 @@ float4 PS(VS_OUT input) : SV_TARGET {
       float renderWidth, float renderHeight,
       List<(int X, int Y, int W, int H, string Name)> uiRects, IntPtr titleSrvPtr = default,
       bool isLooping = false, bool isShuffle = false, float time = 0, float showScreensaver = 0,
-      float videoAspectRatio = 0, IntPtr gbuffer2SrvPtr = default, IntPtr gbuffer3SrvPtr = default, IntPtr transparentUiSrvPtr = default, IntPtr vignetteExtrapolatedSrvPtr = default, bool useDifferenceFallback = false, float opacity = 1.0f, bool isProjectorMode = false, Vector3? screensaverColor = null, int screensaverStyle = 0, float uiBlendThreshold = 0.0f, float uvBottom = 1.0f, float uvRight = 1.0f) {
+      float videoAspectRatio = 0, IntPtr gbuffer2SrvPtr = default, IntPtr gbuffer3SrvPtr = default, IntPtr transparentUiSrvPtr = default, IntPtr vignetteExtrapolatedSrvPtr = default, bool useDifferenceFallback = false, float opacity = 1.0f, bool isProjectorMode = false, Vector3? screensaverColor = null, int screensaverStyle = 0, float uiBlendThreshold = 0.0f, float uvBottom = 1.0f, float uvRight = 1.0f, bool enableTvGlow = true) {
 
       if (!_initialized || _disposed || videoSrvPtr == IntPtr.Zero || depthSrv == null) return false;
 
@@ -1385,9 +1387,10 @@ float4 PS(VS_OUT input) : SV_TARGET {
           ScreensaverColor = screensaverColor ?? new Vector3(0.0f, 0.0f, 0.0f),
           ScreensaverStyle = screensaverStyle,
             UIBlendThreshold = uiBlendThreshold,
-            UVBottomEdge = uvBottom,
-            UVRightEdge = uvRight
-          };
+          UVBottomEdge = uvBottom,
+          UVRightEdge = uvRight,
+          EnableTvGlow = enableTvGlow ? 1.0f : 0.0f
+        };
           _context.UpdateSubresource(constants, _constantBuffer);
 
         var uiConsts = new UIConstants {

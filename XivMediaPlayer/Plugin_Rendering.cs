@@ -570,7 +570,7 @@ namespace XivMediaPlayer
                         srvPtr = IntPtr.Zero;
                     }
 
-                    _worldRenderer.EnableGlow = _config.DepthOcclusionEnabled && _config.LivestreamVolume > 0;
+                    _worldRenderer.EnableGlow = _config.DepthOcclusionEnabled && _config.TvGlowEnabled;
                     
                     // useDifferenceFallback is already calculated above when checking UI occlusion,
                     // but we re-calculate it here in case the logic above was skipped.

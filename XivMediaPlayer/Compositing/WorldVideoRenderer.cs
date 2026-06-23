@@ -427,7 +427,7 @@ namespace XivMediaPlayer.Compositing {
           _transform.IsProjectorMode,
           _transform.ScreensaverColor,
           _transform.ScreensaverStyle,
-          uiBlendThreshold, uvBottom, uvRight);
+          uiBlendThreshold, uvBottom, uvRight, _enableGlow);
 
         DepthDebugInfo = $"Cam: {cameraPos:F1}\nFwd: {cameraForward:F2}\nFov: {fovY:F3}\nAspect: {aspectRatio:F3}";
 
