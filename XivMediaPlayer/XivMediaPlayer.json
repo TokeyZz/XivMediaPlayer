@@ -1,8 +1,7 @@
 {
-  "Author": "Sebastina / 采购(汉化)",
+  "Author": "TokeyZz",
   "Name": "XivMediaPlayer",
-  "Description": "Standalone media player plugin with Twitch, RTMP, and yt-dlp stream playback integrated into FFXIV.",
-  "Punchline": "Watch Twitch streams and play media right inside FFXIV!",
+  "Punchline": "XivMediaPlayer绿色汉化版,有问题+q1279583785,我找最专业的deepseek师傅给你修",
   "RepoUrl": "",
   "Tags": [ "media", "twitch", "stream", "video", "vlc" ]
 }
