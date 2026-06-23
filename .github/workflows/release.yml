@@ -83,13 +83,14 @@ jobs:
       - name: Write out repo.json
         run: |
           $ver = '${{ github.ref_name }}' -replace '^v',''
+          $tagVer = '${{ github.ref_name }}'
           $path = './repo.json'
           $json = Get-Content -Raw $path | ConvertFrom-Json
           $json[0].AssemblyVersion = $ver
           $json[0].TestingAssemblyVersion = $ver
-          $json[0].DownloadLinkInstall = $json[0].DownloadLinkInstall -replace '[^/]+/XivMediaPlayer.zip',"$ver/XivMediaPlayer.zip"
-          $json[0].DownloadLinkTesting = $json[0].DownloadLinkTesting -replace '[^/]+/XivMediaPlayer.zip',"$ver/XivMediaPlayer.zip"
-          $json[0].DownloadLinkUpdate = $json[0].DownloadLinkUpdate -replace '[^/]+/XivMediaPlayer.zip',"$ver/XivMediaPlayer.zip"
+          $json[0].DownloadLinkInstall = $json[0].DownloadLinkInstall -replace '[^/]+/XivMediaPlayer.zip',"$tagVer/XivMediaPlayer.zip"
+          $json[0].DownloadLinkTesting = $json[0].DownloadLinkTesting -replace '[^/]+/XivMediaPlayer.zip',"$tagVer/XivMediaPlayer.zip"
+          $json[0].DownloadLinkUpdate = $json[0].DownloadLinkUpdate -replace '[^/]+/XivMediaPlayer.zip',"$tagVer/XivMediaPlayer.zip"
           $content = ConvertTo-Json @($json) -Depth 10
           set-content -Path $path -Value $content
 
