@@ -343,6 +343,12 @@ namespace XivMediaPlayer
             if (errorMsg.Contains("TS discontinuity", StringComparison.OrdinalIgnoreCase)) return;
             if (errorMsg.Contains("libdvbpsi", StringComparison.OrdinalIgnoreCase)) return;
 
+            // Harmless VLC codec/demuxer/codec probing errors on network streams
+            if (errorMsg.Contains("cannot find any cluster or chapter", StringComparison.OrdinalIgnoreCase)) return;
+            if (errorMsg.Contains("Unknown option", StringComparison.OrdinalIgnoreCase)) return;
+            if (errorMsg.Contains("PCR  is called too late", StringComparison.OrdinalIgnoreCase)) return;
+            if (errorMsg.Contains("buffer deadlock prevented", StringComparison.OrdinalIgnoreCase)) return;
+
             if ((DateTime.UtcNow - _lastMediaErrorTime).TotalMilliseconds < 500)
             {
                 _pluginLog.Warning(e.Exception, "[VLC] Media error occurred (grouped within 500ms).");
