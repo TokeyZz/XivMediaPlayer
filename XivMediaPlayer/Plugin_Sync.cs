@@ -33,7 +33,7 @@ namespace XivMediaPlayer
 
         private bool _isDraggingSeek => _videoWindow?.IsDraggingSeek ?? false;
 
-        private async Task HeartbeatLoopAsync(CancellationToken ct)
+        private async Task HeartbeatLoopAsync(CancellationToken ct, int generation)
         {
             while (!ct.IsCancellationRequested)
             {
@@ -66,6 +66,13 @@ namespace XivMediaPlayer
                     }
                     else
                     {
+                        // Stale heartbeat from a previous generation (e.g. ClaimDj restarted the loop).
+                        // Ignore the rejection — the new heartbeat loop is already running.
+                        if (generation != _heartbeatGeneration)
+                        {
+                            Debug.WriteLine("[Sync] Heartbeat: stale rejection ignored, gen=" + generation + ", currentGen=" + _heartbeatGeneration);
+                            continue;
+                        }
                         Debug.WriteLine("[Sync] Heartbeat: result=409, error=" + result.Error);
                         _isLocalDj = false;
                         StopHeartbeatLoop();
@@ -73,7 +80,7 @@ namespace XivMediaPlayer
                         PrintChatError("播放权已被接管，切换到跟随模式");
                     }
 
-                    if (snapshot.IsPlaying)
+                    if (snapshot.IsPlaying && snapshot.VlcState == LibVLCSharp.Shared.VLCState.Playing)
                     {
                         if (_lastSuccessfulTimecode == snapshot.TimeMs)
                         {
@@ -91,6 +98,10 @@ namespace XivMediaPlayer
                             _lastSuccessfulTimecode = snapshot.TimeMs;
                         }
                     }
+                    else
+                    {
+                        _stalledDetectCount = 0;
+                    }
                 }
                 catch (OperationCanceledException) { /* normal shutdown, ignore */ }
                 catch (Exception ex) { _pluginLog.Warning(ex, "[Sync] Heartbeat loop error"); }
@@ -100,8 +111,10 @@ namespace XivMediaPlayer
         private void StartHeartbeatLoop()
         {
             StopHeartbeatLoop();
+            _heartbeatGeneration++;
             _heartbeatCts = new CancellationTokenSource();
-            _ = HeartbeatLoopAsync(_heartbeatCts.Token);
+            var gen = _heartbeatGeneration;
+            _ = HeartbeatLoopAsync(_heartbeatCts.Token, gen);
         }
         private void StopHeartbeatLoop()
         {

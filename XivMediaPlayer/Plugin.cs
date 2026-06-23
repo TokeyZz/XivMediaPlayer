@@ -76,6 +76,7 @@ namespace XivMediaPlayer
         private long _lastSuccessfulTimecode = -1;
         private bool _lastSyncWithRoom = false;
         private int _stalledDetectCount = 0;
+        private int _heartbeatGeneration = 0;
         private bool _isLocalDj = false;
         private DepthBufferCapture _depthCapture;
         private UILayerCapture _uiCapture;
