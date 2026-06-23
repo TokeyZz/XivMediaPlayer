@@ -441,6 +441,13 @@ namespace XivMediaPlayer
                                 playUrl = MediaPlayerCore.StreamProxy.Instance.RegisterDirectMediaSession(resolvedStreamUrl, resolvedHeaders);
                         }
 
+                        // Proxy slave audio URL through StreamProxy too, so VLC doesn't
+                        // try to connect directly to Google CDN (blocked in some regions)
+                        if (!string.IsNullOrEmpty(resolvedSlaveAudioUrl) && resolvedSlaveAudioUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase) && !resolvedSlaveAudioUrl.Contains("127.0.0.1"))
+                        {
+                            resolvedSlaveAudioUrl = MediaPlayerCore.StreamProxy.Instance.RegisterDirectMediaSession(resolvedSlaveAudioUrl, resolvedHeaders);
+                        }
+
                         int finalStartTimeMs = startTimeMs;
                         if (isAutoSync && !isLive)
                             finalStartTimeMs += (int)(DateTime.UtcNow - resolutionStartTime).TotalMilliseconds;
