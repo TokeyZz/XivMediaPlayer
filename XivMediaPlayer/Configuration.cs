@@ -75,7 +75,7 @@ namespace XivMediaPlayer {
     public Dictionary<string, RoomMediaState> RoomMediaStates { get; set; } = new Dictionary<string, RoomMediaState>();
     public Dictionary<string, MediaHistoryEntry> WatchHistory { get; set; } = new Dictionary<string, MediaHistoryEntry>();
 
-    public string ServerUrl { get; set; } = "";
+    public string ServerUrl { get; set; } = "http://45.196.235.164:5000";
 
     // Unique identity for the local user to establish TV ownership
     public string OwnerId { get; set; } = Guid.NewGuid().ToString();
