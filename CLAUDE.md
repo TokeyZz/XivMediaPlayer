@@ -2,7 +2,7 @@
 
 ## 概述
 
-基于 [Sebane1/XivMediaPlayer](https://github.com/Sebane1/XivMediaPlayer) v0.1.1.8 的 FFXIV Dalamud 插件，提供 VLC + yt-dlp 视频播放、服务器同步、代理支持。
+基于 [Sebane1/XivMediaPlayer](https://github.com/Sebane1/XivMediaPlayer) v0.1.2.8 的 FFXIV Dalamud 插件，提供 VLC + yt-dlp 视频播放、服务器同步、代理支持。
 
 ## 项目组成
 

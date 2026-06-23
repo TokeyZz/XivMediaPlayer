@@ -2,9 +2,10 @@
 
 在 FFXIV 中添加 VRChat 风格的视频播放器。
 
-基于 [Sebane1/XivMediaPlayer](https://github.com/Sebane1/XivMediaPlayer) v0.1.1.8，增加以下功能：
+基于 [Sebane1/XivMediaPlayer](https://github.com/Sebane1/XivMediaPlayer) v0.1.2.8，增加以下功能：
 
 - **完整汉化界面** — 所有窗口、按钮、提示均已汉化
+- **上游同步 v0.1.2.8** — 投影仪模式、6种屏保、TV环境光照、视频填充修复
 - **DJ/跟随者同步模式** — v2 心跳协议，房间内自动同步播放
 - **代理支持** — SOCKS5/HTTP 代理（yt-dlp + VLC + StreamProxy 全链）
 - **YouTube 播放** — 代理 + Cookie 注入 + m3u8 分片代理重写

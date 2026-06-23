@@ -5,8 +5,8 @@
     "Description": "XivMediaPlayer绿色汉化版,有问题+q1279583785,我找最专业的deepseek师傅给你修",
     "Punchline": "XivMediaPlayer绿色汉化版,有问题+q1279583785,我找最专业的deepseek师傅给你修",
     "InternalName": "XivMediaPlayer",
-    "AssemblyVersion": "0.1.1.8",
-    "TestingAssemblyVersion": "0.1.1.8",
+    "AssemblyVersion": "0.1.2.8",
+    "TestingAssemblyVersion": "0.1.2.8",
     "RepoUrl": "https://github.com/TokeyZz/XivMediaPlayer",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 15,
@@ -14,9 +14,9 @@
     "IsTestingExclusive": "False",
     "DownloadCount": 0,
     "LastUpdate": 0,
-    "DownloadLinkInstall": "https://github.com/TokeyZz/XivMediaPlayer/releases/download/0.1.1.8/XivMediaPlayer.zip",
-    "DownloadLinkTesting": "https://github.com/TokeyZz/XivMediaPlayer/releases/download/0.1.1.8/XivMediaPlayer.zip",
-    "DownloadLinkUpdate": "https://github.com/TokeyZz/XivMediaPlayer/releases/download/0.1.1.8/XivMediaPlayer.zip",
+    "DownloadLinkInstall": "https://github.com/TokeyZz/XivMediaPlayer/releases/download/0.1.2.8/XivMediaPlayer.zip",
+    "DownloadLinkTesting": "https://github.com/TokeyZz/XivMediaPlayer/releases/download/0.1.2.8/XivMediaPlayer.zip",
+    "DownloadLinkUpdate": "https://github.com/TokeyZz/XivMediaPlayer/releases/download/0.1.2.8/XivMediaPlayer.zip",
     "IconUrl": "",
     "Tags": ["media", "video", "stream", "vlc", "twitch"]
   }
