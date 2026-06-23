@@ -98,12 +98,12 @@ namespace XivMediaPlayer.Windows {
       }
 
       bool tvGlow = _plugin.Config.TvGlowEnabled;
-      if (ImGui.Checkbox("Enable TV Glow (Ambient Lighting)", ref tvGlow)) {
+      if (ImGui.Checkbox("启用电视环境光照", ref tvGlow)) {
         _plugin.Config.TvGlowEnabled = tvGlow;
         _plugin.Config.Save();
       }
       if (ImGui.IsItemHovered()) {
-        ImGui.SetTooltip("Enables the realistic ambient light that shines on the walls around the TV.");
+        ImGui.SetTooltip("模拟真实电视屏幕照亮周围墙壁的环境光效果。关闭后电视不会向周围投射光线。");
       }
 
       bool disableUiBlock = _plugin.Config.DisableUIBlockDetection;
@@ -125,12 +125,12 @@ namespace XivMediaPlayer.Windows {
       }
 
       bool strictMasking = _plugin.Config.UIBlendThreshold > 0.5f;
-      if (ImGui.Checkbox("Strict UI Masking (AMD Fix / Invisible Drop Shadows)", ref strictMasking)) {
+      if (ImGui.Checkbox("解决AMD显卡的不正确遮挡电视 (丢失UI阴影)", ref strictMasking)) {
         _plugin.Config.UIBlendThreshold = strictMasking ? (171.0f / 255.0f) : 0.0f;
         _plugin.Config.Save();
       }
       if (ImGui.IsItemHovered()) {
-        ImGui.SetTooltip("Enable this if you have an AMD card and notice that the TV does not render. UI dropshadows are lost.");
+        ImGui.SetTooltip("AMD显卡上透明UI阴影可能错误遮挡电视,开启后通过提高判定阈值解决。代价是UI阴影会穿透电视显示。");
       }
 
       if (ImGui.Button("清除观看历史")) {

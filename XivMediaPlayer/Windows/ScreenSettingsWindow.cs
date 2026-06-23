@@ -264,14 +264,14 @@ namespace XivMediaPlayer.Windows {
       ImGui.SameLine();
       aspectChanged |= ImGui.RadioButton("4:3", ref _aspectRatio, 1);
       ImGui.SameLine();
-      aspectChanged |= ImGui.RadioButton("Custom / Free", ref _aspectRatio, 2);
+      aspectChanged |= ImGui.RadioButton("自定义 / 自由比例", ref _aspectRatio, 2);
 
       bool scaleChanged = false;
       if (_aspectRatio != 2) {
-          scaleChanged |= ImGui.DragFloat("Diagonal Size##scale", ref _scale.X, 0.1f, 0.5f, 200f, "%.1f");
+          scaleChanged |= ImGui.DragFloat("对角线尺寸##scale", ref _scale.X, 0.1f, 0.5f, 200f, "%.1f");
       } else {
-          scaleChanged |= ImGui.DragFloat("Width##scaleX", ref _scale.X, 0.1f, 0.5f, 200f, "%.1f");
-          scaleChanged |= ImGui.DragFloat("Height##scaleY", ref _scale.Y, 0.1f, 0.5f, 200f, "%.1f");
+          scaleChanged |= ImGui.DragFloat("宽度##scaleX", ref _scale.X, 0.1f, 0.5f, 200f, "%.1f");
+          scaleChanged |= ImGui.DragFloat("高度##scaleY", ref _scale.Y, 0.1f, 0.5f, 200f, "%.1f");
       }
       bool saveScale = ImGui.IsItemDeactivatedAfterEdit();
 
@@ -298,17 +298,17 @@ namespace XivMediaPlayer.Windows {
       ImGui.Spacing();
       ImGui.Separator();
 
-      // Projector & Transparency
-      ImGui.TextColored(new Vector4(0.7f, 0.9f, 1f, 1f), "Projector & Transparency");
+      // 投影仪与透明度
+      ImGui.TextColored(new Vector4(0.7f, 0.9f, 1f, 1f), "投影仪与透明度");
 
       bool appearanceChanged = false;
-      appearanceChanged |= ImGui.Checkbox("Projector Mode (Additive Blend)", ref _isProjectorMode);
+      appearanceChanged |= ImGui.Checkbox("投影仪模式 (加法混合)", ref _isProjectorMode);
 
-      appearanceChanged |= ImGui.SliderFloat("Opacity", ref _opacity, 0.05f, 1.0f, "%.2f");
-      appearanceChanged |= ImGui.ColorEdit3("Screensaver Color", ref _screensaverColor);
+      appearanceChanged |= ImGui.SliderFloat("透明度", ref _opacity, 0.05f, 1.0f, "%.2f");
+      appearanceChanged |= ImGui.ColorEdit3("屏保颜色", ref _screensaverColor);
 
-      string[] screensaverStyles = new string[] { "Bouncing Logo", "VCR", "No Signal", "Static", "Test Pattern", "Matrix Rain" };
-      appearanceChanged |= ImGui.Combo("Screensaver Style", ref _screensaverStyle, screensaverStyles, screensaverStyles.Length);
+      string[] screensaverStyles = new string[] { "弹跳标志", "录像机", "无信号彩条", "雪花噪点", "测试图案", "数字雨" };
+      appearanceChanged |= ImGui.Combo("屏保样式", ref _screensaverStyle, screensaverStyles, screensaverStyles.Length);
 
       bool saveAppearance = ImGui.IsItemDeactivatedAfterEdit() || ImGui.IsItemDeactivated();
 
