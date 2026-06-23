@@ -35,12 +35,12 @@ jobs:
 
       - name: Build
         run: |
-          $ver = '${{ github.ref }}' -replace 'refs/tags/',''
+          $ver = '${{ github.ref }}' -replace 'refs/tags/','' -replace '^v',''
           dotnet build --no-restore -c Release --nologo -p:Version=$ver
 
       - name: Write version into manifest
         run: |
-          $ver = '${{ github.ref }}' -replace 'refs/tags/',''
+          $ver = '${{ github.ref }}' -replace 'refs/tags/','' -replace '^v',''
           $path = './XivMediaPlayer/bin/x64/Release/XivMediaPlayer.json'
           $content = get-content -path $path
           $content = $content -replace '0.0.0.0',$ver
@@ -82,7 +82,7 @@ jobs:
 
       - name: Write out repo.json
         run: |
-          $ver = '${{ github.ref_name }}'
+          $ver = '${{ github.ref_name }}' -replace '^v',''
           $path = './repo.json'
           $json = Get-Content -Raw $path | ConvertFrom-Json
           $json[0].AssemblyVersion = $ver
