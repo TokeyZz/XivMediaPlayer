@@ -573,6 +573,7 @@ namespace XivMediaPlayer
 
             bool wasPlaying = _streamWasPlaying;
             _streamWasPlaying = false;
+            _playbackEverConfirmed = false;
             _streamSetCooldown.Stop();
             _streamSetCooldown.Reset();
             _mediaErrorCount = 0; // Reset error count when stream stops
