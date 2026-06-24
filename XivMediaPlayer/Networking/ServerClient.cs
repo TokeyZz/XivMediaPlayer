@@ -94,59 +94,6 @@ namespace XivMediaPlayer.Networking
             }
         }
 
-        public async Task<RoomMediaStateSync> GetMediaStateAsync(string locationKey)
-        {
-            try
-            {
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/media");
-                if (response.IsSuccessStatusCode)
-                {
-                    return await response.Content.ReadFromJsonAsync<RoomMediaStateSync>();
-                }
-            }
-            catch (Exception ex)
-            {
-                _log.Error(ex, $"Failed to get media state for room {locationKey}");
-            }
-            return null;
-        }
-
-        public async Task<RoomMediaStateSync> UpdateMediaStateAsync(string locationKey, RoomMediaStateSync state)
-        {
-            try
-            {
-                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/api/rooms/{Uri.EscapeDataString(locationKey)}/media", state);
-                if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                {
-                    throw new UnauthorizedAccessException("The TV in this room is locked by its owner.");
-                }
-
-                if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
-                {
-                    throw new InvalidOperationException("You are no longer the media owner.");
-                }
-
-                if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
-                {
-                    var errorMsg = await response.Content.ReadAsStringAsync();
-                    throw new ArgumentException(errorMsg);
-                }
-
-                if (response.IsSuccessStatusCode)
-                {
-                    return await response.Content.ReadFromJsonAsync<RoomMediaStateSync>();
-                }
-            }
-            catch (InvalidOperationException) { throw; }
-            catch (UnauthorizedAccessException) { throw; }
-            catch (Exception ex)
-            {
-                _log.Error(ex, $"Failed to update media state for room {locationKey}");
-                throw;
-            }
-            return null;
-        }
-
         public async Task<List<TvPlacement>> GetTvsBatchAsync(List<string> locationKeys)
         {
             try

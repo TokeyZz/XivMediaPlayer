@@ -17,15 +17,12 @@ namespace XivMediaPlayer.Server.Models
             modelBuilder.Entity<TvPlacement>(entity =>
             {
                 entity.HasKey(t => t.LocationKey);
-                // BypassLock is a runtime-only field, not persisted
-                entity.Ignore(t => t.BypassLock);
             });
 
             modelBuilder.Entity<RoomMediaStateSync>(entity =>
             {
                 entity.HasKey(m => m.LocationKey);
                 // These fields are runtime-only, not persisted
-                entity.Ignore(m => m.BypassLock);
                 entity.Ignore(m => m.IsBackgroundSync);
                 entity.Ignore(m => m.DataAgeMs);
                 entity.Ignore(m => m.IdleTimeMs);

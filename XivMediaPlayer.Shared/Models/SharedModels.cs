@@ -2,8 +2,7 @@ namespace XivMediaPlayer.Shared.Models;
 
 /// <summary>
 /// Television placement in a game room / zone.
-/// Shared between client and server. BypassLock is a runtime-only field;
-/// the server ignores it for persistence via Fluent API.
+/// Shared between client and server.
 /// </summary>
 public class TvPlacement
 {
@@ -19,7 +18,6 @@ public class TvPlacement
     public float ScaleY { get; set; }
     public string OwnerId { get; set; } = string.Empty;
     public bool IsLocked { get; set; } = false;
-    public bool BypassLock { get; set; } = false;
     public float Opacity { get; set; } = 1.0f;
     public bool IsProjectorMode { get; set; } = false;
     public float ScreensaverColorR { get; set; } = 0.0f;
@@ -40,7 +38,7 @@ public class RoomClaimRequest
 
 /// <summary>
 /// Legacy media state sync model shared between client and server.
-/// Some fields (BypassLock, IsBackgroundSync, DataAgeMs, IdleTimeMs)
+/// Some fields (IsBackgroundSync, DataAgeMs, IdleTimeMs)
 /// are runtime-only and not persisted; the server ignores them via Fluent API.
 /// </summary>
 public class RoomMediaStateSync
@@ -52,7 +50,6 @@ public class RoomMediaStateSync
     public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;
     public string PlaylistJson { get; set; } = "[]";
     public string OwnerId { get; set; } = string.Empty;
-    public bool BypassLock { get; set; } = false;
     public bool IsBackgroundSync { get; set; } = false;
     public double DataAgeMs { get; set; } = 0;
     public double IdleTimeMs { get; set; } = 0;
