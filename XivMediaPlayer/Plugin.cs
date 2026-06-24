@@ -112,6 +112,7 @@ namespace XivMediaPlayer
         private string _currentMediaTitle = "";
         private string _potentialStream;
         private bool _streamWasPlaying;
+        private bool _playbackEverConfirmed;
         private bool _disposed;
         private bool _bgmWasMutedByUs;
         private bool _wasHousingMenuOpen = false;

@@ -47,11 +47,17 @@ namespace XivMediaPlayer
                     var snapshot = _mediaManager?.GetSnapshot();
                     if (snapshot == null || string.IsNullOrEmpty(snapshot.Url)) continue;
 
+                    // Confirm-Then-Push: only push the URL to the server once VLC has actually
+                    // started playing. Until then, send an empty URL so stale/bad URLs never
+                    // propagate to followers via the server.
+                    if (snapshot.IsPlaying) _playbackEverConfirmed = true;
+                    string pushUrl = _playbackEverConfirmed ? _lastStreamURL : "";
+
                     var request = new HeartbeatRequest
                     {
                         OwnerId = _config.OwnerId,
                         StateVersion = _stateVersion,
-                        CurrentUrl = _lastStreamURL,
+                        CurrentUrl = pushUrl,
                         TimecodeMs = snapshot.TimeMs,
                         IsPlaying = snapshot.IsPlaying,
                         SpeedRate = 1.0f,
@@ -62,7 +68,7 @@ namespace XivMediaPlayer
                     if (result.Success)
                     {
                         _stateVersion = result.Data!.AcceptedVersion;
-                        Debug.WriteLine("[Sync] Heartbeat: v=" + _stateVersion + ", url=" + _lastStreamURL + ", time=" + snapshot.TimeMs + "ms, playing=" + snapshot.IsPlaying + ", result=200");
+                        Debug.WriteLine("[Sync] Heartbeat: v=" + _stateVersion + ", url=" + pushUrl + ", time=" + snapshot.TimeMs + "ms, playing=" + snapshot.IsPlaying + ", result=200");
                     }
                     else
                     {
