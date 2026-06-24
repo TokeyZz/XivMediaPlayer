@@ -271,11 +271,10 @@ namespace XivMediaPlayer
 
                 try
                 {
-                    _lastStreamURL = url; // Save the original requested URL so PushMediaToServerAsync pushes it instead of the raw .m3u8
+                    _lastStreamURL = url; // Save the original requested URL for the v2 heartbeat sync (not the raw .m3u8)
 
                     // Try to get metadata for a nice chat message
                     var metadataTask = _ytDlpManager.GetMetadata(url);
-                    var resolveTask = _ytDlpManager.ResolveStreamUrl(url);
 
                     if (!Uri.TryCreate(url, UriKind.Absolute, out _))
                     {
@@ -284,25 +283,38 @@ namespace XivMediaPlayer
                     }
 
                     string[]? streamUrls = null;
-                    try
+                    int maxRetries = 3;
+                    for (int retry = 0; retry < maxRetries; retry++)
                     {
-                        streamUrls = await resolveTask;
-                        if (resolutionId != _currentResolutionId) return;
-                    }
-                    catch (Exception resolveEx)
-                    {
-                        _pluginLog.Warning(resolveEx, "[yt-dlp] Failed to resolve stream URL.");
-                        string errorStr = resolveEx.ToString();
-                        
-                        if (errorStr.Contains("Sign in to confirm", StringComparison.OrdinalIgnoreCase))
+                        try
                         {
-                            EnqueueFrameworkAction(() => PrintChatError("[媒体播放器] YouTube 拒绝了请求 (Bot 检测), 请通过 VRCVideoCacher 或 cookies.txt 配置 Cookie!"));
-                            return;
+                            var resolveTask = _ytDlpManager.ResolveStreamUrl(url);
+                            streamUrls = await resolveTask;
+                            if (resolutionId != _currentResolutionId) return;
+                            if (streamUrls != null && streamUrls.Length > 0 && !string.IsNullOrEmpty(streamUrls[0]))
+                                break;
                         }
-                        
-                        if (errorStr.Contains("Unsupported URL", StringComparison.OrdinalIgnoreCase) || errorStr.Contains("HTTP Error 403", StringComparison.OrdinalIgnoreCase))
+                        catch (Exception resolveEx) when (retry < maxRetries - 1)
                         {
-                            MediaPlayerCore.YtDlp.YtDlpManager.MarkUrlAsFailed(url);
+                            if (resolutionId != _currentResolutionId) return;
+                            _pluginLog.Warning($"[yt-dlp] Resolve attempt {retry + 1}/{maxRetries} failed: {resolveEx.Message}");
+                            await Task.Delay(500 * (retry + 1));
+                        }
+                        catch (Exception resolveEx)
+                        {
+                            _pluginLog.Warning(resolveEx, "[yt-dlp] Failed to resolve stream URL.");
+                            string errorStr = resolveEx.ToString();
+
+                            if (errorStr.Contains("Sign in to confirm", StringComparison.OrdinalIgnoreCase))
+                            {
+                                EnqueueFrameworkAction(() => PrintChatError("[媒体播放器] YouTube 拒绝了请求 (Bot 检测), 请通过 VRCVideoCacher 或 cookies.txt 配置 Cookie!"));
+                                return;
+                            }
+
+                            if (errorStr.Contains("Unsupported URL", StringComparison.OrdinalIgnoreCase) || errorStr.Contains("HTTP Error 403", StringComparison.OrdinalIgnoreCase))
+                            {
+                                MediaPlayerCore.YtDlp.YtDlpManager.MarkUrlAsFailed(url);
+                            }
                         }
                     }
 
@@ -554,7 +566,7 @@ namespace XivMediaPlayer
             }
         }
 
-        private unsafe void ResetStreamValues(bool pushToServer = true)
+        private unsafe void ResetStreamValues()
         {
             _lastStreamObject = null;
             _streamURLs = null;
@@ -583,9 +595,6 @@ namespace XivMediaPlayer
                 _deferredBgmRestoreTime = DateTime.UtcNow.AddSeconds(1);
             }
 
-            if (pushToServer) {
-                // No-op: v2 heartbeat handles pushing state
-            }
         }
 
     }

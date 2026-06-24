@@ -54,7 +54,7 @@ namespace XivMediaPlayer
             PrintChat("[媒体播放器] 正在停止播放并清除队列...");
             _mediaManager?.StopStream();
             _mediaQueue.Clear();
-            ResetStreamValues(true);
+            ResetStreamValues();
 
             // Clear the saved room state so it doesn't auto-resume next time we enter
             var key = CurrentTvPlacement?.LocationKey ?? GetLocationKey();

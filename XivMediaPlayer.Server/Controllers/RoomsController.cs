@@ -57,7 +57,7 @@ namespace XivMediaPlayer.Server.Controllers
                     if ((DateTime.UtcNow - lastFetch).TotalMinutes >= 2)
                         isForfeited = true;
                 }
-                if (!isForfeited && existing.IsLocked && existing.OwnerId != placement.OwnerId && !placement.BypassLock)
+                if (!isForfeited && existing.IsLocked && existing.OwnerId != placement.OwnerId)
                     return Forbid();
                 if (isForfeited) existing.IsLocked = false;
                 existing.PositionX = placement.PositionX;
@@ -181,7 +181,7 @@ namespace XivMediaPlayer.Server.Controllers
             }
             state.LocationKey = locationKey;
             var tv = await _db.TvPlacements.FindAsync(locationKey);
-            if (tv != null && tv.IsLocked && tv.OwnerId != state.OwnerId && !state.BypassLock)
+            if (tv != null && tv.IsLocked && tv.OwnerId != state.OwnerId)
                 return StatusCode(403);
             state.TimestampUtc = DateTime.UtcNow;
 

@@ -525,7 +525,6 @@ namespace XivMediaPlayer.Windows {
         ScreensaverStyle = _screensaverStyle,
         OwnerId = _plugin.Config.OwnerId,
         IsLocked = _plugin.CurrentTvPlacement?.IsLocked ?? (!locationKey.StartsWith("zone_") && !locationKey.StartsWith("island_")),
-        BypassLock = _plugin.IsHousingMenuOpen || locationKey.StartsWith("zone_") || locationKey.StartsWith("island_")
       };
 
       SyncToTransform();
